@@ -1,0 +1,11 @@
+{
+  "name": "asana",
+  "label": "Asana",
+  "productUrl": "https://asana.com",
+  "apiDocs": "https://developers.asana.com/",
+  "logoUrl": "https://friggframework.org/assets/img/asana-icon.png",
+  "categories": [
+    "Project Management"
+  ],
+  "description": "Asana is a web and mobile work management platform designed to help teams organize, track, and manage their work."
+}

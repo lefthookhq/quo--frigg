@@ -1,0 +1,6 @@
+{
+  "name": "axiscare",
+  "baseUrl": "https://static.axiscare.com/api",
+  "authType": "bearer",
+  "description": "AxisCare API integration for client management and scheduling"
+}

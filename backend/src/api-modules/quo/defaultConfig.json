@@ -1,0 +1,6 @@
+{
+  "name": "openphone",
+  "baseUrl": "https://api.openphone.com",
+  "authType": "api-key",
+  "description": "OpenPhone API integration for calls, messages, contacts, and phone number management"
+}
