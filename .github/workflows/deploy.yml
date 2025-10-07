@@ -1,0 +1,153 @@
+name: Deploy
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: 'Deployment stage'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+
+jobs:
+  deploy:
+    name: Deploy to AWS
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install libssl1.1
+        run: |
+          wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+          sudo dpkg -i libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+          rm libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+
+      - name: Install dependencies
+        run: |
+          cd ..
+          npm ci
+
+      - name: Run tests
+        run: npm run test:ci
+
+      - name: Determine deployment stage
+        id: stage
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "stage=${{ github.event.inputs.stage }}" >> $GITHUB_OUTPUT
+          else
+            echo "stage=production" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Parse app configuration
+        id: app_config
+        run: |
+          # Run the parser script directly with node (no chmod needed)
+          # Note: we're in the backend directory, so we need to go up one level
+          node ../.github/scripts/parse-app-config.js
+
+      - name: Download DocumentDB Certificate
+        if: ${{ steps.app_config.outputs.uses_documentdb == 'true' }}
+        run: |
+          echo "DocumentDB configuration detected, downloading TLS certificate..."
+          # Remove existing security folder to ensure clean state
+          rm -rf security
+          # Create fresh security folder
+          mkdir -p security
+          # Download the certificate
+          curl -o security/global-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+          echo "Certificate downloaded successfully"
+          echo "Certificate location: $(pwd)/security/global-bundle.pem"
+          # Verify the certificate was downloaded correctly
+          echo "Certificate file size: $(stat -c%s security/global-bundle.pem 2>/dev/null || stat -f%z security/global-bundle.pem 2>/dev/null || echo 'Unable to determine') bytes"
+          ls -la security/
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Set dynamic environment variables
+        id: dynamic_env
+        run: |
+          # Get environment variables from appDefinition
+          ENV_VARS="${{ steps.app_config.outputs.environment_vars }}"
+          echo "Environment variables from appDefinition: $ENV_VARS"
+          
+          # Convert secrets to JSON and save to file
+          echo '${{ toJSON(secrets) }}' > secrets.json
+          
+          # Parse and export only the variables defined in appDefinition
+          IFS=',' read -ra VARS <<< "$ENV_VARS"
+          
+          for var in "${VARS[@]}"; do
+            var=$(echo "$var" | xargs)  # Trim whitespace
+            
+            # Extract the secret value using jq
+            secret_value=$(jq -r --arg key "$var" '.[$key] // empty' secrets.json)
+            
+            if [ ! -z "$secret_value" ]; then
+              # GitHub Actions way to set environment variables for subsequent steps
+              echo "${var}=${secret_value}" >> $GITHUB_ENV
+              echo "✓ Set $var"
+            else
+              echo "⚠ Warning: $var not found in secrets"
+              # Set default values for some variables if needed
+              if [ "$var" = "NODE_ENV" ]; then
+                echo "NODE_ENV=production" >> $GITHUB_ENV
+                echo "  Using default: NODE_ENV=production"
+              elif [ "$var" = "SKIP_ASANA_SIGNATURE_VALIDATION" ]; then
+                echo "SKIP_ASANA_SIGNATURE_VALIDATION=false" >> $GITHUB_ENV
+                echo "  Using default: SKIP_ASANA_SIGNATURE_VALIDATION=false"
+              fi
+            fi
+          done
+          
+          # Clean up secrets file
+          rm -f secrets.json
+
+      - name: Deploy with Frigg (Direct Environment Variables)
+        if: ${{ steps.app_config.outputs.deployment_type != 'ssm' }}
+        run: |
+          # All environment variables are now set from the previous step
+          # They were dynamically loaded based on appDefinition
+          echo "Deploying with dynamically loaded environment variables..."
+          npx frigg deploy --stage ${{ steps.stage.outputs.stage }} --verbose
+
+      - name: Deploy with Frigg (SSM Parameter Store)
+        if: ${{ steps.app_config.outputs.deployment_type == 'ssm' }}
+        run: |
+          echo "Deploying with SSM Parameter Store..."
+          echo "Environment variables will be loaded from SSM with pattern: /{service}/{stage}/{VARIABLE_NAME}"
+          npx frigg deploy --stage ${{ steps.stage.outputs.stage }} --verbose --use-ssm
+
+      - name: Deployment Summary
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Stage**: ${{ steps.stage.outputs.stage }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Region**: ${{ secrets.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployment Type**: ${{ steps.app_config.outputs.deployment_type == 'ssm' && 'SSM Parameter Store' || 'Direct Environment Variables' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Database**: ${{ steps.app_config.outputs.uses_documentdb == 'true' && 'AWS DocumentDB (TLS enabled)' || 'MongoDB' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **KMS Encryption**: ${{ steps.app_config.outputs.has_kms == 'true' && 'Enabled (auto-managed by Frigg)' || 'Disabled' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **VPC**: ${{ steps.app_config.outputs.has_vpc == 'true' && 'Enabled' || 'Disabled' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **User Config**: ${{ steps.app_config.outputs.use_user_config == 'true' && 'Enabled' || 'Disabled' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
