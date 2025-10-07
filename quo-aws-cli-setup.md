@@ -2,21 +2,83 @@
 
 This guide explains how to configure AWS CLI access to the Quo AWS account (973314620327) from your local machine.
 
-## Overview
-
-To access the Quo AWS account via CLI, you need to:
-
-1. Log into the Lefthook AWS account console
-2. Use CloudShell to assume a role in the Quo account
-3. Configure your local AWS CLI with the temporary credentials
-
 ## Prerequisites
 
-- Access to the Lefthook AWS account (757210591029) console
-- AWS CLI installed on your local machine
-- `jq` installed (for JSON parsing in CloudShell)
+- Access to the Lefthook AWS SSO portal: `https://lefthook.awsapps.com/start`
+- AWS CLI installed on your local machine (version 2.x recommended)
 
-## Step-by-Step Setup
+## Recommended Setup: AWS SSO (One-Time Configuration)
+
+This is the **easiest and most secure** method. Configure once, then just login when needed.
+
+### Step 1: Configure AWS SSO for Lefthook Account
+
+Run the SSO configuration wizard:
+
+```bash
+aws configure sso
+```
+
+When prompted, enter:
+
+- **SSO session name**: `lefthook` (or any name you prefer)
+- **SSO start URL**: `https://lefthook.awsapps.com/start`
+- **SSO region**: `us-east-1`
+- **SSO registration scopes**: (press Enter to use default)
+
+Your browser will open. Log in with your credentials and authorize the CLI.
+
+Then select:
+
+- **Account**: `757210591029` (Lefthook account)
+- **Role**: Choose the appropriate role (e.g., `PowerUserAccess`)
+- **CLI default region**: `us-east-1`
+- **CLI profile name**: `lefthook-sso` (or your preferred name)
+
+### Step 2: Login to AWS SSO
+
+Whenever your session expires, simply run:
+
+```bash
+aws sso login --profile lefthook-sso
+```
+
+This will open your browser for re-authentication and refresh your credentials automatically.
+
+### Step 3: Access Quo Account via Role Assumption
+
+Once logged into the Lefthook account via SSO, you can assume the role to access the Quo account.
+
+First, add this profile to your `~/.aws/config`:
+
+```ini
+[profile quo]
+role_arn = arn:aws:iam::973314620327:role/LefthookAssumedRole
+external_id = the-external-id-from-1password
+source_profile = lefthook-sso
+region = us-east-1
+```
+
+Now you can access the Quo account:
+
+```bash
+aws sts get-caller-identity --profile quo
+```
+
+**That's it!** No more manual credential management or CloudShell scripts.
+
+### Benefits of SSO Approach
+
+✅ **No manual token refresh** - SSO handles it automatically  
+✅ **Secure** - No long-lived credentials stored  
+✅ **Simple** - Just `aws sso login` when needed  
+✅ **Multi-account** - Easy to switch between accounts
+
+---
+
+## Alternative: Manual CloudShell Method (Legacy)
+
+⚠️ **Only use this if SSO is not available.** This method requires manual credential refresh every hour.
 
 ### Step 1: Log into Lefthook AWS Console
 
@@ -88,7 +150,7 @@ aws configure set aws_session_token ... --profile lefthook-quo
    aws configure set region us-east-1 --profile lefthook-quo
    ```
 
-### Step 6: Verify the Setup
+### Step 4: Verify the Setup (Manual Method)
 
 Test that the profile works:
 
@@ -101,67 +163,111 @@ You should see output showing:
 - **Account**: `973314620327` (Quo account)
 - **Arn**: `arn:aws:sts::973314620327:assumed-role/LefthookAssumedRole/quo-session`
 
-## Using the Profile
+---
 
-Once configured, you can use the `lefthook-quo` profile with any AWS CLI command:
+## Using the Profiles
+
+### With SSO (Recommended)
 
 ```bash
-# List S3 buckets
+# First, login if needed
+aws sso login --profile lefthook-sso
+
+# Then use the quo profile (automatically assumes the role)
+aws s3 ls --profile quo
+aws rds describe-db-instances --profile quo
+aws ec2 describe-instances --profile quo
+```
+
+### With Manual Credentials (Legacy)
+
+```bash
+# Use the manually configured profile
 aws s3 ls --profile lefthook-quo
-
-# Describe RDS instances
 aws rds describe-db-instances --profile lefthook-quo
-
-# List EC2 instances
 aws ec2 describe-instances --profile lefthook-quo
 ```
 
-## Important Notes
-
-### Credential Expiration
-
-⚠️ **The credentials expire after 1 hour**
-
-When your credentials expire, you'll see an error like:
-
-```
-An error occurred (ExpiredToken) when calling the ... operation
-```
-
-To refresh:
-
-1. Go back to Step 2 (CloudShell)
-2. Run the script again (Step 3)
-3. Run the three new `aws configure set` commands (Step 5)
-
-### Security Considerations
-
-- These are temporary credentials with limited permissions
-- The `external_id` acts as a security measure to prevent unauthorized access
-- Never commit the credentials to version control
-- The credentials automatically expire, reducing security risk
+---
 
 ## Troubleshooting
 
-### "Failed to assume role"
+### SSO Login Issues
+
+**Error: "SSO session has expired"**
+
+```bash
+# Simply re-login
+aws sso login --profile lefthook-sso
+```
+
+**Error: "The SSO session associated with this profile has expired"**
+
+```bash
+# Re-login to refresh
+aws sso login --profile lefthook-sso
+```
+
+**Browser doesn't open**
+
+- Copy the URL and code shown in the terminal
+- Open it manually in your browser
+- Enter the code when prompted
+
+### Manual Credential Issues
+
+**"Failed to assume role"**
 
 - Verify you're logged into the correct Lefthook AWS account
 - Check that the ROLE_ARN and EXTERNAL_ID are correct
 - Ensure your user has permission to assume the role
 
-### "The security token is expired"
+**"The security token is expired"** (Manual method only)
 
 - Run the CloudShell script again to get fresh credentials
 - Credentials expire after 1 hour and must be refreshed
 
-### "command not found: jq"
+**"command not found: jq"** (Manual method only)
 
 - CloudShell should have `jq` pre-installed
 - If missing, you can install it or parse the JSON manually
 
-## Alternative: Generate Console URL
+---
 
-If you need to access the AWS Console (not just CLI), you can use this extended script in CloudShell:
+## Quick Reference
+
+### SSO Method (Recommended)
+
+```bash
+# Initial setup (one-time)
+aws configure sso
+
+# Daily usage
+aws sso login --profile lefthook-sso
+aws s3 ls --profile quo
+
+# Profile config in ~/.aws/config
+[profile quo]
+role_arn = arn:aws:iam::973314620327:role/LefthookAssumedRole
+external_id = the-external-id-from-1password
+source_profile = lefthook-sso
+region = us-east-1
+```
+
+### Manual Method (Legacy)
+
+```bash
+# Login to AWS Console → CloudShell → Run script
+# Copy and run the three aws configure set commands
+# Use the profile
+aws s3 ls --profile lefthook-quo
+```
+
+---
+
+## Bonus: Generate Console URL for Quo Account
+
+If you need to access the Quo AWS Console (not just CLI), you can use this script in CloudShell:
 
 ```bash
 #!/bin/bash
