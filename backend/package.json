@@ -28,17 +28,17 @@
         "frigg:db:setup": "frigg db:setup"
     },
     "dependencies": {
-        "@friggframework/core": "^2.0.0-next.41",
+        "@friggframework/core": "2.0.0--canary.454.4c72357.0",
         "axios": "^1.6.0",
         "node-cache": "^5.1.2"
     },
     "devDependencies": {
         "@faker-js/faker": "^8.4.1",
-        "@friggframework/devtools": "^2.0.0-next.41",
-        "@friggframework/eslint-config": "^2.0.0-next.41",
-        "@friggframework/prettier-config": "^2.0.0-next.41",
-        "@friggframework/serverless-plugin": "^2.0.0-next.41",
-        "@friggframework/test": "^2.0.0-next.41",
+        "@friggframework/devtools": "2.0.0--canary.454.4c72357.0",
+        "@friggframework/eslint-config": "2.0.0--canary.454.4c72357.0",
+        "@friggframework/prettier-config": "2.0.0--canary.454.4c72357.0",
+        "@friggframework/serverless-plugin": "2.0.0--canary.454.4c72357.0",
+        "@friggframework/test": "2.0.0--canary.454.4c72357.0",
         "@types/node": "^22.1.0",
         "chai": "^4.5.0",
         "chai-http": "^4.4.0",

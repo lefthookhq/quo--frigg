@@ -16,7 +16,7 @@ class PipeDriveIntegration extends IntegrationBase {
         },
         modules: {
             pipedrive: {
-                definition: require('/Users/sean/Documents/GitHub/api-module-library/packages/needs-updating/pipedrive').Definition,
+                definition: require('/Users/danielklotz/projects/lefthook/api-module-library/packages/needs-updating/pipedrive').Definition,
             },
             quo: {
                 definition: require('../api-modules/quo').Definition,
@@ -393,14 +393,14 @@ class PipeDriveIntegration extends IntegrationBase {
 
             // Calculate basic statistics
             const totalDeals = deals.data?.length || 0;
-            const totalValue = deals.data?.reduce((sum, deal) => sum + (parseFloat(!) || 0), 0) || 0;
+            const totalValue = deals.data?.reduce((sum, deal) => sum + (parseFloat(deal.value) || 0), 0) || 0;
 
             const openDeals = deals.data?.filter(deal => deal.status === 'open') || [];
             const wonDeals = deals.data?.filter(deal => deal.status === 'won') || [];
             const lostDeals = deals.data?.filter(deal => deal.status === 'lost') || [];
 
-            const wonValue = wonDeals.reduce((sum, deal) => sum + (!) || 0), 0);
-            const openValue = openDeals.reduce((sum, deal) => sum + (!) || 0), 0);
+            const wonValue = wonDeals.reduce((sum, deal) => sum + (parseFloat(deal.value) || 0), 0);
+            const openValue = openDeals.reduce((sum, deal) => sum + (parseFloat(deal.value) || 0), 0);
 
             const stats = {
                 deals: {
@@ -419,9 +419,9 @@ class PipeDriveIntegration extends IntegrationBase {
                 },
                 activity: {
                     lastUpdated: Math.max(
-                        deals.data?.map(d => new Date(!).getTime()).max() || 0,
-                        persons.data?.map(p => new Date(!).getTime()).max() || 0,
-                        organizations.data?.map(o => new Date(!).getTime()).max() || 0
+                        ...(deals.data?.map(d => new Date(d.update_time || d.add_time).getTime()) || [0]),
+                        ...(persons.data?.map(p => new Date(p.update_time || p.add_time).getTime()) || [0]),
+                        ...(organizations.data?.map(o => new Date(o.update_time || o.add_time).getTime()) || [0])
                     ),
                 }
             };

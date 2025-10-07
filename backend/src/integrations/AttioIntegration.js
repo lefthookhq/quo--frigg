@@ -16,7 +16,7 @@ class AttioIntegration extends IntegrationBase {
         },
         modules: {
             attio: {
-                definition: require('/Users/sean/Documents/GitHub/api-module-library/packages/v1-ready/attio').Definition,
+                definition: require('/Users/danielklotz/projects/lefthook/api-module-library/packages/v1-ready/attio').Definition,
             },
             quo: {
                 definition: require('../api-modules/quo').Definition,
@@ -639,166 +639,168 @@ class AttioIntegration extends IntegrationBase {
                                 minimum: 1,
                                 maximum: 100,
                                 default: 10,
-                                filter: {
-                                    type: 'string',
-                                    title: 'Filter (JSON)',
-                                    description: 'Optional filter criteria in JSON format',
+                            },
+                            filter: {
+                                type: 'string',
+                                title: 'Filter (JSON)',
+                                description: 'Optional filter criteria in JSON format',
+                            },
+                        },
+                        required: [],
+                    },
+                    uiSchema: {
+                        type: 'VerticalLayout',
+                        elements: [
+                            {
+                                type: 'Control',
+                                scope: '#/properties/limit',
+                            },
+                            {
+                                type: 'Control',
+                                scope: '#/properties/maxCompanies',
+                            },
+                            {
+                                type: 'Control',
+                                scope: '#/properties/filter',
+                            },
+                        ],
+                    },
+                };
+            case 'SYNC_PEOPLE_TO_QUO':
+                return {
+                    jsonSchema: {
+                        type: 'object',
+                        properties: {
+                            limit: {
+                                type: 'number',
+                                title: 'Person Limit',
+                                description: 'Maximum people to retrieve for sync',
+                                minimum: 1,
+                                maximum: 1000,
+                                default: 50,
+                            },
+                            maxPeople: {
+                                type: 'number',
+                                title: 'Max People to Sync',
+                                description: 'Maximum people to actually sync',
+                                minimum: 1,
+                                maximum: 100,
+                                default: 10,
+                            },
+                            filter: {
+                                type: 'string',
+                                title: 'Filter (JSON)',
+                                description: 'Optional filter criteria in JSON format',
+                            },
+                        },
+                        required: [],
+                    },
+                    uiSchema: {
+                        type: 'VerticalLayout',
+                        elements: [
+                            {
+                                type: 'Control',
+                                scope: '#/properties/limit',
+                            },
+                            {
+                                type: 'Control',
+                                scope: '#/properties/maxPeople',
+                            },
+                            {
+                                type: 'Control',
+                                scope: '#/properties/filter',
+                            },
+                        ],
+                    },
+                };
+            case 'CREATE_ATTIO_RECORD':
+                return {
+                    jsonSchema: {
+                        type: 'object',
+                        properties: {
+                            objectType: {
+                                type: 'string',
+                                title: 'Object Type',
+                                description: 'Type of record to create',
+                                enum: ['company', 'person', 'opportunity', 'deal'],
+                                default: 'company',
+                            },
+                            attributes: {
+                                type: 'object',
+                                title: 'Attributes',
+                                description: 'Attributes for the record (JSON object)',
+                            },
+                        },
+                        required: ['objectType'],
+                    },
+                    uiSchema: {
+                        type: 'VerticalLayout',
+                        elements: [
+                            {
+                                type: 'Control',
+                                scope: '#/properties/objectType',
+                            },
+                            {
+                                type: 'Control',
+                                scope: '#/properties/attributes',
+                                options: {
+                                    format: 'textarea',
+                                    rows: 10,
                                 },
                             },
-                            required: [],
-                        },
-                        uiSchema: {
-                            type: 'VerticalLayout',
-                            elements: [
-                                {
-                                    type: 'Control',
-                                    scope: '#/properties/limit',
-                                },
-                                {
-                                    type: 'Control',
-                                    scope: '#/properties/maxCompanies',
-                                },
-                                {
-                                    type: 'Control',
-                                    scope: '#/properties/filter',
-                                },
-                            ],
-                        },
-                    };
-                    case 'SYNC_PEOPLE_TO_QUO':
-                    return {
-                        jsonSchema: {
-                            type: 'object',
-                            properties: {
-                                limit: {
-                                    type: 'number',
-                                    title: 'Person Limit',
-                                    description: 'Maximum people to retrieve for sync',
-                                    minimum: 1,
-                                    maximum: 1000,
-                                    default: 50,
-                                },
-                                maxPeople: {
-                                    type: 'number',
-                                    title: 'Max People to Sync',
-                                    description: 'Maximum people to actually sync',
-                                    minimum: 1,
-                                    maximum: 100,
-                                    default: 10,
-                                },
-                                filter: {
-                                    type: 'string',
-                                    title: 'Filter (JSON)',
-                                    description: 'Optional filter criteria in JSON format',
-                                },
+                        ],
+                    },
+                };
+            case 'SEARCH_ATTIO_RECORDS':
+                return {
+                    jsonSchema: {
+                        type: 'object',
+                        properties: {
+                            query: {
+                                type: 'string',
+                                title: 'Search Query',
+                                description: 'Search term or phrase',
+                                minLength: 1,
                             },
-                            required: [],
-                        },
-                        uiSchema: {
-                            type: 'VerticalLayout',
-                            elements: [
-                                {
-                                    type: 'Control',
-                                    scope: '#/properties/limit',
-                                },
-                                {
-                                    type: 'Control',
-                                    scope: '#/properties/maxPeople',
-                                },
-                                {
-                                    type: 'Control',
-                                    scope: '#/properties/filter',
-                                },
-                            ],
-                        },
-                    };
-                    case 'CREATE_ATTIO_RECORD':
-                    return {
-                        jsonSchema: {
-                            type: 'object',
-                            properties: {
-                                objectType: {
-                                    type: 'string',
-                                    title: 'Object Type',
-                                    description: 'Type of record to create',
-                                    enum: ['company', 'person', 'opportunity', 'deal'],
-                                    default: 'company',
-                                },
-                                attributes: {
-                                    type: 'object',
-                                    title: 'Attributes',
-                                    description: 'Attributes for the record (JSON object)',
-                                },
+                            objectType: {
+                                type: 'string',
+                                title: 'Object Type',
+                                description: 'Specific object type to search (leave empty for all)',
+                                enum: ['', 'company', 'person', 'opportunity', 'deal'],
                             },
-                            required: ['objectType'],
-                        },
-                        uiSchema: {
-                            type: 'VerticalLayout',
-                            elements: [
-                                {
-                                    type: 'Control',
-                                    scope: '#/properties/objectType',
-                                },
-                                {
-                                    type: 'Control',
-                                    scope: '#/properties/attributes',
-                                    options: {
-                                        format: 'textarea',
-                                        rows: 10,
-                                    },
-                                },
-                            ],
-                        },
-                    };
-                    case 'SEARCH_ATTIO_RECORDS':
-                    return {
-                        jsonSchema: {
-                            type: 'object',
-                            properties: {
-                                query: {
-                                    type: 'string',
-                                    title: 'Search Query',
-                                    description: 'Search term or phrase',
-                                    minLength: 1,
-                                },
-                                objectType: {
-                                    type: 'string',
-                                    title: 'Object Type',
-                                    description: 'Specific object type to search (leave empty for all)',
-                                    enum: ['', 'company', 'person', 'opportunity', 'deal'],
-                                },
-                                limit: {
-                                    type: 'number',
-                                    title: 'Result Limit',
-                                    description: 'Maximum number of results to return',
-                                    minimum: 1,
-                                    maximum: 100,
-                                    default: 20,
-                                },
+                            limit: {
+                                type: 'number',
+                                title: 'Result Limit',
+                                description: 'Maximum number of results to return',
+                                minimum: 1,
+                                maximum: 100,
+                                default: 20,
                             },
-                            required: ['query'],
                         },
-                        uiSchema: {
-                            type: 'VerticalLayout',
-                            elements: [
-                                {
-                                    type: 'Control',
-                                    scope: '#/properties/query',
-                                },
-                                {
-                                    type: 'Control',
-                                    scope: '#/properties/objectType',
-                                },
-                                {
-                                    type: 'Control',
-                                    scope: '#/properties/limit',
-                                },
-                            ],
-                        },
-                    };
-                }
+                        required: ['query'],
+                    },
+                    uiSchema: {
+                        type: 'VerticalLayout',
+                        elements: [
+                            {
+                                type: 'Control',
+                                scope: '#/properties/query',
+                            },
+                            {
+                                type: 'Control',
+                                scope: '#/properties/objectType',
+                            },
+                            {
+                                type: 'Control',
+                                scope: '#/properties/limit',
+                            },
+                        ],
+                    },
+                };
+            default:
                 return null;
         }
     }
+}
 
 module.exports = AttioIntegration;

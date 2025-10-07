@@ -9,34 +9,51 @@ class ScalingTestIntegration extends IntegrationBase {
 
         display: {
             label: 'Scaling Test Integration',
-            description: 'Integration for testing scalability using Quo API and Frigg Scale Test API',
+            description:
+                'Integration for testing scalability using Quo API and Frigg Scale Test API',
             category: 'Testing',
             detailsUrl: '',
             icon: '',
         },
         modules: {
             quo: {
-                definition: require('../../../api-modules/quo').Definition,
+                definition: require('../api-modules/quo').Definition,
             },
             scaleTest: {
                 definition: {
                     name: 'scale-test',
                     version: '1.0.0',
-                    API: require('/Users/sean/Documents/GitHub/api-module-library/packages/v1-ready/api-module-frigg-scale-test').FriggScaleTestAPI,
+                    API: require('/Users/danielklotz/projects/lefthook/api-module-library/packages/v1-ready/api-module-frigg-scale-test')
+                        .FriggScaleTestAPI,
                     getName: () => 'Frgg Scale Test API',
                     moduleName: 'scale-test',
                     modelName: 'ScaleTest',
                     requiredAuthMethods: {
                         getToken: async (api, params) => {
                             // For scale test API, use API key authentication
-                            const apiKey = params.data?.apiKey || params.data?.access_token;
+                            const apiKey =
+                                params.data?.apiKey ||
+                                params.data?.access_token;
                             return { access_token: apiKey };
                         },
-                        getEntityDetails: async (api, callbackParams, tokenResponse, userId) => {
+                        getEntityDetails: async (
+                            api,
+                            callbackParams,
+                            tokenResponse,
+                            userId,
+                        ) => {
                             const healthCheck = await api.health();
                             return {
-                                identifiers: { externalId: 'scale-test-account', user: userId },
-                                details: { name: 'Scale Test Account', status: healthCheck.ok ? 'healthy' : 'error' },
+                                identifiers: {
+                                    externalId: 'scale-test-account',
+                                    user: userId,
+                                },
+                                details: {
+                                    name: 'Scale Test Account',
+                                    status: healthCheck.ok
+                                        ? 'healthy'
+                                        : 'error',
+                                },
                             };
                         },
                         apiPropertiesToPersist: {
@@ -45,17 +62,20 @@ class ScalingTestIntegration extends IntegrationBase {
                         },
                         getCredentialDetails: async (api, userId) => {
                             return {
-                                identifiers: { externalId: 'scale-test-account', user: userId },
-                                details: {}
+                                identifiers: {
+                                    externalId: 'scale-test-account',
+                                    user: userId,
+                                },
+                                details: {},
                             };
                         },
                         testAuthRequest: async (api) => api.health(),
                     },
                     env: {
                         apiKey: process.env.SCALE_TEST_API_KEY,
-                    }
-                }
-            }
+                    },
+                },
+            },
         },
         routes: [
             {
@@ -100,14 +120,16 @@ class ScalingTestIntegration extends IntegrationBase {
                 type: 'USER_ACTION',
                 handler: this.runPerformanceTest,
                 title: 'Run Performance Test',
-                description: 'Execute a scalability performance test with Quo and Scale Test APIs',
+                description:
+                    'Execute a scalability performance test with Quo and Scale Test APIs',
                 userActionType: 'TEST',
             },
             SYNC_CONTACT_DATA: {
                 type: 'USER_ACTION',
                 handler: this.syncContactData,
                 title: 'Sync Contact Data',
-                description: 'Synchronize contact data between Quo and Scale Test systems',
+                description:
+                    'Synchronize contact data between Quo and Scale Test systems',
                 userActionType: 'DATA',
             },
         };
@@ -119,7 +141,10 @@ class ScalingTestIntegration extends IntegrationBase {
             res.json(health);
         } catch (error) {
             console.error('Health check failed:', error);
-            res.status(500).json({ error: 'Health check failed', details: error.message });
+            res.status(500).json({
+                error: 'Health check failed',
+                details: error.message,
+            });
         }
     }
 
@@ -130,7 +155,10 @@ class ScalingTestIntegration extends IntegrationBase {
             res.json(config);
         } catch (error) {
             console.error('Failed to get config:', error);
-            res.status(500).json({ error: 'Failed to get config', details: error.message });
+            res.status(500).json({
+                error: 'Failed to get config',
+                details: error.message,
+            });
         }
     }
 
@@ -147,7 +175,10 @@ class ScalingTestIntegration extends IntegrationBase {
             res.json(result);
         } catch (error) {
             console.error('Failed to list contacts:', error);
-            res.status(500).json({ error: 'Failed to list contacts', details: error.message });
+            res.status(500).json({
+                error: 'Failed to list contacts',
+                details: error.message,
+            });
         }
     }
 
@@ -166,7 +197,10 @@ class ScalingTestIntegration extends IntegrationBase {
             res.json(result);
         } catch (error) {
             console.error('Failed to list activities:', error);
-            res.status(500).json({ error: 'Failed to list activities', details: error.message });
+            res.status(500).json({
+                error: 'Failed to list activities',
+                details: error.message,
+            });
         }
     }
 
@@ -183,7 +217,7 @@ class ScalingTestIntegration extends IntegrationBase {
                     this.scaleTest.api.listContacts({
                         accountId: args.accountId || 'test-account',
                         limit: args.contactLimit || 10,
-                    })
+                    }),
                 );
             }
 
@@ -207,8 +241,12 @@ class ScalingTestIntegration extends IntegrationBase {
                     performanceMetrics: {
                         concurrentRequests: args.concurrentRequests || 10,
                         totalDurationMs: duration,
-                        avgResponseTimeMs: duration / (args.concurrentRequests || 10),
-                        totalContactsRetrieved: results.reduce((sum, result) => sum + result.items.length, 0),
+                        avgResponseTimeMs:
+                            duration / (args.concurrentRequests || 10),
+                        totalContactsRetrieved: results.reduce(
+                            (sum, result) => sum + result.items.length,
+                            0,
+                        ),
                         successRate: `${((results.length / promises.length) * 100).toFixed(1)}%`,
                     },
                     testResults: results.map((result, index) => ({
@@ -218,7 +256,7 @@ class ScalingTestIntegration extends IntegrationBase {
                     })),
                     quoTestResult,
                     timestamp: new Date().toISOString(),
-                }
+                },
             };
         } catch (error) {
             console.error('Performance test failed:', error);
@@ -238,7 +276,10 @@ class ScalingTestIntegration extends IntegrationBase {
             // Process and sync the data
             const syncResults = [];
 
-            for (const contact of scaleTestContacts.items.slice(0, args.maxContacts || 10)) {
+            for (const contact of scaleTestContacts.items.slice(
+                0,
+                args.maxContacts || 10,
+            )) {
                 try {
                     // Transform contact data for Quo (if Quo API is available)
                     let quoContactData = null;
@@ -253,7 +294,9 @@ class ScalingTestIntegration extends IntegrationBase {
                             email: contact.email,
                         },
                         quoData: quoContactData,
-                        syncStatus: quoContactData ? 'success' : 'quo_unavailable',
+                        syncStatus: quoContactData
+                            ? 'success'
+                            : 'quo_unavailable',
                         timestamp: new Date().toISOString(),
                     });
                 } catch (contactError) {
@@ -271,12 +314,13 @@ class ScalingTestIntegration extends IntegrationBase {
                 data: {
                     totalContactsProcessed: syncResults.length,
                     syncSummary: syncResults.reduce((summary, result) => {
-                        summary[result.syncStatus] = (summary[result.syncStatus] || 0) + 1;
+                        summary[result.syncStatus] =
+                            (summary[result.syncStatus] || 0) + 1;
                         return summary;
                     }, {}),
                     syncResults,
                     timestamp: new Date().toISOString(),
-                }
+                },
             };
         } catch (error) {
             console.error('Contact sync failed:', error);
@@ -326,7 +370,8 @@ class ScalingTestIntegration extends IntegrationBase {
             concurrentRequests: {
                 type: 'number',
                 title: 'Concurrent Requests',
-                description: 'Number of concurrent requests for performance testing',
+                description:
+                    'Number of concurrent requests for performance testing',
                 default: 10,
                 minimum: 1,
                 maximum: 100,
@@ -357,7 +402,8 @@ class ScalingTestIntegration extends IntegrationBase {
                             concurrentRequests: {
                                 type: 'number',
                                 title: 'Concurrent Requests',
-                                description: 'Number of concurrent requests to make',
+                                description:
+                                    'Number of concurrent requests to make',
                                 minimum: 1,
                                 maximum: 100,
                                 default: 10,
@@ -365,7 +411,8 @@ class ScalingTestIntegration extends IntegrationBase {
                             contactLimit: {
                                 type: 'number',
                                 title: 'Contact Limit',
-                                description: 'Maximum contacts to retrieve per request',
+                                description:
+                                    'Maximum contacts to retrieve per request',
                                 minimum: 1,
                                 maximum: 1000,
                                 default: 10,
@@ -404,7 +451,8 @@ class ScalingTestIntegration extends IntegrationBase {
                             limit: {
                                 type: 'number',
                                 title: 'Contact Limit',
-                                description: 'Maximum contacts to retrieve for sync',
+                                description:
+                                    'Maximum contacts to retrieve for sync',
                                 minimum: 1,
                                 maximum: 1000,
                                 default: 100,
@@ -412,7 +460,8 @@ class ScalingTestIntegration extends IntegrationBase {
                             maxContacts: {
                                 type: 'number',
                                 title: 'Max Contacts to Sync',
-                                description: 'Maximum contacts to actually sync',
+                                description:
+                                    'Maximum contacts to actually sync',
                                 minimum: 1,
                                 maximum: 100,
                                 default: 10,
@@ -420,7 +469,8 @@ class ScalingTestIntegration extends IntegrationBase {
                             updatedSince: {
                                 type: 'string',
                                 title: 'Updated Since',
-                                description: 'Only sync contacts updated since this date (ISO format)',
+                                description:
+                                    'Only sync contacts updated since this date (ISO format)',
                                 format: 'date-time',
                             },
                         },

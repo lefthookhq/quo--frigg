@@ -1,13 +1,19 @@
 const ScalingTestIntegration = require('./src/integrations/ScalingTestIntegration');
 const ZohoCRMIntegration = require('./src/integrations/ZohoCRMIntegration');
-const PipeDriveIntegration = require('./src/integrations/PipeDriveIntegration');
+// const PipeDriveIntegration = require('./src/integrations/PipeDriveIntegration');
 const AttioIntegration = require('./src/integrations/AttioIntegration');
 const AxisCareIntegration = require('./src/integrations/AxisCareIntegration');
 
 const appDefinition = {
     label: 'Quo Integrations',
     name: 'quo-integrations',
-    integrations: [ScalingTestIntegration, ZohoCRMIntegration, PipeDriveIntegration, AttioIntegration, AxisCareIntegration],
+    integrations: [
+        ScalingTestIntegration,
+        ZohoCRMIntegration,
+        // PipeDriveIntegration,
+        AttioIntegration,
+        AxisCareIntegration,
+    ],
     user: {
         usePassword: true,
     },
@@ -30,12 +36,8 @@ const appDefinition = {
         selfHeal: true, // Enable automatic fixing of misconfigurations
     },
     database: {
-        mongoDB: {
-            enable: false,
-        },
-        documentDB: {
-            enable: true,
-            tlsCAFile: './security/global-bundle.pem',
+        postgres: {
+            enable: true, // Can be enabled for PostgreSQL
         },
     },
     ssm: {
