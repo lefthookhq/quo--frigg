@@ -1,0 +1,57 @@
+const ScalingTestIntegration = require('./src/integrations/ScalingTestIntegration');
+const ZohoCRMIntegration = require('./src/integrations/ZohoCRMIntegration');
+const PipeDriveIntegration = require('./src/integrations/PipeDriveIntegration');
+const AttioIntegration = require('./src/integrations/AttioIntegration');
+const AxisCareIntegration = require('./src/integrations/AxisCareIntegration');
+
+const appDefinition = {
+    label: 'Quo Integrations',
+    name: 'quo-integrations',
+    integrations: [ScalingTestIntegration, ZohoCRMIntegration, PipeDriveIntegration, AttioIntegration, AxisCareIntegration],
+    user: {
+        usePassword: true,
+    },
+    encryption: {
+        fieldLevelEncryptionMethod: 'kms',
+        createResourceIfNoneFound: true,
+    },
+    vpc: {
+        enable: true,
+        management: 'discover', // 'create-new' | 'discover' | 'use-existing'
+        vpcId: null, // Optional: specific VPC ID to use when management is 'use-existing'
+        subnets: {
+            management: 'discover', // 'create' | 'discover' | 'use-existing'
+            ids: [], // Optional: specific subnet IDs when management is 'use-existing'
+        },
+        natGateway: {
+            management: 'createAndManage', // 'createAndManage' | 'discover' | 'useExisting'
+            id: null, // Optional: specific NAT Gateway ID when management is 'useExisting'
+        },
+        selfHeal: true, // Enable automatic fixing of misconfigurations
+    },
+    database: {
+        mongoDB: {
+            enable: false,
+        },
+        documentDB: {
+            enable: true,
+            tlsCAFile: './security/global-bundle.pem',
+        },
+    },
+    ssm: {
+        enable: false,
+    },
+    environment: {
+        // Core Configuration
+        BASE_URL: true,
+        DATABASE_URL: true,
+        REDIRECT_PATH: true,
+        // AWS Configuration
+        AWS_REGION: true,
+        S3_BUCKET_NAME: true,
+    },
+};
+
+module.exports = {
+    Definition: appDefinition,
+};

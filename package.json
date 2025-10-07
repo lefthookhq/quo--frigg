@@ -1,0 +1,16 @@
+{
+  "name": "quo-integrations-frigg",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "backend"
+  ],
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "scripts": {
+    "start": "cd backend && npm run frigg:start",
+    "docker:start": "cd backend && npm run docker:start",
+    "test": "npm test -workspaces"
+  }
+}
