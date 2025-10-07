@@ -24,7 +24,8 @@
         "docker:stop": "docker compose down",
         "knip": "knip",
         "frigg:start": "frigg start",
-        "frigg:deploy": "AWS_PROFILE=lefthook-nagaris frigg deploy"
+        "frigg:deploy": "AWS_PROFILE=lefthook-nagaris frigg deploy",
+        "frigg:db:setup": "frigg db:setup"
     },
     "dependencies": {
         "@friggframework/core": "^2.0.0-next.41",
