@@ -34,3 +34,6 @@ docker-compose.override.yml
 # Temporary files
 temp/
 *.tmp
+
+# Serverless
+.serverless/
