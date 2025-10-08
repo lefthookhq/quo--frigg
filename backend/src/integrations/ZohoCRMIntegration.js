@@ -2,7 +2,7 @@ const { IntegrationBase } = require('@friggframework/core');
 
 class ZohoCRMIntegration extends IntegrationBase {
     static Definition = {
-        name: 'zoho-crm',
+        name: 'zohocrm',
         version: '1.0.0',
         supportedVersions: ['1.0.0'],
         hasUserConfig: true,

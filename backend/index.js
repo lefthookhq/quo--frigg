@@ -19,7 +19,7 @@ const appDefinition = {
     },
     encryption: {
         fieldLevelEncryptionMethod: 'kms',
-        createResourceIfNoneFound: true,
+        createResourceIfNoneFound: false,
     },
     vpc: {
         enable: true,
