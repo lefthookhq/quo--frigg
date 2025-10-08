@@ -139,6 +139,11 @@ jobs:
           echo "Environment variables will be loaded from SSM with pattern: /{service}/{stage}/{VARIABLE_NAME}"
           npx frigg deploy --stage ${{ steps.stage.outputs.stage }} --verbose --use-ssm
 
+      - name: Setup Database with Prisma
+        run: |
+          echo "Setting up database with Prisma migrations..."
+          npx frigg db:setup --stage ${{ steps.stage.outputs.stage }}
+
       - name: Deployment Summary
         run: |
           echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
