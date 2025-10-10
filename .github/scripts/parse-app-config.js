@@ -30,9 +30,15 @@ function parseAppDefinition() {
             hasKMSEncryption: /fieldLevelEncryptionMethod:\s*['"]kms['"]/.test(appDefContent),
             hasVPC: /vpc:\s*{\s*enable:\s*true/.test(appDefContent),
             hasSSM: /ssm:\s*{\s*enable:\s*true/.test(appDefContent),
-            useUserConfig: /user:\s*{\s*password:\s*true/.test(appDefContent),
+            useUserConfig: /user:\s*{\s*usePassword:\s*true/.test(appDefContent),
             usesDocumentDB: /documentDB:\s*{\s*enable:\s*true/.test(appDefContent),
         };
+
+        // Extract app name
+        const nameMatch = appDefContent.match(/name:\s*['"]([^'"]+)['"]/);
+        if (nameMatch) {
+            config.appName = nameMatch[1];
+        }
         
         // Extract environment variables
         const envMatch = appDefContent.match(/environment:\s*{([^}]+)}/s);
@@ -60,19 +66,21 @@ function main() {
     
     // Output configuration for GitHub Actions
     console.log('App Definition Configuration:');
+    console.log(`App Name: ${config.appName || 'unknown'}`);
     console.log(`KMS Encryption: ${config.hasKMSEncryption}`);
     console.log(`VPC Enabled: ${config.hasVPC}`);
     console.log(`SSM Enabled: ${config.hasSSM}`);
     console.log(`User Config: ${config.useUserConfig}`);
     console.log(`Uses DocumentDB: ${config.usesDocumentDB}`);
-    
+
     if (config.environmentVars && config.environmentVars.length > 0) {
         console.log(`Environment Variables: ${config.environmentVars.join(', ')}`);
     }
-    
+
     // Set GitHub Actions outputs
     if (process.env.GITHUB_OUTPUT) {
         const outputs = [
+            `app_name=${config.appName || 'unknown'}`,
             `has_kms=${config.hasKMSEncryption}`,
             `has_vpc=${config.hasVPC}`,
             `has_ssm=${config.hasSSM}`,
@@ -81,7 +89,7 @@ function main() {
             `deployment_type=${config.hasSSM ? 'ssm' : 'direct'}`,
             `environment_vars=${(config.environmentVars || []).join(',')}`
         ];
-        
+
         fs.appendFileSync(process.env.GITHUB_OUTPUT, outputs.join('\n') + '\n');
     }
     

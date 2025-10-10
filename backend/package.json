@@ -29,6 +29,7 @@
     },
     "dependencies": {
         "@friggframework/core": "2.0.0--canary.454.4c72357.0",
+        "@friggframework/api-module-frigg-scale-test": "0.2.0-next.1",
         "axios": "^1.6.0",
         "node-cache": "^5.1.2"
     },

@@ -1,25 +1,25 @@
 const ScalingTestIntegration = require('./src/integrations/ScalingTestIntegration');
-const ZohoCRMIntegration = require('./src/integrations/ZohoCRMIntegration');
+// const ZohoCRMIntegration = require('./src/integrations/ZohoCRMIntegration');
 // const PipeDriveIntegration = require('./src/integrations/PipeDriveIntegration');
-const AttioIntegration = require('./src/integrations/AttioIntegration');
-const AxisCareIntegration = require('./src/integrations/AxisCareIntegration');
+// const AttioIntegration = require('./src/integrations/AttioIntegration');
+// const AxisCareIntegration = require('./src/integrations/AxisCareIntegration');
 
 const appDefinition = {
     label: 'Quo Integrations',
     name: 'quo-integrations',
     integrations: [
         ScalingTestIntegration,
-        ZohoCRMIntegration,
+        // ZohoCRMIntegration,
         // PipeDriveIntegration,
-        AttioIntegration,
-        AxisCareIntegration,
+        // AttioIntegration,
+        // AxisCareIntegration,
     ],
     user: {
         usePassword: true,
     },
     encryption: {
         fieldLevelEncryptionMethod: 'kms',
-        createResourceIfNoneFound: false,
+        createResourceIfNoneFound: true,
     },
     vpc: {
         enable: true,
@@ -38,6 +38,7 @@ const appDefinition = {
     database: {
         postgres: {
             enable: true, // Can be enabled for PostgreSQL
+            management: 'create-new', // 'create-new' | 'discover' | 'use-existing'
         },
     },
     ssm: {

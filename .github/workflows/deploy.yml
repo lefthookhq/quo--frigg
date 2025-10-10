@@ -14,6 +14,10 @@ on:
         - staging
         - production
 
+concurrency:
+  group: deploy-${{ github.event.inputs.stage || 'production' }}
+  cancel-in-progress: false  # Queue deployments, don't cancel
+
 jobs:
   deploy:
     name: Deploy to AWS
@@ -139,18 +143,241 @@ jobs:
           echo "Environment variables will be loaded from SSM with pattern: /{service}/{stage}/{VARIABLE_NAME}"
           npx frigg deploy --stage ${{ steps.stage.outputs.stage }} --verbose --use-ssm
 
-      - name: Setup Database with Prisma
+      - name: Run Database Migration via Lambda
+        id: db_migration
         run: |
-          echo "Setting up database with Prisma migrations..."
-          npx frigg db:setup --stage ${{ steps.stage.outputs.stage }}
+          set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+          # Ensure cleanup happens on exit
+          cleanup() {
+            rm -f response.json lambda-logs.txt
+          }
+          trap cleanup EXIT
+
+          echo "========================================="
+          echo "Running Database Migration via Lambda"
+          echo "========================================="
+
+          # Get app name from appDefinition
+          APP_NAME="${{ steps.app_config.outputs.app_name }}"
+          STAGE="${{ steps.stage.outputs.stage }}"
+          REGION="${{ secrets.AWS_REGION }}"
+
+          # Construct Lambda function name
+          FUNCTION_NAME="${APP_NAME}-${STAGE}-dbMigrate"
+
+          echo "App Name: $APP_NAME"
+          echo "Stage: $STAGE"
+          echo "Region: $REGION"
+          echo "Lambda Function: $FUNCTION_NAME"
+          echo ""
+
+          # Validate required variables
+          if [ -z "$APP_NAME" ] || [ "$APP_NAME" = "unknown" ]; then
+            echo "❌ Error: Failed to extract app name from appDefinition"
+            echo "   APP_NAME='$APP_NAME'"
+            echo "   Please verify backend/index.js contains 'name:' field"
+            exit 1
+          fi
+
+          if [ -z "$STAGE" ] || [ -z "$REGION" ]; then
+            echo "❌ Error: Required variables not set (STAGE='$STAGE', REGION='$REGION')"
+            exit 1
+          fi
+
+          # Validate Lambda function name format
+          if ! echo "$FUNCTION_NAME" | grep -qE '^[a-zA-Z0-9_-]+$'; then
+            echo "❌ Error: Invalid Lambda function name: '$FUNCTION_NAME'"
+            exit 1
+          fi
+
+          # Check if Lambda function exists
+          echo "Checking if Lambda function exists..."
+          if ! aws lambda get-function \
+            --function-name "$FUNCTION_NAME" \
+            --region "$REGION" > /dev/null 2>&1; then
+
+            echo "⚠️  Lambda function '$FUNCTION_NAME' does not exist yet"
+            echo "This is expected on first deployment"
+            echo "The migration will run on the next deployment after Lambda is created"
+            echo ""
+            echo "migration_status=skipped" >> $GITHUB_OUTPUT
+            echo "migration_message=First deployment - Lambda not yet created" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Wait for Lambda to be ready (eventual consistency)
+          echo "Waiting for Lambda function to be ready..."
+          MAX_RETRIES=5
+          RETRY_DELAY=5
+
+          for i in $(seq 1 $MAX_RETRIES); do
+            STATE=$(aws lambda get-function \
+              --function-name "$FUNCTION_NAME" \
+              --region "$REGION" \
+              --query 'Configuration.State' \
+              --output text 2>/dev/null || echo "Unknown")
+
+            if [ "$STATE" = "Active" ]; then
+              echo "✓ Lambda function is active and ready"
+              break
+            fi
+
+            if [ $i -eq $MAX_RETRIES ]; then
+              echo "❌ Lambda function did not become active after $MAX_RETRIES attempts"
+              echo "   Current state: $STATE"
+              exit 1
+            fi
+
+            echo "Lambda state: $STATE - waiting ${RETRY_DELAY}s (attempt $i/$MAX_RETRIES)..."
+            sleep $RETRY_DELAY
+          done
+
+          # Invoke the Lambda function with timeout
+          echo ""
+          echo "Invoking Lambda function..."
+          MIGRATION_START=$(date +%s)
+
+          set +e  # Temporarily disable exit on error for invoke command
+          timeout 1200 aws lambda invoke \
+            --function-name "$FUNCTION_NAME" \
+            --region "$REGION" \
+            --log-type Tail \
+            --query 'LogResult' \
+            --output text \
+            response.json 2>&1 | base64 --decode 2>/dev/null > lambda-logs.txt
+          INVOKE_EXIT_CODE=$?
+          set -e  # Re-enable exit on error
+
+          if [ $INVOKE_EXIT_CODE -ne 0 ]; then
+            if [ $INVOKE_EXIT_CODE -eq 124 ]; then
+              echo "❌ Lambda invocation timed out after 20 minutes"
+              exit 1
+            else
+              echo "⚠️  Lambda invocation completed with warnings (exit code: $INVOKE_EXIT_CODE)"
+            fi
+          fi
+
+          MIGRATION_END=$(date +%s)
+          MIGRATION_DURATION=$((MIGRATION_END - MIGRATION_START))
+
+          echo ""
+          echo "========================================="
+          echo "Lambda Response:"
+          echo "========================================="
+
+          # Validate response.json exists and is not empty
+          if [ ! -s response.json ]; then
+            echo "❌ Error: Lambda invocation did not return a response"
+            cat lambda-logs.txt 2>/dev/null || echo "No logs available"
+            exit 1
+          fi
+
+          # Display formatted response
+          if ! jq '.' response.json 2>/dev/null; then
+            echo "Warning: Response is not valid JSON"
+            cat response.json
+          fi
+          echo ""
+
+          # Parse response with proper error handling
+          if ! STATUS_CODE=$(jq -r '.statusCode // "unknown"' response.json 2>/dev/null); then
+            echo "❌ Error: Failed to parse Lambda response"
+            cat response.json
+            exit 1
+          fi
+
+          # Parse body (it's JSON-stringified in Lambda response)
+          BODY_JSON=$(jq -r '.body // ""' response.json 2>/dev/null || echo "")
+
+          if [ -n "$BODY_JSON" ]; then
+            SUCCESS=$(echo "$BODY_JSON" | jq -r '.success // false' 2>/dev/null || echo "false")
+          else
+            SUCCESS="false"
+          fi
+
+          echo "Status Code: $STATUS_CODE"
+          echo "Success: $SUCCESS"
+
+          # Extract migration details if successful
+          if [ "$SUCCESS" = "true" ]; then
+            DB_TYPE=$(echo "$BODY_JSON" | jq -r '.dbType // "unknown"')
+            MIGRATION_COMMAND=$(echo "$BODY_JSON" | jq -r '.migrationCommand // "unknown"')
+            MESSAGE=$(echo "$BODY_JSON" | jq -r '.message // "unknown"')
+
+            echo ""
+            echo "✅ Database Migration Completed Successfully"
+            echo "   Database Type: $DB_TYPE"
+            echo "   Migration Command: $MIGRATION_COMMAND"
+            echo "   Duration: ${MIGRATION_DURATION}s"
+            echo "   Message: $MESSAGE"
+            echo ""
+
+            # Export for summary
+            echo "db_type=$DB_TYPE" >> $GITHUB_OUTPUT
+            echo "migration_command=$MIGRATION_COMMAND" >> $GITHUB_OUTPUT
+            echo "migration_status=success" >> $GITHUB_OUTPUT
+            echo "migration_duration=${MIGRATION_DURATION}s" >> $GITHUB_OUTPUT
+
+            # Add CloudWatch logs link
+            echo "View full logs: https://${REGION}.console.aws.amazon.com/cloudwatch/home?region=${REGION}#logsV2:log-groups/log-group/\$252Faws\$252Flambda\$252F${FUNCTION_NAME}"
+
+          else
+            ERROR=$(echo "$BODY_JSON" | jq -r '.error // "Unknown error"')
+            ERROR_TYPE=$(echo "$BODY_JSON" | jq -r '.errorType // "Error"')
+
+            echo ""
+            echo "❌ Database Migration Failed"
+            echo "   Error Type: $ERROR_TYPE"
+            echo "   Error: $ERROR"
+            echo "   Duration: ${MIGRATION_DURATION}s"
+            echo ""
+            echo "📋 Troubleshooting Steps:"
+            echo "   1. Check CloudWatch logs (link below)"
+            echo "   2. Verify DATABASE_URL is set in Lambda environment"
+            echo "   3. Ensure VPC configuration allows database access"
+            echo "   4. Check Prisma schema files are included in deployment"
+            echo ""
+            echo "CloudWatch logs: https://${REGION}.console.aws.amazon.com/cloudwatch/home?region=${REGION}#logsV2:log-groups/log-group/\$252Faws\$252Flambda\$252F${FUNCTION_NAME}"
+            echo ""
+
+            echo "migration_status=failed" >> $GITHUB_OUTPUT
+            echo "migration_error=$ERROR" >> $GITHUB_OUTPUT
+
+            # Exit with error
+            exit 1
+          fi
+
+          # Cleanup is handled by trap
 
       - name: Deployment Summary
+        if: always()  # Run even if previous steps failed
         run: |
           echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "- **Stage**: ${{ steps.stage.outputs.stage }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Region**: ${{ secrets.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Deployment Type**: ${{ steps.app_config.outputs.deployment_type == 'ssm' && 'SSM Parameter Store' || 'Direct Environment Variables' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Database**: ${{ steps.app_config.outputs.uses_documentdb == 'true' && 'AWS DocumentDB (TLS enabled)' || 'MongoDB' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Database Migration" >> $GITHUB_STEP_SUMMARY
+
+          # Enhanced migration status
+          if [ "${{ steps.db_migration.outputs.migration_status }}" = "success" ]; then
+            echo "- **Status**: ✅ Success" >> $GITHUB_STEP_SUMMARY
+            echo "- **Database**: ${{ steps.db_migration.outputs.db_type }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Command**: ${{ steps.db_migration.outputs.migration_command }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Duration**: ${{ steps.db_migration.outputs.migration_duration }}" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ steps.db_migration.outputs.migration_status }}" = "skipped" ]; then
+            echo "- **Status**: ⏭️ Skipped (first deployment)" >> $GITHUB_STEP_SUMMARY
+            echo "- **Note**: Migration Lambda will be invoked on next deployment" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **Status**: ❌ Failed" >> $GITHUB_STEP_SUMMARY
+            if [ -n "${{ steps.db_migration.outputs.migration_error }}" ]; then
+              echo "- **Error**: ${{ steps.db_migration.outputs.migration_error }}" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **KMS Encryption**: ${{ steps.app_config.outputs.has_kms == 'true' && 'Enabled (auto-managed by Frigg)' || 'Disabled' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **VPC**: ${{ steps.app_config.outputs.has_vpc == 'true' && 'Enabled' || 'Disabled' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **User Config**: ${{ steps.app_config.outputs.use_user_config == 'true' && 'Enabled' || 'Disabled' }}" >> $GITHUB_STEP_SUMMARY

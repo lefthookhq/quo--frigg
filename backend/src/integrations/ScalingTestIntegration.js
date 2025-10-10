@@ -1,4 +1,5 @@
 const { IntegrationBase } = require('@friggframework/core');
+const crmScaleTest = require('@friggframework/api-module-frigg-scale-test');
 
 class ScalingTestIntegration extends IntegrationBase {
     static Definition = {
@@ -20,61 +21,7 @@ class ScalingTestIntegration extends IntegrationBase {
                 definition: require('../api-modules/quo').Definition,
             },
             scaleTest: {
-                definition: {
-                    name: 'scale-test',
-                    version: '1.0.0',
-                    API: require('/Users/danielklotz/projects/lefthook/api-module-library/packages/v1-ready/api-module-frigg-scale-test')
-                        .FriggScaleTestAPI,
-                    getName: () => 'Frgg Scale Test API',
-                    moduleName: 'scale-test',
-                    modelName: 'ScaleTest',
-                    requiredAuthMethods: {
-                        getToken: async (api, params) => {
-                            // For scale test API, use API key authentication
-                            const apiKey =
-                                params.data?.apiKey ||
-                                params.data?.access_token;
-                            return { access_token: apiKey };
-                        },
-                        getEntityDetails: async (
-                            api,
-                            callbackParams,
-                            tokenResponse,
-                            userId,
-                        ) => {
-                            const healthCheck = await api.health();
-                            return {
-                                identifiers: {
-                                    externalId: 'scale-test-account',
-                                    user: userId,
-                                },
-                                details: {
-                                    name: 'Scale Test Account',
-                                    status: healthCheck.ok
-                                        ? 'healthy'
-                                        : 'error',
-                                },
-                            };
-                        },
-                        apiPropertiesToPersist: {
-                            credential: ['access_token'],
-                            entity: [],
-                        },
-                        getCredentialDetails: async (api, userId) => {
-                            return {
-                                identifiers: {
-                                    externalId: 'scale-test-account',
-                                    user: userId,
-                                },
-                                details: {},
-                            };
-                        },
-                        testAuthRequest: async (api) => api.health(),
-                    },
-                    env: {
-                        apiKey: process.env.SCALE_TEST_API_KEY,
-                    },
-                },
+                definition: crmScaleTest.Definition,
             },
         },
         routes: [
