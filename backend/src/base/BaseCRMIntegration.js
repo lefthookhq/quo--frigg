@@ -6,7 +6,8 @@ const {
     UpdateProcessMetrics,
     GetProcess,
 } = require('@friggframework/core');
-const { createProcessRepository } = require('@friggframework/core/integrations/repositories/process-repository-factory');
+// const { createProcessRepository } = require('@friggframework/core/integrations/repositories/process-repository-factory');
+const createProcessRepository = {}; // use this for now because we dont have the new Frigg version yet
 
 const ProcessManager = require('./services/ProcessManager');
 const QueueManager = require('./services/QueueManager');
@@ -14,21 +15,21 @@ const SyncOrchestrator = require('./services/SyncOrchestrator');
 
 /**
  * BaseCRMIntegration
- * 
+ *
  * Base class for all CRM integrations targeting Quo (OpenPhone).
  * Provides automatic sync orchestration, process management, and queue handling.
- * 
+ *
  * Design Philosophy:
  * - Child classes implement 5 core methods
  * - Auto-generates sync events and handlers
  * - Service composition for testability
  * - Lazy initialization with factory methods for DI
- * 
+ *
  * Child classes must:
  * 1. Define static CRMConfig
  * 2. Implement 5 abstract methods
  * 3. Optionally override lifecycle and helper methods
- * 
+ *
  * @example
  * class ZohoCRMIntegration extends BaseCRMIntegration {
  *   static CRMConfig = {
@@ -36,7 +37,7 @@ const SyncOrchestrator = require('./services/SyncOrchestrator');
  *     syncConfig: { reverseChronological: true, initialBatchSize: 100 },
  *     queueConfig: { maxWorkers: 25 }
  *   };
- * 
+ *
  *   async fetchPersonPage(params) { / * ... * / }
  *   async transformPersonToQuo(person) { / * ... * / }
  *   // ... implement other 3 methods
@@ -160,8 +161,12 @@ class BaseCRMIntegration extends IntegrationBase {
 
         return new ProcessManager({
             createProcessUseCase: new CreateProcess({ processRepository }),
-            updateProcessStateUseCase: new UpdateProcessState({ processRepository }),
-            updateProcessMetricsUseCase: new UpdateProcessMetrics({ processRepository }),
+            updateProcessStateUseCase: new UpdateProcessState({
+                processRepository,
+            }),
+            updateProcessMetricsUseCase: new UpdateProcessMetrics({
+                processRepository,
+            }),
             getProcessUseCase: new GetProcess({ processRepository }),
         });
     }
@@ -216,7 +221,9 @@ class BaseCRMIntegration extends IntegrationBase {
      * @returns {Promise<Object>} Quo contact format
      */
     async transformPersonToQuo(person) {
-        throw new Error('transformPersonToQuo must be implemented by child class');
+        throw new Error(
+            'transformPersonToQuo must be implemented by child class',
+        );
     }
 
     /**
@@ -270,7 +277,9 @@ class BaseCRMIntegration extends IntegrationBase {
      * @returns {Promise<Object>}
      */
     async fetchPersonById(id) {
-        throw new Error('fetchPersonById must be implemented or override fetchPersonsByIds');
+        throw new Error(
+            'fetchPersonById must be implemented or override fetchPersonsByIds',
+        );
     }
 
     /**
@@ -282,7 +291,7 @@ class BaseCRMIntegration extends IntegrationBase {
     async fetchPersonsByIds(ids) {
         // Default: fetch one-by-one (inefficient, recommend overriding)
         const persons = await Promise.all(
-            ids.map(id => this.fetchPersonById(id))
+            ids.map((id) => this.fetchPersonById(id)),
         );
         return persons;
     }
@@ -312,9 +321,15 @@ class BaseCRMIntegration extends IntegrationBase {
         const needsConfig = await this.checkIfNeedsConfig();
 
         if (needsConfig) {
-            await this.updateIntegrationStatus.execute(integrationId, 'NEEDS_CONFIG');
+            await this.updateIntegrationStatus.execute(
+                integrationId,
+                'NEEDS_CONFIG',
+            );
         } else {
-            await this.updateIntegrationStatus.execute(integrationId, 'ENABLED');
+            await this.updateIntegrationStatus.execute(
+                integrationId,
+                'ENABLED',
+            );
             // Optionally trigger initial sync automatically
             // await this.startInitialSync({ integrationId });
         }
@@ -349,7 +364,10 @@ class BaseCRMIntegration extends IntegrationBase {
             uiSchema: {
                 type: 'VerticalLayout',
                 elements: [
-                    { type: 'Control', scope: '#/properties/triggerInitialSync' },
+                    {
+                        type: 'Control',
+                        scope: '#/properties/triggerInitialSync',
+                    },
                 ],
             },
         };
@@ -423,7 +441,14 @@ class BaseCRMIntegration extends IntegrationBase {
      * 3. Queue batch for processing
      */
     async fetchPersonPageHandler({ data }) {
-        const { processId, personObjectType, page, limit, modifiedSince, sortDesc } = data;
+        const {
+            processId,
+            personObjectType,
+            page,
+            limit,
+            modifiedSince,
+            sortDesc,
+        } = data;
 
         try {
             // Update state
@@ -445,8 +470,15 @@ class BaseCRMIntegration extends IntegrationBase {
                 const totalPages = Math.ceil(personPage.total / limit);
 
                 // Update process with total
-                await this.processManager.updateTotal(processId, personPage.total, totalPages);
-                await this.processManager.updateState(processId, 'QUEUING_PAGES');
+                await this.processManager.updateTotal(
+                    processId,
+                    personPage.total,
+                    totalPages,
+                );
+                await this.processManager.updateState(
+                    processId,
+                    'QUEUING_PAGES',
+                );
 
                 // Queue all remaining pages at once (fan-out)
                 await this.queueManager.fanOutPages({
@@ -455,18 +487,23 @@ class BaseCRMIntegration extends IntegrationBase {
                     totalPages,
                     startPage: 1,
                     limit,
-                    modifiedSince: modifiedSince ? new Date(modifiedSince) : null,
+                    modifiedSince: modifiedSince
+                        ? new Date(modifiedSince)
+                        : null,
                     sortDesc,
                 });
 
-                await this.processManager.updateState(processId, 'PROCESSING_BATCHES');
+                await this.processManager.updateState(
+                    processId,
+                    'PROCESSING_BATCHES',
+                );
             }
 
             // Queue this page's persons for processing
             if (persons.length > 0) {
                 await this.queueManager.queueProcessPersonBatch({
                     processId,
-                    crmPersonIds: persons.map(p => p.id),
+                    crmPersonIds: persons.map((p) => p.id),
                     page,
                     totalInPage: persons.length,
                 });
@@ -476,7 +513,6 @@ class BaseCRMIntegration extends IntegrationBase {
             if (page > 0 && persons.length < limit) {
                 await this.queueManager.queueCompleteSync(processId);
             }
-
         } catch (error) {
             console.error(`Error fetching page ${page}:`, error);
             await this.processManager.handleError(processId, error);
@@ -499,7 +535,7 @@ class BaseCRMIntegration extends IntegrationBase {
 
             // Transform to Quo format
             const quoContacts = await Promise.all(
-                persons.map(p => this.transformPersonToQuo(p))
+                persons.map((p) => this.transformPersonToQuo(p)),
             );
 
             // Bulk upsert to Quo
@@ -512,7 +548,6 @@ class BaseCRMIntegration extends IntegrationBase {
                 errors: results.errorCount,
                 errorDetails: results.errors,
             });
-
         } catch (error) {
             console.error(`Error processing batch:`, error);
             await this.processManager.updateMetrics(processId, {
@@ -641,4 +676,3 @@ class BaseCRMIntegration extends IntegrationBase {
 }
 
 module.exports = { BaseCRMIntegration };
-

@@ -89,8 +89,8 @@ class AxisCareIntegration extends BaseCRMIntegration {
         },
     };
 
-    constructor() {
-        super();
+    constructor(params) {
+        super(params);
 
         // Add existing events (backward compatibility)
         this.events = {

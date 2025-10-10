@@ -17,6 +17,19 @@ const Definition = {
             }
             return { access_token: apiKey };
         },
+        setAuthParams: async (api, params) => {
+            // For API key authentication, set the key on the API instance
+            // params IS the data object, so access apiKey directly
+            const apiKey = params.apiKey || params.access_token;
+            console.log('[Quo setAuthParams] Received params:', JSON.stringify(params, null, 2));
+            console.log('[Quo setAuthParams] Using apiKey:', apiKey);
+            if (!apiKey) {
+                throw new Error('API key is required for Quo authentication');
+            }
+            api.setApiKey(apiKey);
+            console.log('[Quo setAuthParams] API key set on API instance');
+            return { access_token: apiKey };
+        },
         getEntityDetails: async (api, callbackParams, tokenResponse, userId) => {
             try {
                 // Get the first user as a way to validate the connection

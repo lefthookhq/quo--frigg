@@ -16,6 +16,7 @@ const appDefinition = {
     ],
     user: {
         usePassword: true,
+        individualUserRequired: true,
     },
     encryption: {
         fieldLevelEncryptionMethod: 'kms',
