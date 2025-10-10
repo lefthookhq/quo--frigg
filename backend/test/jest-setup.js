@@ -11,10 +11,6 @@ global.console = {
 
 process.env.NODE_ENV = 'test';
 process.env.BASE_URL = 'https://test.example.com';
-process.env.FRONTIFY_CLIENT_ID = 'test-frontify-client-id';
-process.env.FRONTIFY_CLIENT_SECRET = 'test-frontify-secret';
-process.env.ASANA_CLIENT_ID = 'test-asana-client-id';
-process.env.ASANA_CLIENT_SECRET = 'test-asana-secret';
 process.env.AWS_ACCESS_KEY_ID = 'test-aws-key';
 process.env.AWS_SECRET_ACCESS_KEY = 'test-aws-secret';
 process.env.AWS_REGION = 'us-east-1';
@@ -49,9 +45,9 @@ jest.mock('@friggframework/core', () => ({
             this.events = {};
         }
     },
-    Entity: class Entity {},
-    UserModel: class UserModel {},
-    IntegrationModel: class IntegrationModel {},
+    Entity: class Entity { },
+    UserModel: class UserModel { },
+    IntegrationModel: class IntegrationModel { },
     createFriggBackend: jest.fn(() => ({
         moduleFactory: {
             getInstanceFromTypeName: jest.fn(),
@@ -71,26 +67,8 @@ jest.mock('@friggframework/core', () => ({
     },
 }));
 
-jest.mock('@friggframework/api-module-asana', () => ({
-    Definition: {
-        name: 'asana',
-        version: '1.0.0',
-        env: {
-            redirect_uri: 'https://test.example.com/auth/redirect',
-        },
-    },
-    Api: jest.fn(),
-    Config: {},
-}));
-
-jest.mock('@friggframework/api-module-frontify', () => ({
-    Definition: {
-        name: 'frontify',
-        version: '1.0.0',
-    },
-    Api: jest.fn(),
-    Config: {},
-}));
+// Removed mocks for non-existent modules (@friggframework/api-module-asana, @friggframework/api-module-frontify)
+// These modules don't exist in the monorepo and were causing test failures
 
 global.fetch = jest.fn(() =>
     Promise.resolve({
