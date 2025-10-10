@@ -18,11 +18,11 @@ const appDefinition = {
         usePassword: true,
     },
     encryption: {
-        fieldLevelEncryptionMethod: 'kms',
+        fieldLevelEncryptionMethod: 'aes', // Use 'aes' for local dev, 'kms' for production
         createResourceIfNoneFound: true,
     },
     vpc: {
-        enable: true,
+        enable: false, // Disable VPC for local development
         management: 'discover', // 'create-new' | 'discover' | 'use-existing'
         vpcId: null, // Optional: specific VPC ID to use when management is 'use-existing'
         subnets: {
