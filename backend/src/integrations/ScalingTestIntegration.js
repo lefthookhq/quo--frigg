@@ -1,7 +1,14 @@
-const { IntegrationBase } = require('@friggframework/core');
+const { BaseCRMIntegration } = require('../base/BaseCRMIntegration');
+const { Definition: QuoDefinition } = require('../api-modules/quo/definition');
 const crmScaleTest = require('@friggframework/api-module-frigg-scale-test');
 
-class ScalingTestIntegration extends IntegrationBase {
+/**
+ * ScalingTestIntegration - Refactored to extend BaseCRMIntegration
+ *
+ * Test harness integration for validating BaseCRMIntegration scalability and performance.
+ * Generates synthetic data for load testing.
+ */
+class ScalingTestIntegration extends BaseCRMIntegration {
     static Definition = {
         name: 'scalingtest',
         version: '1.0.0',
@@ -11,442 +18,189 @@ class ScalingTestIntegration extends IntegrationBase {
         display: {
             label: 'Scaling Test Integration',
             description:
-                'Integration for testing scalability using Quo API and Frigg Scale Test API',
+                'Integration for testing scalability using Quo API and synthetic data',
             category: 'Testing',
             detailsUrl: '',
             icon: '',
         },
         modules: {
-            quo: {
-                definition: require('../api-modules/quo').Definition,
-            },
-            scaleTest: {
+            quo: { definition: QuoDefinition },
+            'scale-test': {
                 definition: crmScaleTest.Definition,
             },
         },
-        routes: [
-            {
-                path: '/scale-test/health',
-                method: 'GET',
-                event: 'SCALE_TEST_HEALTH_CHECK',
-            },
-            {
-                path: '/scale-test/config',
-                method: 'GET',
-                event: 'GET_SCALE_TEST_CONFIG',
-            },
-            {
-                path: '/scale-test/contacts',
-                method: 'GET',
-                event: 'LIST_SCALE_TEST_CONTACTS',
-            },
-            {
-                path: '/scale-test/activities',
-                method: 'GET',
-                event: 'LIST_SCALE_TEST_ACTIVITIES',
-            },
-        ],
+        routes: [],
     };
 
-    constructor() {
-        super();
+    /**
+     * CRM Configuration - Optimized for scale testing
+     */
+    static CRMConfig = {
+        personObjectTypes: [
+            { crmObjectName: 'Contact', quoContactType: 'contact' },
+        ],
+        syncConfig: {
+            reverseChronological: true,
+            initialBatchSize: 500, // Large batches for scale testing
+            ongoingBatchSize: 250,
+            supportsWebhooks: true, // Simulate webhook capability
+            pollIntervalMinutes: 5, // Frequent polling for testing
+        },
+        queueConfig: {
+            maxWorkers: 100, // High concurrency for scale testing
+            provisioned: 50,
+            maxConcurrency: 500,
+            batchSize: 10,
+            timeout: 300,
+        },
+    };
+
+    constructor(params) {
+        super(params);
         this.events = {
-            SCALE_TEST_HEALTH_CHECK: {
-                handler: this.checkHealth,
-            },
-            GET_SCALE_TEST_CONFIG: {
-                handler: this.getConfig,
-            },
-            LIST_SCALE_TEST_CONTACTS: {
-                handler: this.listContacts,
-            },
-            LIST_SCALE_TEST_ACTIVITIES: {
-                handler: this.listActivities,
-            },
-            RUN_SCALE_PERFORMANCE_TEST: {
-                type: 'USER_ACTION',
-                handler: this.runPerformanceTest,
-                title: 'Run Performance Test',
-                description:
-                    'Execute a scalability performance test with Quo and Scale Test APIs',
-                userActionType: 'TEST',
-            },
-            SYNC_CONTACT_DATA: {
-                type: 'USER_ACTION',
-                handler: this.syncContactData,
-                title: 'Sync Contact Data',
-                description:
-                    'Synchronize contact data between Quo and Scale Test systems',
-                userActionType: 'DATA',
-            },
+            ...this.events,
+            // Test-specific events could go here
         };
     }
 
-    async checkHealth({ req, res }) {
+    // ============================================================================
+    // REQUIRED METHODS - BaseCRMIntegration Abstract Methods
+    // ============================================================================
+
+    /**
+     * Fetch a page of synthetic contacts for testing
+     * @param {Object} params
+     * @returns {Promise<{data: Array, total: number, hasMore: boolean}>}
+     */
+    async fetchPersonPage({
+        objectType,
+        page,
+        limit,
+        modifiedSince,
+        sortDesc = true,
+    }) {
         try {
-            const health = await this.scaleTest.api.health();
-            res.json(health);
-        } catch (error) {
-            console.error('Health check failed:', error);
-            res.status(500).json({
-                error: 'Health check failed',
-                details: error.message,
-            });
-        }
-    }
+            // Generate synthetic data for testing
+            const totalRecords = 10000; // Simulate 10k records for testing
+            const start = page * limit;
+            const end = Math.min(start + limit, totalRecords);
 
-    async getConfig({ req, res }) {
-        try {
-            const accountId = req.query.accountId || 'default-account';
-            const config = await this.scaleTest.api.getConfig(accountId);
-            res.json(config);
-        } catch (error) {
-            console.error('Failed to get config:', error);
-            res.status(500).json({
-                error: 'Failed to get config',
-                details: error.message,
-            });
-        }
-    }
-
-    async listContacts({ req, res }) {
-        try {
-            const params = {
-                accountId: req.query.accountId || 'default-account',
-                limit: req.query.limit ? parseInt(req.query.limit) : 50,
-                cursor: req.query.cursor,
-                updatedSince: req.query.updatedSince,
-            };
-
-            const result = await this.scaleTest.api.listContacts(params);
-            res.json(result);
-        } catch (error) {
-            console.error('Failed to list contacts:', error);
-            res.status(500).json({
-                error: 'Failed to list contacts',
-                details: error.message,
-            });
-        }
-    }
-
-    async listActivities({ req, res }) {
-        try {
-            const params = {
-                accountId: req.query.accountId || 'default-account',
-                limit: req.query.limit ? parseInt(req.query.limit) : 50,
-                cursor: req.query.cursor,
-                updatedSince: req.query.updatedSince,
-                type: req.query.type,
-                contactId: req.query.contactId,
-            };
-
-            const result = await this.scaleTest.api.listActivities(params);
-            res.json(result);
-        } catch (error) {
-            console.error('Failed to list activities:', error);
-            res.status(500).json({
-                error: 'Failed to list activities',
-                details: error.message,
-            });
-        }
-    }
-
-    async runPerformanceTest(args) {
-        try {
-            const startTime = Date.now();
-
-            // Simulate a performance test by making concurrent requests
-            const promises = [];
-
-            // Test scaling by listing contacts with various parameters
-            for (let i = 0; i < (args.concurrentRequests || 10); i++) {
-                promises.push(
-                    this.scaleTest.api.listContacts({
-                        accountId: args.accountId || 'test-account',
-                        limit: args.contactLimit || 10,
-                    }),
-                );
-            }
-
-            const results = await Promise.all(promises);
-            const endTime = Date.now();
-            const duration = endTime - startTime;
-
-            // Also test Quo API if available
-            let quoTestResult = null;
-            if (this.quo?.api) {
-                try {
-                    // Test a simple Quo API call if available
-                    quoTestResult = await this.testQuoAPICall();
-                } catch (quoError) {
-                    console.warn('Quo API test failed:', quoError.message);
-                }
+            const data = [];
+            for (let i = start; i < end; i++) {
+                data.push(this.generateSyntheticContact(i));
             }
 
             return {
-                data: {
-                    performanceMetrics: {
-                        concurrentRequests: args.concurrentRequests || 10,
-                        totalDurationMs: duration,
-                        avgResponseTimeMs:
-                            duration / (args.concurrentRequests || 10),
-                        totalContactsRetrieved: results.reduce(
-                            (sum, result) => sum + result.items.length,
-                            0,
-                        ),
-                        successRate: `${((results.length / promises.length) * 100).toFixed(1)}%`,
-                    },
-                    testResults: results.map((result, index) => ({
-                        requestIndex: index + 1,
-                        contactsReturned: result.items.length,
-                        nextCursor: result.nextCursor,
-                    })),
-                    quoTestResult,
-                    timestamp: new Date().toISOString(),
-                },
+                data,
+                total: totalRecords,
+                hasMore: end < totalRecords,
             };
         } catch (error) {
-            console.error('Performance test failed:', error);
-            throw new Error(`Performance test failed: ${error.message}`);
+            console.error(`Error fetching ${objectType} page ${page}:`, error);
+            throw error;
         }
     }
 
-    async syncContactData(args) {
-        try {
-            // First, get contacts from Scale Test API
-            const scaleTestContacts = await this.scaleTest.api.listContacts({
-                accountId: args.accountId || 'default-account',
-                limit: args.limit || 100,
-                updatedSince: args.updatedSince,
-            });
+    /**
+     * Transform synthetic contact to Quo format
+     * @param {Object} contact - Synthetic contact
+     * @returns {Promise<Object>} Quo contact format
+     */
+    async transformPersonToQuo(contact) {
+        return {
+            externalId: String(contact.id),
+            source: 'scalingtest',
+            defaultFields: {
+                firstName: contact.first_name,
+                lastName: contact.last_name,
+                company: contact.company,
+                phoneNumbers: contact.phones.map((p) => ({
+                    name: p.type,
+                    value: p.number,
+                    primary: p.primary,
+                })),
+                emails: contact.emails.map((e) => ({
+                    name: e.type,
+                    value: e.address,
+                    primary: e.primary,
+                })),
+            },
+            customFields: {
+                crmId: contact.id,
+                crmType: 'scalingtest',
+                testBatch: contact.batch_id,
+                generatedAt: contact.created_at,
+            },
+        };
+    }
 
-            // Process and sync the data
-            const syncResults = [];
+    /**
+     * Log SMS - no-op for test integration
+     */
+    async logSMSToActivity(activity) {
+        console.log(
+            'ScalingTest: SMS logged (simulated)',
+            activity.contactExternalId,
+        );
+    }
 
-            for (const contact of scaleTestContacts.items.slice(
-                0,
-                args.maxContacts || 10,
-            )) {
-                try {
-                    // Transform contact data for Quo (if Quo API is available)
-                    let quoContactData = null;
-                    if (this.quo?.api) {
-                        quoContactData = await this.syncContactToQuo(contact);
-                    }
+    /**
+     * Log call - no-op for test integration
+     */
+    async logCallToActivity(activity) {
+        console.log(
+            'ScalingTest: Call logged (simulated)',
+            activity.contactExternalId,
+        );
+    }
 
-                    syncResults.push({
-                        originalContact: {
-                            id: contact.id,
-                            name: contact.name,
-                            email: contact.email,
-                        },
-                        quoData: quoContactData,
-                        syncStatus: quoContactData
-                            ? 'success'
-                            : 'quo_unavailable',
-                        timestamp: new Date().toISOString(),
-                    });
-                } catch (contactError) {
-                    syncResults.push({
-                        originalContact: contact,
-                        error: contactError.message,
-                        syncStatus: 'error',
-                        timestamp: new Date().toISOString(),
-                    });
-                }
-            }
+    /**
+     * Setup webhooks - simulate webhook registration
+     */
+    async setupWebhooks() {
+        console.log('ScalingTest: Webhooks configured (simulated)');
+    }
 
-            return {
-                label: 'Contact Sync Results',
-                data: {
-                    totalContactsProcessed: syncResults.length,
-                    syncSummary: syncResults.reduce((summary, result) => {
-                        summary[result.syncStatus] =
-                            (summary[result.syncStatus] || 0) + 1;
-                        return summary;
-                    }, {}),
-                    syncResults,
-                    timestamp: new Date().toISOString(),
+    // ============================================================================
+    // TEST HELPER METHODS
+    // ============================================================================
+
+    /**
+     * Generate synthetic contact for testing
+     * @param {number} index - Contact index
+     * @returns {Object} Synthetic contact
+     */
+    generateSyntheticContact(index) {
+        return {
+            id: index + 1,
+            first_name: `Test${index}`,
+            last_name: `Contact${index}`,
+            company: `Company ${Math.floor(index / 10)}`,
+            emails: [
+                {
+                    type: 'work',
+                    address: `test${index}@example.com`,
+                    primary: true,
                 },
-            };
-        } catch (error) {
-            console.error('Contact sync failed:', error);
-            throw new Error(`Contact sync failed: ${error.message}`);
-        }
-    }
-
-    async testQuoAPICall() {
-        // Placeholder for testing Quo API - implement specific Quo API calls as needed
-        return {
-            status: 'success',
-            message: 'Quo API call successful (placeholder)',
-            timestamp: new Date().toISOString(),
+            ],
+            phones: [
+                {
+                    type: 'work',
+                    number: `555-${String(index).padStart(4, '0')}`,
+                    primary: true,
+                },
+            ],
+            batch_id: Math.floor(index / 100),
+            created_at: new Date().toISOString(),
         };
     }
 
-    async syncContactToQuo(contact) {
-        // Placeholder for syncing contact to Quo - implement specific Quo API calls as needed
-        return {
-            quoId: `quo-${contact.id}`,
-            name: contact.name,
-            email: contact.email,
-            syncStatus: 'created',
-            timestamp: new Date().toISOString(),
-        };
+    async fetchPersonById(id) {
+        return this.generateSyntheticContact(parseInt(id) - 1);
     }
 
-    async onCreate(params) {
-        this.record.status = 'ENABLED';
-        await this.record.save();
-        return this.record;
-    }
-
-    async onUpdate(params) {
-        await this.record.save();
-        return this.validateConfig();
-    }
-
-    async getConfigOptions() {
-        return {
-            accountId: {
-                type: 'string',
-                title: 'Account ID',
-                description: 'Default account ID for scaling tests',
-                default: 'default-account',
-            },
-            concurrentRequests: {
-                type: 'number',
-                title: 'Concurrent Requests',
-                description:
-                    'Number of concurrent requests for performance testing',
-                default: 10,
-                minimum: 1,
-                maximum: 100,
-            },
-            maxContacts: {
-                type: 'number',
-                title: 'Max Contacts to Sync',
-                description: 'Maximum number of contacts to sync per operation',
-                default: 10,
-                minimum: 1,
-                maximum: 1000,
-            },
-        };
-    }
-
-    async getActionOptions({ actionId, data }) {
-        switch (actionId) {
-            case 'RUN_SCALE_PERFORMANCE_TEST':
-                return {
-                    jsonSchema: {
-                        type: 'object',
-                        properties: {
-                            accountId: {
-                                type: 'string',
-                                title: 'Account ID',
-                                description: 'Account ID for the test',
-                            },
-                            concurrentRequests: {
-                                type: 'number',
-                                title: 'Concurrent Requests',
-                                description:
-                                    'Number of concurrent requests to make',
-                                minimum: 1,
-                                maximum: 100,
-                                default: 10,
-                            },
-                            contactLimit: {
-                                type: 'number',
-                                title: 'Contact Limit',
-                                description:
-                                    'Maximum contacts to retrieve per request',
-                                minimum: 1,
-                                maximum: 1000,
-                                default: 10,
-                            },
-                        },
-                        required: [],
-                    },
-                    uiSchema: {
-                        type: 'VerticalLayout',
-                        elements: [
-                            {
-                                type: 'Control',
-                                scope: '#/properties/accountId',
-                            },
-                            {
-                                type: 'Control',
-                                scope: '#/properties/concurrentRequests',
-                            },
-                            {
-                                type: 'Control',
-                                scope: '#/properties/contactLimit',
-                            },
-                        ],
-                    },
-                };
-            case 'SYNC_CONTACT_DATA':
-                return {
-                    jsonSchema: {
-                        type: 'object',
-                        properties: {
-                            accountId: {
-                                type: 'string',
-                                title: 'Account ID',
-                                description: 'Account ID for contact sync',
-                            },
-                            limit: {
-                                type: 'number',
-                                title: 'Contact Limit',
-                                description:
-                                    'Maximum contacts to retrieve for sync',
-                                minimum: 1,
-                                maximum: 1000,
-                                default: 100,
-                            },
-                            maxContacts: {
-                                type: 'number',
-                                title: 'Max Contacts to Sync',
-                                description:
-                                    'Maximum contacts to actually sync',
-                                minimum: 1,
-                                maximum: 100,
-                                default: 10,
-                            },
-                            updatedSince: {
-                                type: 'string',
-                                title: 'Updated Since',
-                                description:
-                                    'Only sync contacts updated since this date (ISO format)',
-                                format: 'date-time',
-                            },
-                        },
-                        required: [],
-                    },
-                    uiSchema: {
-                        type: 'VerticalLayout',
-                        elements: [
-                            {
-                                type: 'Control',
-                                scope: '#/properties/accountId',
-                            },
-                            {
-                                type: 'Control',
-                                scope: '#/properties/limit',
-                            },
-                            {
-                                type: 'Control',
-                                scope: '#/properties/maxContacts',
-                            },
-                            {
-                                type: 'Control',
-                                scope: '#/properties/updatedSince',
-                            },
-                        ],
-                    },
-                };
-        }
-        return null;
+    async fetchPersonsByIds(ids) {
+        return ids.map((id) => this.generateSyntheticContact(parseInt(id) - 1));
     }
 }
 

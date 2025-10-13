@@ -1,16 +1,24 @@
-const { ApiKeyRequester } = require('@friggframework/core');
+const { ApiKeyRequester, get } = require('@friggframework/core');
 
 class Api extends ApiKeyRequester {
     constructor(params) {
         super(params);
-        this.baseUrl = 'https://api.openphone.com';
+        this.baseUrl = 'https://dev-public-api.openphone.dev'; //'https://api.openphone.com';
 
         // OpenPhone uses 'Authorization' header for API key
         this.API_KEY_NAME = 'Authorization';
 
-        // Set API key if provided
-        if (params.access_token || params.api_key) {
-            this.setApiKey(params.access_token || params.api_key);
+        let apiKey;
+        try {
+            apiKey = get(params, 'access_token');
+        } catch (error) {
+            apiKey = get(params, 'api_key');
+        }
+
+        this.access_token = apiKey;
+
+        if (this.access_token) {
+            this.setApiKey(this.access_token);
         }
 
         this.URLs = {
@@ -36,7 +44,8 @@ class Api extends ApiKeyRequester {
 
             // Phone number endpoints
             phoneNumbers: '/v1/phone-numbers',
-            phoneNumberById: (phoneNumberId) => `/v1/phone-numbers/${phoneNumberId}`,
+            phoneNumberById: (phoneNumberId) =>
+                `/v1/phone-numbers/${phoneNumberId}`,
 
             // User endpoints
             users: '/v1/users',

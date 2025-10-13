@@ -16,6 +16,7 @@ const appDefinition = {
     ],
     user: {
         usePassword: true,
+        individualUserRequired: true,
     },
     encryption: {
         fieldLevelEncryptionMethod: 'aes', // Use 'aes' for local dev, 'kms' for production
