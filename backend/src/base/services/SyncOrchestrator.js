@@ -60,6 +60,14 @@ class SyncOrchestrator {
             throw new Error('No personObjectTypes configured for sync');
         }
 
+        // Defensive: Resolve userId from multiple sources
+        const userId = integration.userId || integration.record?.userId || integration.id;
+        if (!userId) {
+            throw new Error(
+                `Cannot start sync: userId not available on integration ${integrationId}`
+            );
+        }
+
         const processIds = [];
         const syncConfig = integration.constructor.CRMConfig.syncConfig;
 
@@ -68,7 +76,7 @@ class SyncOrchestrator {
             // Create sync process
             const process = await this.processManager.createSyncProcess({
                 integrationId,
-                userId: integration.userId,
+                userId,
                 syncType: 'INITIAL',
                 personObjectType: personType.crmObjectName,
                 state: 'INITIALIZING',
@@ -111,6 +119,14 @@ class SyncOrchestrator {
             throw new Error('No personObjectTypes configured for sync');
         }
 
+        // Defensive: Resolve userId from multiple sources
+        const userId = integration.userId || integration.record?.userId || integration.id;
+        if (!userId) {
+            throw new Error(
+                `Cannot start sync: userId not available on integration ${integrationId}`
+            );
+        }
+
         // If no lastSyncTime provided, try to get it from previous sync
         if (!lastSyncTime) {
             lastSyncTime = await this.getLastSyncTime(integrationId);
@@ -123,7 +139,7 @@ class SyncOrchestrator {
             // Create ongoing sync process
             const process = await this.processManager.createSyncProcess({
                 integrationId,
-                userId: integration.userId,
+                userId,
                 syncType: 'ONGOING',
                 personObjectType: personType.crmObjectName,
                 state: 'FETCHING_TOTAL',
@@ -169,10 +185,18 @@ class SyncOrchestrator {
             };
         }
 
+        // Defensive: Resolve userId from multiple sources
+        const userId = integration.userId || integration.record?.userId || integration.id;
+        if (!userId) {
+            throw new Error(
+                `Cannot process webhook: userId not available on integration ${integration.id}`
+            );
+        }
+
         // Create mini-process for webhook
         const process = await this.processManager.createSyncProcess({
             integrationId: integration.id,
-            userId: integration.userId,
+            userId,
             syncType: 'WEBHOOK',
             personObjectType: 'webhook',
             state: 'PROCESSING_BATCHES',
