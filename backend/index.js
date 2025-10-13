@@ -1,29 +1,29 @@
 const ScalingTestIntegration = require('./src/integrations/ScalingTestIntegration');
-const ZohoCRMIntegration = require('./src/integrations/ZohoCRMIntegration');
+// const ZohoCRMIntegration = require('./src/integrations/ZohoCRMIntegration');
 // const PipeDriveIntegration = require('./src/integrations/PipeDriveIntegration');
-const AttioIntegration = require('./src/integrations/AttioIntegration');
-const AxisCareIntegration = require('./src/integrations/AxisCareIntegration');
+// const AttioIntegration = require('./src/integrations/AttioIntegration');
+// const AxisCareIntegration = require('./src/integrations/AxisCareIntegration');
 
 const appDefinition = {
     label: 'Quo Integrations',
     name: 'quo-integrations',
     integrations: [
         ScalingTestIntegration,
-        ZohoCRMIntegration,
+        // ZohoCRMIntegration,
         // PipeDriveIntegration,
-        AttioIntegration,
-        AxisCareIntegration,
+        // AttioIntegration,
+        // AxisCareIntegration,
     ],
     user: {
         usePassword: true,
         individualUserRequired: true,
     },
     encryption: {
-        fieldLevelEncryptionMethod: 'kms',
-        createResourceIfNoneFound: false,
+        fieldLevelEncryptionMethod: 'aes', // Use 'aes' for local dev, 'kms' for production
+        createResourceIfNoneFound: true,
     },
     vpc: {
-        enable: true,
+        enable: false, // Disable VPC for local development
         management: 'discover', // 'create-new' | 'discover' | 'use-existing'
         vpcId: null, // Optional: specific VPC ID to use when management is 'use-existing'
         subnets: {
@@ -39,6 +39,7 @@ const appDefinition = {
     database: {
         postgres: {
             enable: true, // Can be enabled for PostgreSQL
+            management: 'create-new', // 'create-new' | 'discover' | 'use-existing'
         },
     },
     ssm: {
