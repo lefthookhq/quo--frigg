@@ -665,7 +665,7 @@ class BaseCRMIntegration extends IntegrationBase {
         // TODO: Use Quo bulk API when available
         for (const contact of contacts) {
             try {
-                await this.quo.api.upsertContact(contact);
+                await this.quo.api.createContact(contact);
                 successCount++;
             } catch (error) {
                 errorCount++;

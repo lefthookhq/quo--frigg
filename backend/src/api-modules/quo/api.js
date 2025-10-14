@@ -121,6 +121,56 @@ class Api extends ApiKeyRequester {
         return this._get(options);
     }
 
+    /**
+     * @typedef {Object} ContactEmailField
+     * @property {string} name - The name for the contact's email address (e.g., "company email")
+     * @property {string|null} value - The contact's email address (e.g., "abc@example.com")
+     */
+
+    /**
+     * @typedef {Object} ContactPhoneField
+     * @property {string} name - The name of the contact's phone number (e.g., "company phone")
+     * @property {string|null} value - The contact's phone number in E.164 format (e.g., "+12345678901")
+     */
+
+    /**
+     * @typedef {Object} ContactDefaultFields
+     * @property {string|null} firstName - The contact's first name (required)
+     * @property {string|null} [lastName] - The contact's last name
+     * @property {string|null} [company] - The contact's company name
+     * @property {ContactEmailField[]} [emails] - Array of email addresses for the contact
+     * @property {ContactPhoneField[]} [phoneNumbers] - Array of phone numbers for the contact
+     * @property {string|null} [role] - The contact's role (e.g., "Sales")
+     */
+
+    /**
+     * @typedef {Object} ContactCustomField
+     * @property {string} key - The identifying key for the custom field (e.g., "inbound-lead")
+     * @property {string[]|string|boolean|number|null} value - The value for the custom field (type varies by field definition)
+     */
+
+    /**
+     * @typedef {Object} CreateContactData
+     * @property {ContactDefaultFields} defaultFields - The contact's default fields (required)
+     * @property {ContactCustomField[]} [customFields] - Array of custom fields for the contact
+     * @property {string} [createdByUserId] - The unique identifier of the user creating the contact (pattern: ^US(.*)$)
+     * @property {string} [source] - The contact's source. Defaults to "public-api". Cannot use reserved words: "openphone", "device", "csv", "zapier", "google-people", "other" or start with "openphone", "csv" (max 72 chars)
+     * @property {string} [sourceUrl] - A link to the contact in the source system (URI format, max 200 chars)
+     * @property {string|null} [externalId] - A unique identifier from an external system for cross-referencing (max 75 chars)
+     */
+
+    /**
+     * Create a contact in OpenPhone
+     *
+     * @param {CreateContactData} data - The contact data to create
+     * @returns {Promise<Object>} The created contact with id, externalId, source, defaultFields, customFields, createdAt, updatedAt, and createdByUserId
+     * @throws {Error} 400 - Invalid custom field item
+     * @throws {Error} 401 - Unauthorized
+     * @throws {Error} 403 - Not phone number user
+     * @throws {Error} 404 - Not found
+     * @throws {Error} 409 - Conflict
+     * @throws {Error} 500 - Unknown error
+     */
     async createContact(data) {
         const options = {
             url: this.baseUrl + this.URLs.contacts,
