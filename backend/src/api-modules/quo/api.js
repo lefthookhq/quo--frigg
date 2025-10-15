@@ -182,6 +182,29 @@ class Api extends ApiKeyRequester {
         return this._post(options);
     }
 
+    /**
+     * Bulk create multiple contacts in OpenPhone
+     *
+     * @param {CreateContactData[]} data - Array of contact data objects to create
+     * @returns {Promise<Object>} Response containing the created contacts with their ids, externalIds, sources, defaultFields, customFields, createdAt, updatedAt, and createdByUserIds
+     * @throws {Error} 400 - Invalid custom field item
+     * @throws {Error} 401 - Unauthorized
+     * @throws {Error} 403 - Not phone number user
+     * @throws {Error} 404 - Not found
+     * @throws {Error} 409 - Conflict
+     * @throws {Error} 500 - Unknown error
+     */
+    async bulkCreateContacts(data) {
+        const options = {
+            url: this.baseUrl + this.URLs.contacts + '/bulk',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: { contacts: data },
+        };
+        return this._post(options);
+    }
+
     async updateContact(id, data) {
         const options = {
             url: this.baseUrl + this.URLs.contactById(id),

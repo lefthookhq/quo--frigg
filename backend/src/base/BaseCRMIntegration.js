@@ -662,19 +662,17 @@ class BaseCRMIntegration extends IntegrationBase {
         let errorCount = 0;
         const errors = [];
 
-        // TODO: Use Quo bulk API when available
-        for (const contact of contacts) {
-            try {
-                await this.quo.api.createContact(contact);
-                successCount++;
-            } catch (error) {
-                errorCount++;
-                errors.push({
-                    contactId: contact.externalId,
-                    error: error.message,
-                    timestamp: new Date().toISOString(),
-                });
-            }
+        try {
+            await this.quo.api.bulkCreateContacts(contacts);
+            successCount = contacts.length;
+        } catch (error) {
+            errorCount = contacts.length;
+            console.error('Bulk upsert error:', error);
+            errors.push({
+                contactId: contact.externalId,
+                error: error.message,
+                timestamp: new Date().toISOString(),
+            });
         }
 
         return { successCount, errorCount, errors };
