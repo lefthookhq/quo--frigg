@@ -6,8 +6,9 @@ const {
     UpdateProcessMetrics,
     GetProcess,
 } = require('@friggframework/core');
-// const { createProcessRepository } = require('@friggframework/core/integrations/repositories/process-repository-factory');
-const createProcessRepository = {}; // use this for now because we dont have the new Frigg version yet
+const {
+    createProcessRepository,
+} = require('@friggframework/core/integrations/repositories/process-repository-factory');
 
 const ProcessManager = require('./services/ProcessManager');
 const QueueManager = require('./services/QueueManager');
@@ -395,10 +396,17 @@ class BaseCRMIntegration extends IntegrationBase {
      * @param {string} params.integrationId - Integration ID
      * @returns {Promise<Object>} Sync start result
      */
-    async startInitialSync({ integrationId }) {
+    async startInitialSync({ integrationId } = {}) {
+        // Defensive: use integrationId parameter or fall back to this.id
+        const id = integrationId || this.id;
+
+        if (!id) {
+            throw new Error('Cannot start sync: integration ID not available');
+        }
+
         return await this.syncOrchestrator.startInitialSync({
             integration: this,
-            integrationId,
+            integrationId: id,
             personObjectTypes: this.constructor.CRMConfig.personObjectTypes,
         });
     }
@@ -409,10 +417,17 @@ class BaseCRMIntegration extends IntegrationBase {
      * @param {string} params.integrationId - Integration ID
      * @returns {Promise<Object>} Sync start result
      */
-    async startOngoingSync({ integrationId }) {
+    async startOngoingSync({ integrationId } = {}) {
+        // Defensive: use integrationId parameter or fall back to this.id
+        const id = integrationId || this.id;
+
+        if (!id) {
+            throw new Error('Cannot start sync: integration ID not available');
+        }
+
         return await this.syncOrchestrator.startOngoingSync({
             integration: this,
-            integrationId,
+            integrationId: id,
             personObjectTypes: this.constructor.CRMConfig.personObjectTypes,
         });
     }
@@ -647,19 +662,17 @@ class BaseCRMIntegration extends IntegrationBase {
         let errorCount = 0;
         const errors = [];
 
-        // TODO: Use Quo bulk API when available
-        for (const contact of contacts) {
-            try {
-                await this.quo.api.upsertContact(contact);
-                successCount++;
-            } catch (error) {
-                errorCount++;
-                errors.push({
-                    contactId: contact.externalId,
-                    error: error.message,
-                    timestamp: new Date().toISOString(),
-                });
-            }
+        try {
+            await this.quo.api.bulkCreateContacts(contacts);
+            successCount = contacts.length;
+        } catch (error) {
+            errorCount = contacts.length;
+            console.error('Bulk upsert error:', error);
+            errors.push({
+                contactId: contact.externalId,
+                error: error.message,
+                timestamp: new Date().toISOString(),
+            });
         }
 
         return { successCount, errorCount, errors };
