@@ -1,10 +1,9 @@
 const { Definition } = require('./definition.js');
+const { Api } = require('./api.js');
+const config = require('./defaultConfig.json');
 
 module.exports = {
     Definition,
-    Config: {
-        name: Definition.getName(),
-        description: 'AxisCare API integration for client management and scheduling',
-        logoUrl: '',
-    },
+    Config: config,
+    Api,
 };

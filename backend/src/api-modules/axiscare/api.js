@@ -1,252 +1,720 @@
-const axios = require('axios');
-const { get } = require('@friggframework/core');
+const { ApiKeyRequester } = require('@friggframework/core');
 
-class AxisCareAPI {
-    constructor(options = {}) {
-        this.baseUrl = options.baseUrl || 'https://static.axiscare.com/api';
-        this.apiKey = options.apiKey;
-        this.headers = {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-        };
+/**
+ * @typedef {Object} Address
+ * @property {string} name - Name associated with the address
+ * @property {string} streetAddress1 - Street address line 1
+ * @property {string|null} [streetAddress2] - Street address line 2
+ * @property {string} city - City name
+ * @property {string} state - Two-letter state code (e.g., "WI", "CA")
+ * @property {string} postalCode - Postal/ZIP code
+ * @property {string|null} [latitude] - Geographic latitude
+ * @property {string|null} [longitude] - Geographic longitude
+ */
 
-        if (this.apiKey) {
-            this.headers['Authorization'] = `Bearer ${this.apiKey}`;
+/**
+ * @typedef {Object} ResponsibleParty
+ * @property {string} listNumber - Position number (1=Primary, 2=Secondary, 3=Tertiary)
+ * @property {string} name - Full name of the responsible party
+ * @property {string} relationship - Relationship to the client/lead
+ * @property {string} email - Email address
+ * @property {string} dateOfBirth - Date of birth (YYYY-MM-DD)
+ * @property {string} hipaaDisclosureAuthorization - HIPAA authorization ('0' or '1')
+ * @property {string} canMakeMedicalDecisions - Medical decision authority ('0' or '1')
+ * @property {Object} address - Address information
+ * @property {Array<{type: string, number: string}>} phones - Phone numbers
+ */
+
+class Api extends ApiKeyRequester {
+    static API_KEY_VERSION = '2023-10-01';
+
+    constructor(params = {}) {
+        super(params);
+        this.baseUrl = params.baseUrl || 'https://static.axiscare.com/api';
+        this.API_KEY_NAME = 'Authorization';
+
+        // Get API key from params
+        if (params.apiKey) {
+            this.setApiKey(params.apiKey);
+            this.access_token = params.apiKey; // temporary to store the apiKey in the Credential data
         }
     }
 
+    /**
+     * Override setApiKey to properly format the Authorization header with Bearer token
+     * @param {string} apiKey - The API key
+     */
     setApiKey(apiKey) {
-        this.apiKey = apiKey;
-        this.headers['Authorization'] = `Bearer ${apiKey}`;
+        this.API_KEY_VALUE = `Bearer ${apiKey}`;
     }
 
-    async makeRequest(method, endpoint, data = null) {
-        try {
-            const config = {
-                method,
-                url: `${this.baseUrl}${endpoint}`,
-                headers: this.headers,
-            };
+    // ==================== CLIENT ENDPOINTS ====================
 
-            if (data && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
-                config.data = data;
-            }
-
-            const response = await axios(config);
-            return response.data;
-        } catch (error) {
-            if (error.response) {
-                throw new Error(`AxisCare API Error: ${error.response.status} - ${error.response.data?.message || error.response.statusText}`);
-            } else if (error.request) {
-                throw new Error('AxisCare API Error: No response received');
-            } else {
-                throw new Error(`AxisCare API Error: ${error.message}`);
-            }
-        }
-    }
-
-    // Health check endpoint
-    async healthCheck() {
-        return this.makeRequest('GET', '/health');
-    }
-
-    // Documentation endpoint
-    async getDocumentation() {
-        return this.makeRequest('GET', '/documentation');
-    }
-
-    // Authentication methods
-    async authenticate(credentials) {
-        const authData = await this.makeRequest('POST', '/auth', {
-            email: credentials.email,
-            password: credentials.password,
-        });
-
-        if (authData.token) {
-            this.setApiKey(authData.token);
-        }
-
-        return authData;
-    }
-
-    // User management
-    async getCurrentUser() {
-        return this.makeRequest('GET', '/user/current');
-    }
-
-    async getUserById(userId) {
-        return this.makeRequest('GET', `/user/${userId}`);
-    }
-
-    async listUsers(params = {}) {
-        const queryParams = new URLSearchParams();
-
-        if (params.page) queryParams.append('page', params.page);
-        if (params.limit) queryParams.append('limit', params.limit);
-        if (params.search) queryParams.append('search', params.search);
-        if (params.status) queryParams.append('status', params.status);
-
-        const endpoint = `/users${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-        return this.makeRequest('GET', endpoint);
-    }
-
-    async createUser(userData) {
-        return this.makeRequest('POST', '/users', userData);
-    }
-
-    async updateUser(userId, userData) {
-        return this.makeRequest('PUT', `/users/${userId}`, userData);
-    }
-
-    async deleteUser(userId) {
-        return this.makeRequest('DELETE', `/users/${userId}`);
-    }
-
-    // Client management
+    /**
+     * List clients with optional filtering
+     * @param {Object} [params] - Query parameters
+     * @param {string} [params.clientIds] - Comma-delimited client IDs
+     * @param {string} [params.statuses] - Comma-delimited statuses
+     * @param {string} [params.regionIds] - Comma-delimited region IDs
+     * @param {string} [params.regionNames] - Comma-delimited region names
+     * @param {string} [params.classCodes] - Comma-delimited class codes
+     * @param {string} [params.classLabels] - Comma-delimited class labels
+     * @param {string} [params.adminIds] - Comma-delimited administrator IDs
+     * @param {string} [params.adminUsernames] - Comma-delimited administrator usernames
+     * @param {string} [params.externalIds] - Comma-delimited external IDs
+     * @param {number} [params.startAfterId] - Pagination cursor
+     * @param {number} [params.limit=100] - Results limit (max: 500)
+     * @param {string} [params.requestedSensitiveFields] - Comma-delimited sensitive fields (e.g., 'ssn')
+     * @returns {Promise<Object>} Response with results.clients array and nextPage URL
+     */
     async listClients(params = {}) {
-        const queryParams = new URLSearchParams();
-
-        if (params.page) queryParams.append('page', params.page);
-        if (params.limit) queryParams.append('limit', params.limit);
-        if (params.search) queryParams.append('search', params.search);
-        if (params.status) queryParams.append('status', params.status);
-
-        const endpoint = `/clients${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-        return this.makeRequest('GET', endpoint);
+        const options = {
+            url: `${this.baseUrl}/api/clients`,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+            query: params,
+        };
+        return this._get(options);
     }
 
-    async getClientById(clientId) {
-        return this.makeRequest('GET', `/clients/${clientId}`);
-    }
-
+    /**
+     * Create a new client
+     * @param {Object} clientData - Client data
+     * @param {string} clientData.firstName - Client's first name (required)
+     * @param {string} clientData.lastName - Client's last name (required)
+     * @param {string} [clientData.status] - Status (defaults to 'Active')
+     * @param {string} [clientData.dateOfBirth] - Date of birth (YYYY-MM-DD)
+     * @param {string} [clientData.ssn] - Social Security Number
+     * @param {Address} [clientData.residentialAddress] - Residential address
+     * @param {string} [clientData.personalEmail] - Email address
+     * @param {string} [clientData.homePhone] - Home phone number
+     * @param {string} [clientData.mobilePhone] - Mobile phone number
+     * @returns {Promise<Object>} Created client object
+     */
     async createClient(clientData) {
-        return this.makeRequest('POST', '/clients', clientData);
+        const options = {
+            url: `${this.baseUrl}/api/clients`,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+            body: clientData,
+        };
+        return this._post(options);
     }
 
+    /**
+     * Get a single client by ID
+     * @param {number} clientId - Client ID
+     * @param {Object} [params] - Query parameters
+     * @param {string} [params.requestedSensitiveFields] - Comma-delimited sensitive fields (e.g., 'ssn')
+     * @returns {Promise<Object>} Client object
+     */
+    async getClient(clientId, params = {}) {
+        const options = {
+            url: `${this.baseUrl}/api/clients/${clientId}`,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+            query: params,
+        };
+        return this._get(options);
+    }
+
+    /**
+     * Update an existing client
+     * @param {number} clientId - Client ID
+     * @param {Object} clientData - Partial client data to update
+     * @returns {Promise<Object>} Updated client object
+     */
     async updateClient(clientId, clientData) {
-        return this.makeRequest('PUT', `/clients/${clientId}`, clientData);
+        const options = {
+            url: `${this.baseUrl}/api/clients/${clientId}`,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+            body: clientData,
+        };
+        return this._patch(options);
     }
 
-    async deleteClient(clientId) {
-        return this.makeRequest('DELETE', `/clients/${clientId}`);
+    /**
+     * List all responsible parties for a client (always returns exactly 3)
+     * @param {number} clientId - Client ID
+     * @returns {Promise<{results: ResponsibleParty[], errors: Array|null}>} Array of 3 responsible parties
+     */
+    async listClientResponsibleParties(clientId) {
+        const options = {
+            url: `${this.baseUrl}/api/clients/${clientId}/responsibleParties`,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+        };
+        return this._get(options);
     }
 
-    // Contact management
-    async listContacts(params = {}) {
-        const queryParams = new URLSearchParams();
-
-        if (params.page) queryParams.append('page', params.page);
-        if (params.limit) queryParams.append('limit', params.limit);
-        if (params.search) queryParams.append('search', params.search);
-
-        const endpoint = `/contacts${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-        return this.makeRequest('GET', endpoint);
+    /**
+     * Get a single responsible party for a client
+     * @param {number} clientId - Client ID
+     * @param {number} listNumber - Position number (1=Primary, 2=Secondary, 3=Tertiary)
+     * @returns {Promise<{results: ResponsibleParty, errors: Array|null}>} Responsible party object
+     */
+    async getClientResponsibleParty(clientId, listNumber) {
+        const options = {
+            url: `${this.baseUrl}/api/clients/${clientId}/responsibleParties/${listNumber}`,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+        };
+        return this._get(options);
     }
 
-    async getContactById(contactId) {
-        return this.makeRequest('GET', `/contacts/${contactId}`);
+    /**
+     * Update a responsible party for a client
+     * @param {number} clientId - Client ID
+     * @param {number} listNumber - Position number (1=Primary, 2=Secondary, 3=Tertiary)
+     * @param {Object} data - Responsible party data
+     * @param {string} data.name - Full name (required)
+     * @param {string} [data.relationship] - Relationship to client
+     * @param {Object} [data.address] - Address object
+     * @param {Array<{type: string, number: string}>} [data.phones] - Phone numbers
+     * @param {string} [data.email] - Email address
+     * @param {string} [data.dateOfBirth] - Date of birth (YYYY-MM-DD)
+     * @param {boolean} [data.hipaaDisclosureAuthorization] - HIPAA authorization
+     * @param {boolean} [data.canMakeMedicalDecisions] - Medical decision authority
+     * @returns {Promise<{results: ResponsibleParty[], errors: Array|null}>} All 3 responsible parties after update
+     */
+    async updateClientResponsibleParty(clientId, listNumber, data) {
+        const options = {
+            url: `${this.baseUrl}/api/clients/${clientId}/responsibleParties/${listNumber}`,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+            body: data,
+        };
+        return this._put(options);
     }
 
-    async createContact(contactData) {
-        return this.makeRequest('POST', '/contacts', contactData);
+    // ==================== LEAD ENDPOINTS ====================
+
+    /**
+     * List leads with optional filtering
+     * @param {Object} [params] - Query parameters
+     * @param {string} [params.leadIds] - Comma-delimited lead IDs
+     * @param {string} [params.statuses] - Comma-delimited statuses
+     * @param {string} [params.regionIds] - Comma-delimited region IDs
+     * @param {string} [params.adminIds] - Comma-delimited administrator IDs
+     * @param {string} [params.externalIds] - Comma-delimited external IDs
+     * @param {number} [params.startAfterId] - Pagination cursor
+     * @param {number} [params.limit=100] - Results limit (max: 500)
+     * @returns {Promise<Object>} Response with results.leads array and nextPage URL
+     */
+    async listLeads(params = {}) {
+        const options = {
+            url: `${this.baseUrl}/api/leads`,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+            query: params,
+        };
+        return this._get(options);
     }
 
-    async updateContact(contactId, contactData) {
-        return this.makeRequest('PUT', `/contacts/${contactId}`, contactData);
+    /**
+     * Create a new lead
+     * @param {Object} leadData - Lead data
+     * @param {string} leadData.firstName - Lead's first name (required)
+     * @param {string} leadData.lastName - Lead's last name (required)
+     * @param {string} [leadData.status] - Status (defaults to 'Active')
+     * @param {string} [leadData.dateOfBirth] - Date of birth (YYYY-MM-DD)
+     * @param {string} [leadData.assessmentDate] - Assessment date (YYYY-MM-DD)
+     * @param {Address} [leadData.residentialAddress] - Residential address
+     * @param {string} [leadData.personalEmail] - Email address
+     * @param {string} [leadData.homePhone] - Home phone number
+     * @param {string} [leadData.mobilePhone] - Mobile phone number
+     * @returns {Promise<Object>} Created lead object
+     */
+    async createLead(leadData) {
+        const options = {
+            url: `${this.baseUrl}/api/leads`,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+            body: leadData,
+        };
+        return this._post(options);
     }
 
-    async deleteContact(contactId) {
-        return this.makeRequest('DELETE', `/contacts/${contactId}`);
+    /**
+     * Get a single lead by ID
+     * @param {number} leadId - Lead ID
+     * @returns {Promise<Object>} Lead object
+     */
+    async getLead(leadId) {
+        const options = {
+            url: `${this.baseUrl}/api/leads/${leadId}`,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+        };
+        return this._get(options);
     }
 
-    // Appointment management
-    async listAppointments(params = {}) {
-        const queryParams = new URLSearchParams();
-
-        if (params.page) queryParams.append('page', params.page);
-        if (params.limit) queryParams.append('limit', params.limit);
-        if (params.date_from) queryParams.append('date_from', params.date_from);
-        if (params.date_to) queryParams.append('date_to', params.date_to);
-        if (params.client_id) queryParams.append('client_id', params.client_id);
-
-        const endpoint = `/appointments${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-        return this.makeRequest('GET', endpoint);
+    /**
+     * Update an existing lead
+     * @param {number} leadId - Lead ID
+     * @param {Object} leadData - Partial lead data to update (must include both firstName and lastName if updating names)
+     * @returns {Promise<Object>} Updated lead object
+     */
+    async updateLead(leadId, leadData) {
+        const options = {
+            url: `${this.baseUrl}/api/leads/${leadId}`,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+            body: leadData,
+        };
+        return this._patch(options);
     }
 
-    async getAppointmentById(appointmentId) {
-        return this.makeRequest('GET', `/appointments/${appointmentId}`);
+    /**
+     * List all responsible parties for a lead (always returns exactly 3)
+     * @param {number} leadId - Lead ID
+     * @returns {Promise<{results: ResponsibleParty[], errors: Array|null}>} Array of 3 responsible parties
+     */
+    async listLeadResponsibleParties(leadId) {
+        const options = {
+            url: `${this.baseUrl}/api/leads/${leadId}/responsibleParties`,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+        };
+        return this._get(options);
     }
 
-    async createAppointment(appointmentData) {
-        return this.makeRequest('POST', '/appointments', appointmentData);
+    /**
+     * Get a single responsible party for a lead
+     * @param {number} leadId - Lead ID
+     * @param {number} listNumber - Position number (1=Primary, 2=Secondary, 3=Tertiary)
+     * @returns {Promise<{results: ResponsibleParty, errors: Array|null}>} Responsible party object
+     */
+    async getLeadResponsibleParty(leadId, listNumber) {
+        const options = {
+            url: `${this.baseUrl}/api/leads/${leadId}/responsibleParties/${listNumber}`,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+        };
+        return this._get(options);
     }
 
-    async updateAppointment(appointmentId, appointmentData) {
-        return this.makeRequest('PUT', `/appointments/${appointmentId}`, appointmentData);
+    /**
+     * Update a responsible party for a lead
+     * @param {number} leadId - Lead ID
+     * @param {number} listNumber - Position number (1=Primary, 2=Secondary, 3=Tertiary)
+     * @param {Object} data - Responsible party data
+     * @param {string} data.name - Full name (required)
+     * @returns {Promise<{results: ResponsibleParty[], errors: Array|null}>} All 3 responsible parties after update
+     */
+    async updateLeadResponsibleParty(leadId, listNumber, data) {
+        const options = {
+            url: `${this.baseUrl}/api/leads/${leadId}/responsibleParties/${listNumber}`,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+            body: data,
+        };
+        return this._put(options);
     }
 
-    async deleteAppointment(appointmentId) {
-        return this.makeRequest('DELETE', `/appointments/${appointmentId}`);
+    // ==================== CAREGIVER ENDPOINTS ====================
+
+    /**
+     * List caregivers with optional filtering
+     * @param {Object} [params] - Query parameters
+     * @param {string} [params.caregiverIds] - Comma-delimited caregiver IDs
+     * @param {string} [params.statuses] - Comma-delimited statuses
+     * @param {string} [params.regionIds] - Comma-delimited region IDs
+     * @param {string} [params.regionNames] - Comma-delimited region names
+     * @param {string} [params.classCodes] - Comma-delimited class codes
+     * @param {string} [params.classLabels] - Comma-delimited class labels
+     * @param {string} [params.adminIds] - Comma-delimited administrator IDs
+     * @param {string} [params.adminUsernames] - Comma-delimited administrator usernames
+     * @param {string} [params.startAfterId] - Pagination cursor
+     * @param {number} [params.limit] - Results limit
+     * @param {string} [params.requestedSensitiveFields] - Comma-delimited sensitive fields (e.g., 'ssn')
+     * @returns {Promise<Object>} Response with caregivers array, nextPage URL, and caregiversNotFound array
+     */
+    async listCaregivers(params = {}) {
+        const options = {
+            url: `${this.baseUrl}/api/caregivers`,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+            query: params,
+        };
+        return this._get(options);
     }
 
-    // Service management
-    async listServices(params = {}) {
-        const queryParams = new URLSearchParams();
-
-        if (params.page) queryParams.append('page', params.page);
-        if (params.limit) queryParams.append('limit', params.limit);
-        if (params.category) queryParams.append('category', params.category);
-
-        const endpoint = `/services${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-        return this.makeRequest('GET', endpoint);
+    /**
+     * Create a new caregiver
+     * @param {Object} caregiverData - Caregiver data
+     * @param {string} caregiverData.firstName - Caregiver's first name (required)
+     * @param {string} caregiverData.lastName - Caregiver's last name (required)
+     * @param {string} [caregiverData.ssn] - Social Security Number
+     * @param {string} [caregiverData.dateOfBirth] - Date of birth (YYYY-MM-DD)
+     * @param {string} [caregiverData.gender] - Gender ('M' or 'F')
+     * @param {Object} [caregiverData.mailingAddress] - Mailing address
+     * @param {string} [caregiverData.personalEmail] - Email address
+     * @param {string} [caregiverData.mobilePhone] - Mobile phone number
+     * @returns {Promise<Object>} Created caregiver object
+     */
+    async createCaregiver(caregiverData) {
+        const options = {
+            url: `${this.baseUrl}/api/caregivers`,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+            body: caregiverData,
+        };
+        return this._post(options);
     }
 
-    async getServiceById(serviceId) {
-        return this.makeRequest('GET', `/services/${serviceId}`);
+    /**
+     * Get a single caregiver by ID
+     * @param {number} caregiverId - Caregiver ID
+     * @param {Object} [params] - Query parameters
+     * @param {string} [params.requestedSensitiveFields] - Comma-delimited sensitive fields (e.g., 'ssn')
+     * @returns {Promise<Object>} Caregiver object
+     */
+    async getCaregiver(caregiverId, params = {}) {
+        const options = {
+            url: `${this.baseUrl}/api/caregivers/${caregiverId}`,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+            query: params,
+        };
+        return this._get(options);
     }
 
-    // Billing and invoicing
-    async listInvoices(params = {}) {
-        const queryParams = new URLSearchParams();
-
-        if (params.page) queryParams.append('page', params.page);
-        if (params.limit) queryParams.append('limit', params.limit);
-        if (params.client_id) queryParams.append('client_id', params.client_id);
-        if (params.status) queryParams.append('status', params.status);
-
-        const endpoint = `/invoices${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-        return this.makeRequest('GET', endpoint);
+    /**
+     * Update an existing caregiver
+     * @param {number} caregiverId - Caregiver ID
+     * @param {Object} caregiverData - Partial caregiver data to update (must include both firstName and lastName if updating names)
+     * @returns {Promise<Object>} Updated caregiver object
+     */
+    async updateCaregiver(caregiverId, caregiverData) {
+        const options = {
+            url: `${this.baseUrl}/api/caregivers/${caregiverId}`,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+            body: caregiverData,
+        };
+        return this._patch(options);
     }
 
-    async getInvoiceById(invoiceId) {
-        return this.makeRequest('GET', `/invoices/${invoiceId}`);
+    // ==================== APPLICANT ENDPOINTS ====================
+
+    /**
+     * List applicants with optional filtering
+     * @param {Object} [params] - Query parameters
+     * @param {string} [params.applicantIds] - Comma-delimited applicant IDs
+     * @param {string} [params.statuses] - Comma-delimited statuses
+     * @param {string} [params.requestedSensitiveFields] - Comma-delimited sensitive fields (e.g., 'ssn')
+     * @param {string} [params.startAfterId] - Pagination cursor
+     * @returns {Promise<Object>} Response with applicants array, nextPage URL, and applicantsNotFound array
+     */
+    async listApplicants(params = {}) {
+        const options = {
+            url: `${this.baseUrl}/api/applicants`,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+            query: params,
+        };
+        return this._get(options);
     }
 
-    async createInvoice(invoiceData) {
-        return this.makeRequest('POST', '/invoices', invoiceData);
+    /**
+     * Create a new applicant
+     * @param {Object} applicantData - Applicant data
+     * @param {string} applicantData.firstName - Applicant's first name (required)
+     * @param {string} applicantData.lastName - Applicant's last name (required)
+     * @param {string} [applicantData.ssn] - Social Security Number
+     * @param {string} [applicantData.dateOfBirth] - Date of birth (YYYY-MM-DD)
+     * @param {Object} [applicantData.mailingAddress] - Mailing address (requires all 5 properties if provided)
+     * @param {string} [applicantData.personalEmail] - Email address
+     * @param {string} [applicantData.mobilePhone] - Mobile phone number
+     * @returns {Promise<Object>} Created applicant object
+     */
+    async createApplicant(applicantData) {
+        const options = {
+            url: `${this.baseUrl}/api/applicants`,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+            body: applicantData,
+        };
+        return this._post(options);
     }
 
-    // Reports and analytics
-    async getReports(reportType, params = {}) {
-        const queryParams = new URLSearchParams();
-
-        if (params.date_from) queryParams.append('date_from', params.date_from);
-        if (params.date_to) queryParams.append('date_to', params.date_to);
-        if (params.format) queryParams.append('format', params.format);
-
-        const endpoint = `/reports/${reportType}${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-        return this.makeRequest('GET', endpoint);
+    /**
+     * Get a single applicant by ID
+     * @param {number} applicantId - Applicant ID
+     * @param {Object} [params] - Query parameters
+     * @param {string} [params.requestedSensitiveFields] - Comma-delimited sensitive fields (e.g., 'ssn')
+     * @returns {Promise<Object>} Applicant object
+     */
+    async getApplicant(applicantId, params = {}) {
+        const options = {
+            url: `${this.baseUrl}/api/applicants/${applicantId}`,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+            query: params,
+        };
+        return this._get(options);
     }
 
-    async getAnalytics(params = {}) {
-        const queryParams = new URLSearchParams();
+    // ==================== VISIT ENDPOINTS ====================
 
-        if (params.period) queryParams.append('period', params.period);
-        if (params.metric) queryParams.append('metric', params.metric);
+    /**
+     * List visits with filtering
+     * @param {Object} params - Query parameters (at least one filter required)
+     * @param {string} [params.startDate] - Visit start date (YYYY-MM-DD, required if updatedSinceDate not used)
+     * @param {string} [params.endDate] - Visit end date (YYYY-MM-DD, required if updatedSinceDate not used)
+     * @param {string} [params.updatedSinceDate] - UTC datetime to get visits updated since (ISO 8601)
+     * @param {string} [params.visitIds] - Comma-delimited visit IDs (if used, no other filters allowed)
+     * @param {string} [params.clientIds] - Comma-delimited client IDs
+     * @param {string} [params.caregiverIds] - Comma-delimited caregiver IDs
+     * @param {boolean} [params.verified] - Filter by verification status
+     * @returns {Promise<Object>} Response with results.visits array and nextPage URL
+     */
+    async listVisits(params = {}) {
+        const options = {
+            url: `${this.baseUrl}/api/visits`,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+            query: params,
+        };
+        return this._get(options);
+    }
 
-        const endpoint = `/analytics${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-        return this.makeRequest('GET', endpoint);
+    /**
+     * Create a new visit
+     * @param {Object} visitData - Visit data
+     * @param {number} visitData.clientId - Client ID (required)
+     * @param {string} visitData.visitDate - Visit date (YYYY-MM-DD, required)
+     * @param {string} visitData.startTime - Start time (HH:MM format, e.g., "09:00", required)
+     * @param {string} visitData.endTime - End time (HH:MM format, e.g., "10:00", required)
+     * @param {number} [visitData.caregiverId] - Caregiver ID
+     * @param {boolean} [visitData.doNotBill] - Do not bill flag
+     * @param {boolean} [visitData.doNotPay] - Do not pay flag
+     * @param {string} [visitData.serviceCode] - Service code (mutually exclusive with serviceDescription)
+     * @param {string} [visitData.serviceDescription] - Service description (mutually exclusive with serviceCode)
+     * @param {number} [visitData.mileage] - Mileage
+     * @param {number} [visitData.expenses] - Expenses
+     * @param {string} [visitData.billableRateMode] - Billable rate mode (e.g., "custom")
+     * @param {number} [visitData.chargeRate] - Charge rate (required if billableRateMode is "custom")
+     * @returns {Promise<Object>} Created visit object
+     */
+    async createVisit(visitData) {
+        const options = {
+            url: `${this.baseUrl}/api/visits`,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+            body: visitData,
+        };
+        return this._post(options);
+    }
+
+    /**
+     * Update an existing visit
+     * @param {string} visitId - Visit ID (format: s=222:d=2024-03-04)
+     * @param {Object} visitData - Partial visit data to update
+     * @param {string} [visitData.startTime] - Start time (HH:MM format)
+     * @param {string} [visitData.endTime] - End time (HH:MM format)
+     * @param {number} [visitData.caregiverId] - Caregiver ID
+     * @param {boolean} [visitData.doNotBill] - Do not bill flag
+     * @param {boolean} [visitData.doNotPay] - Do not pay flag
+     * @param {string} [visitData.serviceCode] - Service code
+     * @param {string} [visitData.serviceDescription] - Service description
+     * @returns {Promise<Object>} Updated visit object
+     */
+    async updateVisit(visitId, visitData) {
+        const options = {
+            url: `${this.baseUrl}/api/visits/${visitId}`,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+            body: visitData,
+        };
+        return this._patch(options);
+    }
+
+    /**
+     * Delete a visit
+     * @param {string} visitId - Visit ID (format: s=222:d=2024-03-04)
+     * @param {Object} [params] - Query parameters
+     * @param {number} [params.modificationReason] - Modification reason ID
+     * @returns {Promise<void>} 204 No Content on success
+     */
+    async deleteVisit(visitId, params = {}) {
+        const options = {
+            url: `${this.baseUrl}/api/visits/${visitId}`,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+            query: params,
+        };
+        return this._delete(options);
+    }
+
+    // ==================== CALL LOG ENDPOINTS ====================
+
+    /**
+     * List call logs with optional filtering
+     * @param {Object} [params] - Query parameters
+     * @param {string} [params.callLogIds] - Comma-delimited call log IDs
+     * @param {string} [params.fromDateTime] - Start datetime (ISO 8601, e.g., "2025-01-29T23:00:00-05:00")
+     * @param {string} [params.toDateTime] - End datetime (ISO 8601)
+     * @param {number} [params.startAfterId] - Pagination cursor
+     * @param {number} [params.limit=100] - Results limit (max: 100)
+     * @returns {Promise<Object>} Response with results.callLogs array and nextPage URL
+     */
+    async listCallLogs(params = {}) {
+        const options = {
+            url: `${this.baseUrl}/api/call-logs`,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+            query: params,
+        };
+        return this._get(options);
+    }
+
+    /**
+     * Create a new call log
+     * @param {Object} callLogData - Call log data
+     * @param {string} callLogData.callerName - Caller's name (required)
+     * @param {string} callLogData.callerPhone - Caller's phone number (required)
+     * @param {boolean} callLogData.followUp - Follow-up required flag (required)
+     * @param {string} callLogData.dateTime - Call datetime (ISO 8601, e.g., "2025-07-01T15:23:45-05:00", required)
+     * @param {string} callLogData.subject - Call subject (required)
+     * @param {string} callLogData.notes - Call notes (required)
+     * @param {Array<{type: string, entityId: number}>} callLogData.tags - Tags array (required, can be empty)
+     * @returns {Promise<Object>} Created call log object
+     */
+    async createCallLog(callLogData) {
+        const options = {
+            url: `${this.baseUrl}/api/call-logs`,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+            body: callLogData,
+        };
+        return this._post(options);
+    }
+
+    /**
+     * Get a single call log by ID
+     * @param {number} callLogId - Call log ID
+     * @returns {Promise<Object>} Call log object with tags and comments
+     */
+    async getCallLog(callLogId) {
+        const options = {
+            url: `${this.baseUrl}/api/call-logs/${callLogId}`,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+        };
+        return this._get(options);
+    }
+
+    /**
+     * Update an existing call log
+     * @param {number} callLogId - Call log ID
+     * @param {Object} callLogData - Partial call log data to update
+     * @param {string} [callLogData.callerName] - Caller's name
+     * @param {string} [callLogData.callerPhone] - Caller's phone number
+     * @param {boolean} [callLogData.followUp] - Follow-up required flag
+     * @param {boolean} [callLogData.followUpDone] - Follow-up completed flag
+     * @param {string} [callLogData.dateTime] - Call datetime (ISO 8601)
+     * @param {string} [callLogData.subject] - Call subject
+     * @param {string} [callLogData.notes] - Call notes
+     * @param {Array<{type: string, entityId: number}>} [callLogData.tags] - Tags array
+     * @param {Array<{comment: string, dateTime: string, userId: number}>} [callLogData.comments] - Comments to add
+     * @returns {Promise<Object>} Updated call log object
+     */
+    async updateCallLog(callLogId, callLogData) {
+        const options = {
+            url: `${this.baseUrl}/api/call-logs/${callLogId}`,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+            body: callLogData,
+        };
+        return this._patch(options);
+    }
+
+    // ==================== PAGINATION HELPER ====================
+
+    /**
+     * Fetch from a full URL (used for pagination nextPage URLs)
+     *
+     * AxisCare provides complete URLs in the nextPage field that include
+     * all necessary query parameters (startAfterId, limit, etc).
+     * This method allows us to follow those URLs directly without parsing.
+     *
+     * @param {string} fullUrl - Complete URL from response.nextPage field
+     * @returns {Promise<Object>} API response with same structure as listClients
+     * @example
+     * const nextUrl = "https://agency.axiscare.com/api/clients?startAfterId=100&limit=50";
+     * const response = await api.getFromUrl(nextUrl);
+     */
+    async getFromUrl(fullUrl) {
+        const options = {
+            url: fullUrl,
+            headers: {
+                'X-AxisCare-Api-Version': '2023-10-01',
+                Accept: 'application/json',
+            },
+        };
+        return this._get(options);
     }
 }
 
-module.exports = AxisCareAPI;
+module.exports = { Api };
