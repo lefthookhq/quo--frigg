@@ -44,6 +44,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
             { crmObjectName: 'Client', quoContactType: 'contact' },
             { crmObjectName: 'Lead', quoContactType: 'contact' },
             { crmObjectName: 'Caregiver', quoContactType: 'contact' },
+            { crmObjectName: 'Applicant', quoContactType: 'contact' },
         ],
         syncConfig: {
             paginationType: 'CURSOR_BASED',
@@ -85,9 +86,9 @@ class AxisCareIntegration extends BaseCRMIntegration {
     }
 
     /**
-     * Fetch a page of persons from AxisCare (Clients, Leads, or Caregivers)
+     * Fetch a page of persons from AxisCare (Clients, Leads, Caregivers, or Applicants)
      * @param {Object} params
-     * @param {string} params.objectType - CRM object type (Client, Lead, or Caregiver)
+     * @param {string} params.objectType - CRM object type (Client, Lead, Caregiver, or Applicant)
      * @param {string|null} [params.cursor] - Cursor for pagination (startAfterId)
      * @param {number} params.limit - Records per page
      * @param {Date} [params.modifiedSince] - Filter by modification date
@@ -136,6 +137,12 @@ class AxisCareIntegration extends BaseCRMIntegration {
                     response = await this.axisCare.api.listCaregivers(params);
                     // ⚠️ Caregivers use different structure (no results wrapper)
                     persons = response.caregivers || [];
+                    break;
+
+                case 'Applicant':
+                    response = await this.axisCare.api.listApplicants(params);
+                    // ⚠️ Applicants use same structure as Caregivers (no results wrapper)
+                    persons = response.applicants || [];
                     break;
 
                 default:
@@ -194,7 +201,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
 
     /**
      * Transform AxisCare person object to Quo contact format
-     * Handles Clients, Leads, and Caregivers with type-specific field mappings
+     * Handles Clients, Leads, Caregivers, and Applicants with type-specific field mappings
      * @param {Object} person - AxisCare person object (from API - uses camelCase)
      * @returns {Object} Quo contact format
      */
@@ -222,7 +229,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 company: null,
                 phoneNumbers,
                 emails,
-                role: objectType, // 'Client', 'Lead', or 'Caregiver'
+                role: objectType, // 'Client', 'Lead', 'Caregiver', or 'Applicant'
             },
             customFields,
         };
@@ -232,12 +239,12 @@ class AxisCareIntegration extends BaseCRMIntegration {
      * Extract firstName based on person type
      * @private
      * @param {Object} person - AxisCare person object
-     * @param {string} objectType - Person type (Client, Lead, Caregiver)
+     * @param {string} objectType - Person type (Client, Lead, Caregiver, Applicant)
      * @returns {string} First name
      */
     _extractFirstName(person, objectType) {
-        if (objectType === 'Lead') {
-            return person.firstName; // Leads don't have goesBy
+        if (objectType === 'Lead' || objectType === 'Applicant') {
+            return person.firstName; // Leads & Applicants don't have goesBy
         }
         return person.goesBy || person.firstName; // Client/Caregiver
     }
@@ -246,7 +253,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
      * Extract phone numbers based on person type
      * @private
      * @param {Object} person - AxisCare person object
-     * @param {string} objectType - Person type (Client, Lead, Caregiver)
+     * @param {string} objectType - Person type (Client, Lead, Caregiver, Applicant)
      * @returns {Array<{name: string, value: string, primary: boolean}>} Phone numbers
      */
     _extractPhoneNumbers(person, objectType) {
@@ -327,7 +334,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
      * Build customFields array with type-specific logic
      * @private
      * @param {Object} person - AxisCare person object
-     * @param {string} objectType - Person type (Client, Lead, Caregiver)
+     * @param {string} objectType - Person type (Client, Lead, Caregiver, Applicant)
      * @returns {Array<{key: string, value: string}>} Custom fields array
      */
     _buildCustomFields(person, objectType) {
@@ -363,12 +370,16 @@ class AxisCareIntegration extends BaseCRMIntegration {
         }
 
         // Classes (Client and Caregiver only)
-        if (person.classes && person.classes.length > 0) {
+        if (
+            (objectType === 'Client' || objectType === 'Caregiver') &&
+            person.classes &&
+            person.classes.length > 0
+        ) {
             addField('classes', person.classes);
         }
 
         // Other Client/Caregiver specific fields
-        if (objectType !== 'Lead') {
+        if (objectType !== 'Lead' && objectType !== 'Applicant') {
             addField('medicaidNumber', person.medicaidNumber);
             addField('region', person.region);
             addField('administrators', person.administrators);
