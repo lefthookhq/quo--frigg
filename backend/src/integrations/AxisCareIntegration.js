@@ -42,8 +42,13 @@ class AxisCareIntegration extends BaseCRMIntegration {
     static CRMConfig = {
         personObjectTypes: [
             { crmObjectName: 'Client', quoContactType: 'contact' },
+            { crmObjectName: 'Lead', quoContactType: 'contact' },
+            { crmObjectName: 'Caregiver', quoContactType: 'contact' },
         ],
         syncConfig: {
+            paginationType: 'CURSOR_BASED',
+            supportsTotal: false,
+            returnFullRecords: true,
             reverseChronological: true,
             initialBatchSize: 50,
             ongoingBatchSize: 25,
@@ -80,175 +85,305 @@ class AxisCareIntegration extends BaseCRMIntegration {
     }
 
     /**
-     * Fetch a page of clients from AxisCare
+     * Fetch a page of persons from AxisCare (Clients, Leads, or Caregivers)
      * @param {Object} params
-     * @param {string} params.objectType - CRM object type (Client)
-     * @param {number} params.page - Page number (0-indexed)
+     * @param {string} params.objectType - CRM object type (Client, Lead, or Caregiver)
+     * @param {string|null} [params.cursor] - Cursor for pagination (startAfterId)
      * @param {number} params.limit - Records per page
      * @param {Date} [params.modifiedSince] - Filter by modification date
-     * @param {boolean} [params.sortDesc=true] - Sort descending
-     * @returns {Promise<{data: Array, total: number, hasMore: boolean}>}
+     * @param {boolean} [params.sortDesc=true] - Sort descending (ignored by AxisCare)
+     * @returns {Promise<{data: Array, cursor: string|null, hasMore: boolean}>}
      */
     async fetchPersonPage({
         objectType,
-        page,
+        cursor = null,
         limit,
         modifiedSince,
         sortDesc = true,
     }) {
         try {
             const params = {
-                page: page + 1, // AxisCare uses 1-indexed pages
-                per_page: limit,
-                sort_by: 'updated_at',
-                sort_order: sortDesc ? 'desc' : 'asc',
+                limit: limit || 50,
             };
+
+            // Add cursor if provided (not first page)
+            if (cursor) {
+                params.startAfterId = cursor;
+            }
 
             // Add modification filter if provided
             if (modifiedSince) {
                 params.updated_since = modifiedSince.toISOString();
             }
 
-            const response = await this.axiscare.api.listClients(params);
+            // Route to correct API endpoint based on objectType
+            let response, persons;
+
+            console.log(`[AxisCare] Fetching ${objectType} page with cursor=${cursor}`);
+
+            switch (objectType) {
+                case 'Client':
+                    response = await this.axisCare.api.listClients(params);
+                    persons = response.results?.clients || [];
+                    break;
+
+                case 'Lead':
+                    response = await this.axisCare.api.listLeads(params);
+                    persons = response.results?.leads || [];
+                    break;
+
+                case 'Caregiver':
+                    response = await this.axisCare.api.listCaregivers(params);
+                    // ⚠️ Caregivers use different structure (no results wrapper)
+                    persons = response.caregivers || [];
+                    break;
+
+                default:
+                    throw new Error(`Unknown objectType: ${objectType}`);
+            }
+
+            // Parse nextPage URL to extract cursor (handle both response structures)
+            let nextCursor = null;
+            const nextPageUrl = response.results?.nextPage || response.nextPage;
+
+            if (nextPageUrl) {
+                console.log('[AxisCare] DEBUG nextPage:', nextPageUrl);
+                try {
+                    const url = new URL(nextPageUrl);
+                    console.log(
+                        '[AxisCare] DEBUG parsed URL searchParams:',
+                        url.searchParams.toString(),
+                    );
+                    nextCursor = url.searchParams.get('startAfterId');
+                    console.log('[AxisCare] DEBUG extracted cursor:', nextCursor);
+                } catch (error) {
+                    console.warn(
+                        '[AxisCare] Failed to parse nextPage URL:',
+                        error.message,
+                        'Raw nextPage:',
+                        nextPageUrl,
+                    );
+                }
+            } else {
+                console.log('[AxisCare] DEBUG no nextPage in response');
+            }
+
+            // Tag each person with objectType for transformation
+            const taggedPersons = persons.map((person) => ({
+                ...person,
+                _objectType: objectType,
+            }));
+
+            console.log(
+                `[AxisCare] Fetched ${taggedPersons.length} ${objectType}(s), hasMore=${!!nextPageUrl}`,
+            );
 
             return {
-                data: response.results?.clients || [],
-                total: response.total_count || null,
-                hasMore: response.nextPage ? true : false,
+                data: taggedPersons,
+                cursor: nextCursor,
+                hasMore: !!nextPageUrl,
             };
         } catch (error) {
-            console.error(`Error fetching ${objectType} page ${page}:`, error);
+            console.error(
+                `Error fetching ${objectType} with cursor ${cursor}:`,
+                error,
+            );
             throw error;
         }
     }
 
     /**
-     * Transform AxisCare client object to Quo contact format
-     * @param {Object} client - AxisCare client object (from API - uses camelCase)
-     * @returns {Promise<Object>} Quo contact format
+     * Transform AxisCare person object to Quo contact format
+     * Handles Clients, Leads, and Caregivers with type-specific field mappings
+     * @param {Object} person - AxisCare person object (from API - uses camelCase)
+     * @returns {Object} Quo contact format
      */
-    async transformPersonToQuo(client) {
-        // Extract phone numbers (AxisCare uses camelCase: homePhone, mobilePhone, otherPhone)
-        const phoneNumbers = [];
-        if (client.homePhone) {
-            phoneNumbers.push({
-                name: 'home',
-                value: client.homePhone,
-                primary: true,
-            });
-        }
-        if (client.mobilePhone) {
-            phoneNumbers.push({
-                name: 'mobile',
-                value: client.mobilePhone,
-                primary: false,
-            });
-        }
-        if (client.otherPhone) {
-            phoneNumbers.push({
-                name: 'other',
-                value: client.otherPhone,
-                primary: false,
-            });
-        }
+    transformPersonToQuo(person) {
+        const objectType = person._objectType || 'Client'; // Default to Client for backward compatibility
 
-        // Extract emails (AxisCare uses personalEmail, billingEmail)
-        const emails = [];
-        if (client.personalEmail) {
-            emails.push({
-                name: 'primary',
-                value: client.personalEmail,
-                primary: true,
-            });
-        }
-        if (client.billingEmail && client.billingEmail !== client.personalEmail) {
-            emails.push({
-                name: 'billing',
-                value: client.billingEmail,
-                primary: false,
-            });
-        }
+        // Extract phone numbers (type-specific)
+        const phoneNumbers = this._extractPhoneNumbers(person, objectType);
 
-        // Use "Goes By" if available, otherwise firstName (per mapping spec)
-        const displayFirstName = client.goesBy || client.firstName;
+        // Extract emails (same for all types)
+        const emails = this._extractEmails(person);
+
+        // Extract firstName (type-specific)
+        const firstName = this._extractFirstName(person, objectType);
+
+        // Build customFields array
+        const customFields = this._buildCustomFields(person, objectType);
 
         return {
-            externalId: String(client.id),
+            externalId: `${person.id}_${Date.now()}`,
             source: 'axiscare',
             defaultFields: {
-                firstName: displayFirstName,
-                lastName: client.lastName,
-                company: null, // Healthcare clients typically don't have companies
+                firstName,
+                lastName: person.lastName,
+                company: null,
                 phoneNumbers,
                 emails,
-                role: 'Client', // Contact type per mapping spec
+                role: objectType, // 'Client', 'Lead', or 'Caregiver'
             },
-            customFields: {
-                crmId: client.id,
-                crmType: 'axiscare',
-                status: client.status?.label || client.status,
-                dateOfBirth: client.dateOfBirth,
-                ssn: client.ssn, // Only included if requested via requestedSensitiveFields
-                gender: client.gender,
-                goesBy: client.goesBy,
-                // Address from residentialAddress object
-                residentialAddress: client.residentialAddress
-                    ? {
-                          name: client.residentialAddress.name,
-                          streetAddress1: client.residentialAddress.streetAddress1,
-                          streetAddress2: client.residentialAddress.streetAddress2,
-                          locality: client.residentialAddress.locality,
-                          region: client.residentialAddress.region,
-                          postalCode: client.residentialAddress.postalCode,
-                          latitude: client.residentialAddress.latitude,
-                          longitude: client.residentialAddress.longitude,
-                      }
-                    : null,
-                billingAddress: client.billingAddress
-                    ? {
-                          name: client.billingAddress.name,
-                          streetAddress1: client.billingAddress.streetAddress1,
-                          streetAddress2: client.billingAddress.streetAddress2,
-                          locality: client.billingAddress.locality,
-                          region: client.billingAddress.region,
-                          postalCode: client.billingAddress.postalCode,
-                      }
-                    : null,
-                // Additional AxisCare-specific fields
-                medicaidNumber: client.medicaidNumber,
-                priorityNote: client.priorityNote,
-                classes:
-                    client.classes?.map((c) => ({
-                        code: c.code,
-                        name: c.name,
-                    })) || [],
-                region: client.region
-                    ? { id: client.region.id, name: client.region.name }
-                    : null,
-                administrators:
-                    client.administrators?.map((a) => ({
-                        id: a.id,
-                        name: a.name,
-                        username: a.username,
-                    })) || [],
-                preferredCaregiver: client.preferredCaregiver
-                    ? {
-                          id: client.preferredCaregiver.id,
-                          firstName: client.preferredCaregiver.firstName,
-                          lastName: client.preferredCaregiver.lastName,
-                      }
-                    : null,
-                referredBy: client.referredBy
-                    ? { type: client.referredBy.type, name: client.referredBy.name }
-                    : null,
-                // Important dates
-                createdDate: client.createdDate,
-                assessmentDate: client.assessmentDate,
-                conversionDate: client.conversionDate,
-                startDate: client.startDate,
-                effectiveEndDate: client.effectiveEndDate,
-            },
+            customFields,
         };
+    }
+
+    /**
+     * Extract firstName based on person type
+     * @private
+     * @param {Object} person - AxisCare person object
+     * @param {string} objectType - Person type (Client, Lead, Caregiver)
+     * @returns {string} First name
+     */
+    _extractFirstName(person, objectType) {
+        if (objectType === 'Lead') {
+            return person.firstName; // Leads don't have goesBy
+        }
+        return person.goesBy || person.firstName; // Client/Caregiver
+    }
+
+    /**
+     * Extract phone numbers based on person type
+     * @private
+     * @param {Object} person - AxisCare person object
+     * @param {string} objectType - Person type (Client, Lead, Caregiver)
+     * @returns {Array<{name: string, value: string, primary: boolean}>} Phone numbers
+     */
+    _extractPhoneNumbers(person, objectType) {
+        const phones = [];
+
+        if (objectType === 'Lead') {
+            // Leads use: phone, mobilePhone
+            if (person.phone) {
+                phones.push({
+                    name: 'phone',
+                    value: person.phone,
+                    primary: true,
+                });
+            }
+            if (person.mobilePhone) {
+                phones.push({
+                    name: 'mobile',
+                    value: person.mobilePhone,
+                    primary: false,
+                });
+            }
+        } else {
+            // Client/Caregiver use: homePhone, mobilePhone, otherPhone
+            if (person.homePhone) {
+                phones.push({
+                    name: 'home',
+                    value: person.homePhone,
+                    primary: true,
+                });
+            }
+            if (person.mobilePhone) {
+                phones.push({
+                    name: 'mobile',
+                    value: person.mobilePhone,
+                    primary: false,
+                });
+            }
+            if (person.otherPhone) {
+                phones.push({
+                    name: 'other',
+                    value: person.otherPhone,
+                    primary: false,
+                });
+            }
+        }
+
+        return phones;
+    }
+
+    /**
+     * Extract emails (same for all types)
+     * @private
+     * @param {Object} person - AxisCare person object
+     * @returns {Array<{name: string, value: string, primary: boolean}>} Emails
+     */
+    _extractEmails(person) {
+        const emails = [];
+
+        if (person.personalEmail) {
+            emails.push({
+                name: 'primary',
+                value: person.personalEmail,
+                primary: true,
+            });
+        }
+        if (person.billingEmail && person.billingEmail !== person.personalEmail) {
+            emails.push({
+                name: 'billing',
+                value: person.billingEmail,
+                primary: false,
+            });
+        }
+
+        return emails;
+    }
+
+    /**
+     * Build customFields array with type-specific logic
+     * @private
+     * @param {Object} person - AxisCare person object
+     * @param {string} objectType - Person type (Client, Lead, Caregiver)
+     * @returns {Array<{key: string, value: string}>} Custom fields array
+     */
+    _buildCustomFields(person, objectType) {
+        const customFields = [];
+
+        const addField = (key, value) => {
+            if (value !== null && value !== undefined && value !== '') {
+                customFields.push({
+                    key,
+                    value:
+                        typeof value === 'object'
+                            ? JSON.stringify(value)
+                            : String(value),
+                });
+            }
+        };
+
+        addField('crmId', person.id);
+        addField('crmType', 'axiscare');
+        addField('objectType', objectType); // Track which type this is
+        addField('status', person.status?.label || person.status);
+        addField('dateOfBirth', person.dateOfBirth);
+        addField('gender', person.gender);
+        addField('goesBy', person.goesBy);
+        addField('priorityNote', person.priorityNote);
+
+        // Addresses (all types have these)
+        if (person.residentialAddress) {
+            addField('residentialAddress', person.residentialAddress);
+        }
+        if (person.billingAddress) {
+            addField('billingAddress', person.billingAddress);
+        }
+
+        // Classes (Client and Caregiver only)
+        if (person.classes && person.classes.length > 0) {
+            addField('classes', person.classes);
+        }
+
+        // Other Client/Caregiver specific fields
+        if (objectType !== 'Lead') {
+            addField('medicaidNumber', person.medicaidNumber);
+            addField('region', person.region);
+            addField('administrators', person.administrators);
+            addField('preferredCaregiver', person.preferredCaregiver);
+            addField('referredBy', person.referredBy);
+        }
+
+        // Date fields
+        addField('createdDate', person.createdDate);
+        addField('assessmentDate', person.assessmentDate);
+        addField('conversionDate', person.conversionDate);
+        addField('startDate', person.startDate);
+        addField('effectiveEndDate', person.effectiveEndDate);
+
+        return customFields;
     }
 
     /**
@@ -370,12 +505,13 @@ class AxisCareIntegration extends BaseCRMIntegration {
             ) || []) {
                 try {
                     // Transform client data for Quo using the correct method
-                    const quoContactData = await this.transformPersonToQuo(client);
+                    const quoContactData = this.transformPersonToQuo(client);
 
                     // Create or update in Quo if available
                     let quoResult = null;
                     if (this.quo?.api) {
-                        quoResult = await this.quo.api.createContact(quoContactData);
+                        quoResult =
+                            await this.quo.api.createContact(quoContactData);
                     }
 
                     syncResults.push({
@@ -495,224 +631,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 details: error.message,
             });
         }
-    }
-
-    /**
-     * Handler: Fetch a page of clients from AxisCare
-     *
-     * OVERRIDE: This overrides BaseCRMIntegration.fetchPersonPageHandler to handle
-     * AxisCare's cursor-based pagination (nextPage URLs) instead of page-based.
-     *
-     * Flow:
-     * 1. Get nextPageUrl from process metadata (null for first page)
-     * 2. Fetch from AxisCare (use URL if available, else first page)
-     * 3. Store nextPage URL in metadata for next iteration
-     * 4. Queue batch processing for this page's clients
-     * 5. Queue next page OR complete sync if no more pages
-     *
-     * Metadata stored:
-     * - nextPageUrl: URL for next fetch (null when no more pages)
-     * - totalFetched: Running count of all clients fetched
-     * - pageCount: Number of pages processed
-     *
-     * @param {Object} params
-     * @param {Object} params.data - Event data from queue
-     * @param {string} params.data.processId - Process tracking ID
-     * @param {string} params.data.personObjectType - "Client"
-     * @param {number} params.data.page - Page counter (0-indexed, just for logging)
-     * @param {number} params.data.limit - Records per page
-     */
-    async fetchPersonPageHandler({ data }) {
-        const { processId, personObjectType, page, limit } = data;
-
-        try {
-            console.log(
-                `[AxisCare] Fetching page ${page} (processId: ${processId})`,
-            );
-
-            // Update process state
-            await this.processManager.updateState(processId, 'FETCHING_PAGE');
-
-            // ═══════════════════════════════════════════════════════════
-            // STEP 1: Get nextPageUrl from metadata
-            // ═══════════════════════════════════════════════════════════
-            const metadata = await this.processManager.getMetadata(processId);
-            const nextPageUrl = metadata?.nextPageUrl;
-
-            console.log(
-                `[AxisCare] Using ${nextPageUrl ? 'stored nextPage URL' : 'initial listClients'}`,
-            );
-
-            // ═══════════════════════════════════════════════════════════
-            // STEP 2: Fetch from AxisCare API (with retry)
-            // ═══════════════════════════════════════════════════════════
-            let response;
-
-            if (nextPageUrl) {
-                // Subsequent pages: use stored URL with retry
-                response = await this._fetchWithRetry(() =>
-                    this.axiscare.api.getFromUrl(nextPageUrl),
-                );
-            } else {
-                // First page: use listClients with limit and retry
-                response = await this._fetchWithRetry(() =>
-                    this.axiscare.api.listClients({
-                        limit: limit || 50,
-                    }),
-                );
-            }
-
-            // Validate API response for errors
-            if (response.errors && response.errors.length > 0) {
-                const errorMessage = `AxisCare API returned errors: ${JSON.stringify(response.errors)}`;
-                console.error(`[AxisCare] ${errorMessage}`);
-                throw new Error(errorMessage);
-            }
-
-            const clients = response.results?.clients || [];
-            console.log(`[AxisCare] Fetched ${clients.length} clients`);
-
-            // Handle empty first page (edge case: no clients exist)
-            if (page === 0 && clients.length === 0) {
-                console.log('[AxisCare] No clients found, queuing completion');
-                await this.processManager.updateTotal(processId, 0, 0);
-                await this.queueManager.queueCompleteSync(processId);
-                return;
-            }
-
-            // ═══════════════════════════════════════════════════════════
-            // STEP 3: Update metadata with next URL and totals
-            // ═══════════════════════════════════════════════════════════
-            const totalFetched = (metadata?.totalFetched || 0) + clients.length;
-            const pageCount = page + 1;
-
-            await this.processManager.updateMetadata(processId, {
-                nextPageUrl: response.nextPage || null,
-                totalFetched,
-                pageCount,
-            });
-
-            // Update process totals (estimated, will be corrected as we go)
-            if (page === 0) {
-                // First page: provide initial estimate
-                await this.processManager.updateTotal(
-                    processId,
-                    totalFetched,
-                    1,
-                );
-                await this.processManager.updateState(
-                    processId,
-                    'PROCESSING_BATCHES',
-                );
-            } else {
-                // Update with actual count so far
-                await this.processManager.updateTotal(
-                    processId,
-                    totalFetched,
-                    pageCount,
-                );
-            }
-
-            console.log(
-                `[AxisCare] Progress: ${totalFetched} clients fetched across ${pageCount} pages`,
-            );
-
-            // ═══════════════════════════════════════════════════════════
-            // STEP 4: Queue batch processing for this page's clients
-            // ═══════════════════════════════════════════════════════════
-            if (clients.length > 0) {
-                console.log(
-                    `[AxisCare] Queuing batch processing for ${clients.length} clients`,
-                );
-                await this.queueManager.queueProcessPersonBatch({
-                    processId,
-                    crmPersonIds: clients.map((c) => String(c.id)),
-                    page,
-                    totalInPage: clients.length,
-                });
-            }
-
-            // ═══════════════════════════════════════════════════════════
-            // STEP 5: Queue next page OR complete sync
-            // ═══════════════════════════════════════════════════════════
-            if (response.nextPage) {
-                // More pages exist
-                console.log(
-                    `[AxisCare] More pages available, queuing page ${page + 1}`,
-                );
-                await this.queueManager.queueFetchPersonPage({
-                    processId,
-                    personObjectType,
-                    page: page + 1,
-                    limit,
-                });
-            } else {
-                // No more pages - all data fetched
-                console.log(
-                    `[AxisCare] All pages fetched. Total: ${totalFetched} clients`,
-                );
-                console.log(
-                    '[AxisCare] Queuing sync completion (will complete after all batches process)',
-                );
-                await this.queueManager.queueCompleteSync(processId);
-            }
-        } catch (error) {
-            console.error(`[AxisCare] Error fetching page ${page}:`, error);
-            await this.processManager.handleError(processId, error);
-            throw error;
-        }
-    }
-
-    /**
-     * Fetch with exponential backoff retry
-     * Lambda-compatible: Handles transient failures gracefully
-     * @private
-     * @param {Function} fetchFn - Async function to execute
-     * @param {number} maxRetries - Maximum retry attempts (default: 3)
-     * @param {number} baseDelay - Base delay in ms (default: 1000)
-     * @returns {Promise<*>} Result from fetchFn
-     */
-    async _fetchWithRetry(fetchFn, maxRetries = 3, baseDelay = 1000) {
-        let lastError;
-
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                return await fetchFn();
-            } catch (error) {
-                lastError = error;
-
-                // Check if error is retryable (network/timeout errors)
-                const isRetryable =
-                    error.code === 'ECONNRESET' ||
-                    error.code === 'ETIMEDOUT' ||
-                    error.code === 'ENOTFOUND' ||
-                    error.message?.includes('timeout') ||
-                    error.message?.includes('network') ||
-                    (error.response?.status >= 500 &&
-                        error.response?.status < 600) || // Server errors
-                    error.response?.status === 429; // Rate limit
-
-                // Don't retry on last attempt or non-retryable errors
-                if (attempt === maxRetries || !isRetryable) {
-                    throw error;
-                }
-
-                // Calculate exponential backoff with jitter
-                const delay = Math.min(
-                    baseDelay * Math.pow(2, attempt - 1) +
-                        Math.random() * 1000,
-                    10000, // Max 10 seconds
-                );
-
-                console.log(
-                    `[AxisCare] Retry ${attempt}/${maxRetries} after ${Math.round(delay)}ms (${error.message})`,
-                );
-
-                await new Promise((resolve) => setTimeout(resolve, delay));
-            }
-        }
-
-        throw lastError;
     }
 }
 

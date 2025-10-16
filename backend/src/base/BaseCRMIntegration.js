@@ -20,6 +20,10 @@ const SyncOrchestrator = require('./services/SyncOrchestrator');
  * Base class for all CRM integrations targeting Quo (OpenPhone).
  * Provides automatic sync orchestration, process management, and queue handling.
  *
+ * Supports two pagination strategies:
+ * - PAGE_BASED: APIs with known total count (Salesforce, Zoho, HubSpot)
+ * - CURSOR_BASED: APIs using cursor/nextPage without total (AxisCare, Attio, GraphQL)
+ *
  * Design Philosophy:
  * - Child classes implement 5 core methods
  * - Auto-generates sync events and handlers
@@ -31,27 +35,79 @@ const SyncOrchestrator = require('./services/SyncOrchestrator');
  * 2. Implement 5 abstract methods
  * 3. Optionally override lifecycle and helper methods
  *
- * @example
+ * @example Page-Based Pagination (Zoho)
  * class ZohoCRMIntegration extends BaseCRMIntegration {
  *   static CRMConfig = {
  *     personObjectTypes: [{ crmObjectName: 'Contact', quoContactType: 'contact' }],
- *     syncConfig: { reverseChronological: true, initialBatchSize: 100 },
+ *     syncConfig: {
+ *       paginationType: 'PAGE_BASED',
+ *       supportsTotal: true,
+ *       returnFullRecords: false,
+ *       reverseChronological: true,
+ *       initialBatchSize: 100
+ *     },
  *     queueConfig: { maxWorkers: 25 }
  *   };
  *
- *   async fetchPersonPage(params) { / * ... * / }
- *   async transformPersonToQuo(person) { / * ... * / }
- *   // ... implement other 3 methods
+ *   async fetchPersonPage({ page, limit }) {
+ *     const response = await this.api.listContacts({ page, limit });
+ *     return { data: response.contacts, total: response.total, hasMore: true };
+ *   }
+ *   // ... implement other methods
+ * }
+ *
+ * @example Cursor-Based Pagination (AxisCare)
+ * class AxisCareIntegration extends BaseCRMIntegration {
+ *   static CRMConfig = {
+ *     personObjectTypes: [{ crmObjectName: 'Client', quoContactType: 'contact' }],
+ *     syncConfig: {
+ *       paginationType: 'CURSOR_BASED',
+ *       supportsTotal: false,
+ *       returnFullRecords: true,
+ *       reverseChronological: true,
+ *       initialBatchSize: 50
+ *     }
+ *   };
+ *
+ *   async fetchPersonPage({ cursor, limit }) {
+ *     const params = { limit };
+ *     if (cursor) params.startAfterId = cursor;
+ *     const response = await this.api.listClients(params);
+ *     const nextCursor = response.nextPage ? extractCursor(response.nextPage) : null;
+ *     return { data: response.clients, cursor: nextCursor, hasMore: !!response.nextPage };
+ *   }
+ *   // ... implement other methods
  * }
  */
 class BaseCRMIntegration extends IntegrationBase {
     /**
      * CRM Configuration - MUST be overridden by child classes
      * Defines person object types, sync settings, and queue configuration
+     *
+     * @typedef {Object} CRMConfig
+     * @property {Array<{crmObjectName: string, quoContactType: string}>} personObjectTypes - Person object mappings
+     * @property {Object} syncConfig - Sync behavior configuration
+     * @property {'PAGE_BASED'|'CURSOR_BASED'} syncConfig.paginationType - Pagination strategy
+     * @property {boolean} syncConfig.supportsTotal - Does API return total count upfront?
+     * @property {boolean} syncConfig.returnFullRecords - Does list API return full objects or just IDs?
+     * @property {boolean} syncConfig.reverseChronological - Fetch newest records first
+     * @property {number} syncConfig.initialBatchSize - Records per page for initial sync
+     * @property {number} syncConfig.ongoingBatchSize - Records per page for delta sync
+     * @property {boolean} syncConfig.supportsWebhooks - Does CRM support webhooks?
+     * @property {number} syncConfig.pollIntervalMinutes - Polling interval if no webhooks
+     * @property {Object} queueConfig - SQS queue configuration
+     * @property {number} queueConfig.maxWorkers - Maximum concurrent queue workers
+     * @property {number} queueConfig.provisioned - Provisioned concurrency for Lambda
+     * @property {number} queueConfig.maxConcurrency - Max concurrent executions
+     * @property {number} queueConfig.batchSize - Messages processed per invocation
+     * @property {number} queueConfig.timeout - Function timeout in seconds
      */
     static CRMConfig = {
         personObjectTypes: [],
         syncConfig: {
+            paginationType: 'PAGE_BASED',
+            supportsTotal: true,
+            returnFullRecords: false,
             reverseChronological: true,
             initialBatchSize: 100,
             ongoingBatchSize: 50,
@@ -202,14 +258,20 @@ class BaseCRMIntegration extends IntegrationBase {
 
     /**
      * Fetch a page of persons from the CRM
+     *
+     * Implementation depends on pagination strategy:
+     * - PAGE_BASED: Use `page` param, return `{ data, total, hasMore }`
+     * - CURSOR_BASED: Use `cursor` param, return `{ data, cursor, hasMore }`
+     *
      * @abstract
      * @param {Object} params
      * @param {string} params.objectType - CRM object type (Contact, Lead, etc.)
-     * @param {number} params.page - Page number (0-indexed)
+     * @param {number} [params.page] - Page number (0-indexed) - for PAGE_BASED only
+     * @param {string|null} [params.cursor] - Cursor for pagination - for CURSOR_BASED only
      * @param {number} params.limit - Records per page
      * @param {Date} [params.modifiedSince] - Filter by modification date
      * @param {boolean} [params.sortDesc=true] - Sort descending (newest first)
-     * @returns {Promise<{data: Array, total: number, hasMore: boolean}>}
+     * @returns {Promise<Object>} PAGE_BASED: {data: Array, total: number, hasMore: boolean} | CURSOR_BASED: {data: Array, cursor: string|null, hasMore: boolean}
      */
     async fetchPersonPage(params) {
         throw new Error('fetchPersonPage must be implemented by child class');
@@ -219,9 +281,9 @@ class BaseCRMIntegration extends IntegrationBase {
      * Transform CRM person object to Quo contact format
      * @abstract
      * @param {Object} person - CRM person object
-     * @returns {Promise<Object>} Quo contact format
+     * @returns {Object} Quo contact format
      */
-    async transformPersonToQuo(person) {
+    transformPersonToQuo(person) {
         throw new Error(
             'transformPersonToQuo must be implemented by child class',
         );
@@ -451,22 +513,63 @@ class BaseCRMIntegration extends IntegrationBase {
 
     /**
      * Handler: Fetch a page of persons
-     * 1. Fetch page from CRM
-     * 2. If first page: Determine total, queue all remaining pages
-     * 3. Queue batch for processing
+     * Routes to appropriate pagination strategy based on CRMConfig
      */
     async fetchPersonPageHandler({ data }) {
         const {
             processId,
             personObjectType,
             page,
+            cursor,
             limit,
             modifiedSince,
             sortDesc,
         } = data;
 
+        const syncConfig = this.constructor.CRMConfig.syncConfig;
+
         try {
-            // Update state
+            if (syncConfig.paginationType === 'CURSOR_BASED') {
+                return await this._handleCursorBasedPagination({
+                    processId,
+                    personObjectType,
+                    cursor,
+                    limit,
+                    modifiedSince,
+                    sortDesc,
+                });
+            } else {
+                return await this._handlePageBasedPagination({
+                    processId,
+                    personObjectType,
+                    page,
+                    limit,
+                    modifiedSince,
+                    sortDesc,
+                });
+            }
+        } catch (error) {
+            console.error(`Error in fetchPersonPageHandler:`, error);
+            await this.processManager.handleError(processId, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Handle page-based pagination (existing behavior)
+     * - Fetch page
+     * - Fan out if page 0 and has total
+     * - Queue person IDs for batch processing
+     */
+    async _handlePageBasedPagination({
+        processId,
+        personObjectType,
+        page,
+        limit,
+        modifiedSince,
+        sortDesc,
+    }) {
+        try {
             await this.processManager.updateState(processId, 'FETCHING_TOTAL');
 
             // Fetch page
@@ -480,11 +583,10 @@ class BaseCRMIntegration extends IntegrationBase {
 
             const persons = personPage.data || [];
 
-            // If first page, determine total and fan-out queue all pages
+            // If first page and has total, fan out all pages
             if (page === 0 && personPage.total) {
                 const totalPages = Math.ceil(personPage.total / limit);
 
-                // Update process with total
                 await this.processManager.updateTotal(
                     processId,
                     personPage.total,
@@ -495,7 +597,7 @@ class BaseCRMIntegration extends IntegrationBase {
                     'QUEUING_PAGES',
                 );
 
-                // Queue all remaining pages at once (fan-out)
+                // Fan out pages 1...N for parallel processing
                 await this.queueManager.fanOutPages({
                     processId,
                     personObjectType,
@@ -524,13 +626,182 @@ class BaseCRMIntegration extends IntegrationBase {
                 });
             }
 
-            // If no more pages and no total was provided, complete
+            // If no more pages and no total provided, complete
             if (page > 0 && persons.length < limit) {
                 await this.queueManager.queueCompleteSync(processId);
             }
         } catch (error) {
             console.error(`Error fetching page ${page}:`, error);
             await this.processManager.handleError(processId, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Handle cursor-based pagination (new behavior)
+     * - Fetch page with cursor
+     * - Process immediately (fetch full data, transform, sync)
+     * - Queue next page if more exist
+     *
+     * @param {Object} params
+     * @param {string} params.processId - Process ID
+     * @param {string} params.personObjectType - CRM object type
+     * @param {string|null} params.cursor - Cursor for pagination (null for first page)
+     * @param {number} params.limit - Records per page
+     * @param {string} [params.modifiedSince] - Filter by modification date
+     * @param {boolean} [params.sortDesc] - Sort descending
+     */
+    async _handleCursorBasedPagination({
+        processId,
+        personObjectType,
+        cursor,
+        limit,
+        modifiedSince,
+        sortDesc,
+    }) {
+        const syncConfig = this.constructor.CRMConfig.syncConfig;
+
+        try {
+            console.log(
+                `[BaseCRM] Cursor-based pagination: cursor=${cursor}`,
+            );
+
+            await this.processManager.updateState(processId, 'FETCHING_PAGE');
+
+            // Fetch page (child class implements fetchPersonPage)
+            const personPage = await this.fetchPersonPage({
+                objectType: personObjectType,
+                cursor,
+                limit,
+                modifiedSince: modifiedSince ? new Date(modifiedSince) : null,
+                sortDesc,
+            });
+
+            const persons = personPage.data || [];
+            const nextCursor = personPage.cursor || null;
+            const hasMore = personPage.hasMore || false;
+
+            console.log(
+                `[BaseCRM] Fetched ${persons.length} records, hasMore=${hasMore}`,
+            );
+
+            // Handle empty first page
+            if (!cursor && persons.length === 0) {
+                console.log('[BaseCRM] No records found, completing sync');
+                await this.processManager.updateTotal(processId, 0, 0);
+                await this.queueManager.queueCompleteSync(processId);
+                return;
+            }
+
+            // Update process totals (estimated)
+            const metadata =
+                await this.processManager.getMetadata(processId);
+            const totalFetched = (metadata.totalFetched || 0) + persons.length;
+            const pageCount = (metadata.pageCount || 0) + 1;
+
+            await this.processManager.updateMetadata(processId, {
+                totalFetched,
+                pageCount,
+                lastCursor: cursor,
+            });
+
+            // First page: provide initial estimate
+            if (!cursor) {
+                await this.processManager.updateTotal(
+                    processId,
+                    totalFetched,
+                    1,
+                );
+                await this.processManager.updateState(
+                    processId,
+                    'PROCESSING_BATCHES',
+                );
+            } else {
+                // Update running total
+                await this.processManager.updateTotal(
+                    processId,
+                    totalFetched,
+                    pageCount,
+                );
+            }
+
+            console.log(
+                `[BaseCRM] Progress: ${totalFetched} records across ${pageCount} pages`,
+            );
+
+            // Process records immediately (no separate queue)
+            if (persons.length > 0) {
+                console.log(
+                    `[BaseCRM] Processing ${persons.length} records inline`,
+                );
+
+                try {
+                    // If API returns full records, use them directly
+                    let fullPersons;
+                    if (syncConfig.returnFullRecords) {
+                        fullPersons = persons;
+                    } else {
+                        // Must fetch full data by IDs
+                        fullPersons = await this.fetchPersonsByIds(
+                            persons.map((p) => p.id),
+                        );
+                    }
+
+                    // Transform to Quo format
+                    const quoContacts = fullPersons.map((p) => this.transformPersonToQuo(p));
+
+                    // Bulk upsert to Quo
+                    const results = await this.bulkUpsertToQuo(quoContacts);
+
+                    // Update metrics
+                    await this.processManager.updateMetrics(processId, {
+                        processed: persons.length,
+                        success: results.successCount,
+                        errors: results.errorCount,
+                        errorDetails: results.errors,
+                    });
+
+                    console.log(
+                        `[BaseCRM] Synced ${results.successCount}/${persons.length} successfully`,
+                    );
+                } catch (error) {
+                    console.error(
+                        `[BaseCRM] Error processing records:`,
+                        error,
+                    );
+
+                    // Update metrics with error
+                    await this.processManager.updateMetrics(processId, {
+                        processed: 0,
+                        success: 0,
+                        errors: persons.length,
+                        errorDetails: [{ error: error.message, cursor }],
+                    });
+                }
+            }
+
+            // Queue next page OR complete sync
+            if (hasMore && nextCursor) {
+                console.log(
+                    `[BaseCRM] Queuing next page with cursor=${nextCursor}`,
+                );
+
+                await this.queueManager.queueFetchPersonPage({
+                    processId,
+                    personObjectType,
+                    cursor: nextCursor,
+                    limit,
+                    modifiedSince,
+                    sortDesc,
+                });
+            } else {
+                console.log(`[BaseCRM] All pages fetched, completing sync`);
+                await this.queueManager.queueCompleteSync(processId);
+            }
+        } catch (error) {
+            console.error(`[BaseCRM] Error in cursor-based pagination:`, error);
+            await this.processManager.handleError(processId, error);
+            throw error;
         }
     }
 
@@ -549,9 +820,7 @@ class BaseCRMIntegration extends IntegrationBase {
             const persons = await this.fetchPersonsByIds(crmPersonIds);
 
             // Transform to Quo format
-            const quoContacts = await Promise.all(
-                persons.map((p) => this.transformPersonToQuo(p)),
-            );
+            const quoContacts = persons.map((p) => this.transformPersonToQuo(p));
 
             // Bulk upsert to Quo
             const results = await this.bulkUpsertToQuo(quoContacts);
@@ -669,9 +938,9 @@ class BaseCRMIntegration extends IntegrationBase {
             errorCount = contacts.length;
             console.error('Bulk upsert error:', error);
             errors.push({
-                contactId: contact.externalId,
                 error: error.message,
                 timestamp: new Date().toISOString(),
+                contactCount: contacts.length,
             });
         }
 
