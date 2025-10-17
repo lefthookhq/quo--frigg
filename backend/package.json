@@ -30,6 +30,7 @@
     "dependencies": {
         "@friggframework/core": "v2.0.0-next.44",
         "@friggframework/api-module-frigg-scale-test": "0.2.0-next.2",
+        "@friggframework/api-module-attio": "2.0.0-canary.25.13cc249.0",
         "axios": "^1.6.0",
         "node-cache": "^5.1.2"
     },
