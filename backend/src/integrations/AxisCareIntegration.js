@@ -69,9 +69,8 @@ class AxisCareIntegration extends BaseCRMIntegration {
         super(params);
 
         this.events = {
-            ...this.events, // BaseCRMIntegration events
+            ...this.events,
 
-            // Existing AxisCare-specific events
             LIST_AXISCARE_CLIENTS: {
                 handler: this.listClients,
             },
@@ -107,17 +106,14 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 limit: limit || 50,
             };
 
-            // Add cursor if provided (not first page)
             if (cursor) {
                 params.startAfterId = cursor;
             }
 
-            // Add modification filter if provided
             if (modifiedSince) {
                 params.updated_since = modifiedSince.toISOString();
             }
 
-            // Route to correct API endpoint based on objectType
             let response, persons;
 
             console.log(`[AxisCare] Fetching ${objectType} page with cursor=${cursor}`);
@@ -149,7 +145,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
                     throw new Error(`Unknown objectType: ${objectType}`);
             }
 
-            // Parse nextPage URL to extract cursor (handle both response structures)
             let nextCursor = null;
             const nextPageUrl = response.results?.nextPage || response.nextPage;
 
@@ -175,7 +170,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 console.log('[AxisCare] DEBUG no nextPage in response');
             }
 
-            // Tag each person with objectType for transformation
             const taggedPersons = persons.map((person) => ({
                 ...person,
                 _objectType: objectType,
@@ -206,18 +200,11 @@ class AxisCareIntegration extends BaseCRMIntegration {
      * @returns {Object} Quo contact format
      */
     transformPersonToQuo(person) {
-        const objectType = person._objectType || 'Client'; // Default to Client for backward compatibility
+        const objectType = person._objectType || 'Client';
 
-        // Extract phone numbers (type-specific)
         const phoneNumbers = this._extractPhoneNumbers(person, objectType);
-
-        // Extract emails (same for all types)
         const emails = this._extractEmails(person);
-
-        // Extract firstName (type-specific)
         const firstName = this._extractFirstName(person, objectType);
-
-        // Build customFields array
         const customFields = this._buildCustomFields(person, objectType);
 
         return {
@@ -229,7 +216,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 company: null,
                 phoneNumbers,
                 emails,
-                role: objectType, // 'Client', 'Lead', 'Caregiver', or 'Applicant'
+                role: objectType,
             },
             customFields,
         };
@@ -276,7 +263,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 });
             }
         } else {
-            // Client/Caregiver use: homePhone, mobilePhone, otherPhone
+            // Client/Caregiver/Applicant use: homePhone, mobilePhone, otherPhone
             if (person.homePhone) {
                 phones.push({
                     name: 'home',
@@ -502,7 +489,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
 
     async syncClientsToQuo(args) {
         try {
-            // Get clients from AxisCare
             const axiscareClients = await this.axiscare.api.listClients({
                 limit: args.limit || 50,
                 statuses: args.status,
@@ -515,10 +501,8 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 args.maxClients || 10,
             ) || []) {
                 try {
-                    // Transform client data for Quo using the correct method
                     const quoContactData = this.transformPersonToQuo(client);
 
-                    // Create or update in Quo if available
                     let quoResult = null;
                     if (this.quo?.api) {
                         quoResult =
