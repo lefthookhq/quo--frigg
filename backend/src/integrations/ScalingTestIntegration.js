@@ -1,7 +1,6 @@
 const { BaseCRMIntegration } = require('../base/BaseCRMIntegration');
 const { Definition: QuoDefinition } = require('../api-modules/quo/definition');
 const crmScaleTest = require('@friggframework/api-module-frigg-scale-test');
-const crypto = require('crypto');
 
 /**
  * ScalingTestIntegration - Refactored to extend BaseCRMIntegration
@@ -126,7 +125,10 @@ class ScalingTestIntegration extends BaseCRMIntegration {
                 this.transformApiContactToQuo(contact),
             );
 
-            console.log(`[ScalingTest] fetchPersonPage: page=${page}, fetched ${data.length} contacts, first 3 IDs:`, data.slice(0, 3).map(c => c.id));
+            console.log(
+                `[ScalingTest] fetchPersonPage: page=${page}, fetched ${data.length} contacts, first 3 IDs:`,
+                data.slice(0, 3).map((c) => c.id),
+            );
 
             return {
                 data,
@@ -198,7 +200,9 @@ class ScalingTestIntegration extends BaseCRMIntegration {
             // Omit customFields - they must be pre-created in OpenPhone workspace
         };
 
-        console.log(`[ScalingTest] transformPersonToQuo: contact.id=${contact.id} -> externalId=${quoContact.externalId}, name=${contact.first_name} ${contact.last_name}`);
+        console.log(
+            `[ScalingTest] transformPersonToQuo: contact.id=${contact.id} -> externalId=${quoContact.externalId}, name=${contact.first_name} ${contact.last_name}`,
+        );
         return quoContact;
     }
 
@@ -238,7 +242,9 @@ class ScalingTestIntegration extends BaseCRMIntegration {
             created_at: apiContact.updatedAt,
         };
 
-        console.log(`[ScalingTest] transformApiContactToQuo: ${apiContact.id} -> id=${contactId}, name=${apiContact.firstName} ${apiContact.lastName}`);
+        console.log(
+            `[ScalingTest] transformApiContactToQuo: ${apiContact.id} -> id=${contactId}, name=${apiContact.firstName} ${apiContact.lastName}`,
+        );
         return result;
     }
 
@@ -310,7 +316,10 @@ class ScalingTestIntegration extends BaseCRMIntegration {
     }
 
     async fetchPersonsByIds(ids) {
-        console.log(`[ScalingTest] fetchPersonsByIds: requested ${ids.length} IDs, first 5:`, ids.slice(0, 5));
+        console.log(
+            `[ScalingTest] fetchPersonsByIds: requested ${ids.length} IDs, first 5:`,
+            ids.slice(0, 5),
+        );
 
         // With UUIDs, we can't calculate which page contains them
         // For scale test purposes, we'll scan pages until we find all contacts
@@ -336,7 +345,9 @@ class ScalingTestIntegration extends BaseCRMIntegration {
             hasMore = pageData.hasMore;
             page++;
 
-            console.log(`[ScalingTest] fetchPersonsByIds: scanned page ${page}, found ${matches.length} matches, total ${foundContacts.length}/${ids.length}`);
+            console.log(
+                `[ScalingTest] fetchPersonsByIds: scanned page ${page}, found ${matches.length} matches, total ${foundContacts.length}/${ids.length}`,
+            );
 
             // Early exit if we found all contacts
             if (foundContacts.length >= ids.length) {
@@ -344,7 +355,9 @@ class ScalingTestIntegration extends BaseCRMIntegration {
             }
         }
 
-        console.log(`[ScalingTest] fetchPersonsByIds: completed, found ${foundContacts.length} contacts`);
+        console.log(
+            `[ScalingTest] fetchPersonsByIds: completed, found ${foundContacts.length} contacts`,
+        );
         return foundContacts;
     }
 }

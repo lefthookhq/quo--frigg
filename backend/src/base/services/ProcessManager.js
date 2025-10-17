@@ -220,6 +220,42 @@ class ProcessManager {
     }
 
     /**
+     * Get process metadata
+     * Lambda-compatible: Always fetches fresh from database
+     * @param {string} processId - Process ID
+     * @returns {Promise<Object>} Metadata object (empty object if not found)
+     */
+    async getMetadata(processId) {
+        const process = await this.getProcess(processId);
+        return process?.context?.metadata || {};
+    }
+
+    /**
+     * Update process metadata (merge with existing)
+     * Lambda-compatible: Fetches current state, merges, then persists
+     * @param {string} processId - Process ID
+     * @param {Object} metadataUpdate - Metadata fields to merge
+     * @returns {Promise<Object>} Updated process
+     */
+    async updateMetadata(processId, metadataUpdate) {
+        const process = await this.getProcess(processId);
+        if (!process) {
+            throw new Error(`Process not found: ${processId}`);
+        }
+
+        // Merge with existing metadata (Lambda-safe: no in-memory state)
+        const updatedMetadata = {
+            ...(process.context?.metadata || {}),
+            ...metadataUpdate,
+        };
+
+        // Persist via updateState (uses repository, Lambda-compatible)
+        return await this.updateState(processId, process.state, {
+            metadata: updatedMetadata,
+        });
+    }
+
+    /**
      * Mark process as completed
      * @param {string} processId - Process ID to complete
      * @returns {Promise<Object>} Updated process

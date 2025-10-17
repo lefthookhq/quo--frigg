@@ -52,7 +52,7 @@ describe('BaseCRMIntegration', () => {
                 });
             }
 
-            async transformPersonToQuo(person) {
+            transformPersonToQuo(person) {
                 return buildQuoContact({
                     externalId: person.id,
                     defaultFields: {
@@ -146,14 +146,14 @@ describe('BaseCRMIntegration', () => {
                 .rejects.toThrow('fetchPersonPage must be implemented by child class');
         });
 
-        it('should throw error for unimplemented transformPersonToQuo', async () => {
+        it('should throw error for unimplemented transformPersonToQuo', () => {
             class IncompleteIntegration extends BaseCRMIntegration {
                 static CRMConfig = { personObjectTypes: [] };
             }
 
             const incomplete = new IncompleteIntegration();
-            await expect(incomplete.transformPersonToQuo({}))
-                .rejects.toThrow('transformPersonToQuo must be implemented by child class');
+            expect(() => incomplete.transformPersonToQuo({}))
+                .toThrow('transformPersonToQuo must be implemented by child class');
         });
 
         it('should throw error for unimplemented logSMSToActivity', async () => {
@@ -534,6 +534,214 @@ describe('BaseCRMIntegration', () => {
                     },
                 ],
             });
+        });
+    });
+
+    describe('Cursor-based pagination', () => {
+        let cursorIntegration;
+        let mockProcessManager;
+        let mockQueueManager;
+
+        beforeEach(() => {
+            class TestCursorIntegration extends BaseCRMIntegration {
+                static CRMConfig = {
+                    personObjectTypes: [
+                        { crmObjectName: 'Contact', quoContactType: 'contact' },
+                    ],
+                    syncConfig: {
+                        paginationType: 'CURSOR_BASED',
+                        supportsTotal: false,
+                        returnFullRecords: true,
+                        initialBatchSize: 10,
+                    },
+                };
+
+                async fetchPersonPage({ cursor, limit }) {
+                    // Simulate 3 pages of data
+                    const pages = {
+                        null: { data: [...Array(10)].map((_, i) => ({ id: i })), cursor: 'cursor-1', hasMore: true },
+                        'cursor-1': { data: [...Array(10)].map((_, i) => ({ id: i + 10 })), cursor: 'cursor-2', hasMore: true },
+                        'cursor-2': { data: [...Array(5)].map((_, i) => ({ id: i + 20 })), cursor: null, hasMore: false },
+                    };
+                    return pages[cursor];
+                }
+
+                transformPersonToQuo(person) {
+                    return buildQuoContact({ externalId: String(person.id) });
+                }
+
+                async logSMSToActivity() {}
+                async logCallToActivity() {}
+                async setupWebhooks() {}
+                async fetchPersonById(id) { return { id }; }
+                async fetchPersonsByIds(ids) { return ids.map(id => ({ id })); }
+            }
+
+            cursorIntegration = new TestCursorIntegration({
+                id: 'integration-123',
+                userId: 'user-456',
+            });
+
+            // Mock process manager
+            mockProcessManager = {
+                updateState: jest.fn().mockResolvedValue(),
+                updateTotal: jest.fn().mockResolvedValue(),
+                updateMetadata: jest.fn().mockResolvedValue(),
+                updateMetrics: jest.fn().mockResolvedValue(),
+                getMetadata: jest.fn().mockResolvedValue({}),
+                handleError: jest.fn().mockResolvedValue(),
+            };
+
+            // Mock queue manager
+            const queuedMessages = [];
+            mockQueueManager = {
+                queueFetchPersonPage: jest.fn((msg) => {
+                    queuedMessages.push(msg);
+                    return Promise.resolve();
+                }),
+                queueCompleteSync: jest.fn().mockResolvedValue(),
+                _messages: queuedMessages, // For test inspection
+            };
+
+            cursorIntegration._processManager = mockProcessManager;
+            cursorIntegration._queueManager = mockQueueManager;
+
+            // Mock Quo API
+            cursorIntegration.quo = {
+                api: {
+                    bulkCreateContacts: jest.fn().mockResolvedValue(),
+                },
+            };
+        });
+
+        it('should process pages sequentially', async () => {
+            const processId = 'test-proc';
+
+            // Fetch first page (cursor=null)
+            await cursorIntegration.fetchPersonPageHandler({
+                data: { processId, personObjectType: 'Contact', cursor: null, limit: 10 }
+            });
+
+            // Verify queued next page with cursor-1
+            expect(mockQueueManager.queueFetchPersonPage).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    processId,
+                    cursor: 'cursor-1',
+                })
+            );
+            expect(mockQueueManager._messages).toHaveLength(1);
+            expect(mockQueueManager._messages[0].cursor).toBe('cursor-1');
+
+            // Fetch second page (cursor=cursor-1)
+            await cursorIntegration.fetchPersonPageHandler({
+                data: { processId, personObjectType: 'Contact', cursor: 'cursor-1', limit: 10 }
+            });
+
+            // Verify queued next page with cursor-2
+            expect(mockQueueManager.queueFetchPersonPage).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    processId,
+                    cursor: 'cursor-2',
+                })
+            );
+            expect(mockQueueManager._messages).toHaveLength(2);
+            expect(mockQueueManager._messages[1].cursor).toBe('cursor-2');
+
+            // Fetch last page (cursor=cursor-2)
+            await cursorIntegration.fetchPersonPageHandler({
+                data: { processId, personObjectType: 'Contact', cursor: 'cursor-2', limit: 10 }
+            });
+
+            // Verify completed (no more pages)
+            expect(mockQueueManager.queueCompleteSync).toHaveBeenCalledWith(processId);
+        });
+
+        it('should process records inline without PROCESS_PERSON_BATCH', async () => {
+            const processId = 'test-proc';
+
+            await cursorIntegration.fetchPersonPageHandler({
+                data: { processId, personObjectType: 'Contact', cursor: null, limit: 10 }
+            });
+
+            // Verify metrics updated (records processed inline)
+            expect(mockProcessManager.updateMetrics).toHaveBeenCalledWith(
+                processId,
+                expect.objectContaining({
+                    processed: 10,
+                    success: 10,
+                })
+            );
+
+            // Verify Quo API called directly (not queued)
+            expect(cursorIntegration.quo.api.bulkCreateContacts).toHaveBeenCalled();
+        });
+
+        it('should handle empty first page', async () => {
+            class EmptyIntegration extends BaseCRMIntegration {
+                static CRMConfig = {
+                    syncConfig: {
+                        paginationType: 'CURSOR_BASED',
+                        supportsTotal: false,
+                        returnFullRecords: true,
+                    },
+                };
+
+                async fetchPersonPage() {
+                    return { data: [], cursor: null, hasMore: false };
+                }
+
+                transformPersonToQuo() {}
+                async logSMSToActivity() {}
+                async logCallToActivity() {}
+                async setupWebhooks() {}
+                async fetchPersonById() {}
+                async fetchPersonsByIds() { return []; }
+            }
+
+            const emptyIntegration = new EmptyIntegration();
+            emptyIntegration._processManager = mockProcessManager;
+            emptyIntegration._queueManager = mockQueueManager;
+
+            await emptyIntegration.fetchPersonPageHandler({
+                data: { processId: 'test-proc', personObjectType: 'Contact', cursor: null, limit: 10 }
+            });
+
+            // Verify completed immediately
+            expect(mockProcessManager.updateTotal).toHaveBeenCalledWith('test-proc', 0, 0);
+            expect(mockQueueManager.queueCompleteSync).toHaveBeenCalledWith('test-proc');
+        });
+
+        it('should continue to next page on processing error', async () => {
+            const processId = 'test-proc';
+
+            // Mock bulkUpsertToQuo to throw error
+            jest.spyOn(cursorIntegration, 'bulkUpsertToQuo').mockRejectedValue(
+                new Error('Quo API failed')
+            );
+
+            await cursorIntegration.fetchPersonPageHandler({
+                data: { processId, personObjectType: 'Contact', cursor: null, limit: 10 }
+            });
+
+            // Verify error recorded
+            expect(mockProcessManager.updateMetrics).toHaveBeenCalledWith(
+                processId,
+                expect.objectContaining({
+                    errors: 10,
+                    errorDetails: expect.arrayContaining([
+                        expect.objectContaining({
+                            error: 'Quo API failed',
+                        })
+                    ]),
+                })
+            );
+
+            // Verify next page still queued (continues despite error)
+            expect(mockQueueManager.queueFetchPersonPage).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    cursor: 'cursor-1',
+                })
+            );
         });
     });
 });

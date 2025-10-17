@@ -52,7 +52,8 @@ class QueueManager {
      * @param {Object} params
      * @param {string} params.processId - Process ID
      * @param {string} params.personObjectType - CRM object type
-     * @param {number} params.page - Page number (0-indexed)
+     * @param {number} [params.page] - Page number (for page-based pagination)
+     * @param {string|null} [params.cursor] - Cursor (for cursor-based pagination)
      * @param {number} params.limit - Records per page
      * @param {Date} [params.modifiedSince] - Filter by modification date
      * @param {boolean} [params.sortDesc=true] - Sort descending
@@ -61,7 +62,8 @@ class QueueManager {
     async queueFetchPersonPage({
         processId,
         personObjectType,
-        page,
+        page = null,
+        cursor = null,
         limit,
         modifiedSince = null,
         sortDesc = true,
@@ -72,6 +74,7 @@ class QueueManager {
                 processId,
                 personObjectType,
                 page,
+                cursor,
                 limit,
                 modifiedSince: modifiedSince ? modifiedSince.toISOString() : null,
                 sortDesc,
