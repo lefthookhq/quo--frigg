@@ -24,10 +24,11 @@
         "docker:stop": "docker compose down",
         "knip": "knip",
         "frigg:start": "frigg start",
-        "frigg:deploy": "AWS_PROFILE=lefthook-nagaris frigg deploy",
+        "frigg:deploy": "frigg deploy",
         "frigg:db:setup": "frigg db:setup"
     },
     "dependencies": {
+        "@friggframework/api-module-attio": "^2.0.0-canary.25.13cc249.0",
         "@friggframework/api-module-frigg-scale-test": "^0.2.0-next.2",
         "@friggframework/core": "^2.0.0--canary.461.0b53aff.0",
         "axios": "^1.6.0",
