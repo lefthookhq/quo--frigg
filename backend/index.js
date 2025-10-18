@@ -16,19 +16,24 @@ const appDefinition = {
     ],
     user: {
         usePassword: true,
+        primary: 'individual',
         individualUserRequired: true,
+        organizationUserRequired: false,
+        authModes: {
+            friggToken: true,       // Support web UI login
+            xFriggHeaders: true,    // Enable backend-to-backend API communication
+            adopterJwt: false,      // Not using custom JWT
+        },
     },
     encryption: {
-        fieldLevelEncryptionMethod: 'aes', // Use 'aes' for local dev, 'kms' for production
+        fieldLevelEncryptionMethod: 'kms', // Use 'aes' for local dev, 'kms' for production
         createResourceIfNoneFound: true,
     },
     vpc: {
-        enable: false, // Disable VPC for local development
+        enable: true, // Enable VPC for production deployment
         management: 'discover', // 'create-new' | 'discover' | 'use-existing'
-        vpcId: null, // Optional: specific VPC ID to use when management is 'use-existing'
         subnets: {
             management: 'discover', // 'create' | 'discover' | 'use-existing'
-            ids: [], // Optional: specific subnet IDs when management is 'use-existing'
         },
         natGateway: {
             management: 'createAndManage', // 'createAndManage' | 'discover' | 'useExisting'
@@ -39,7 +44,8 @@ const appDefinition = {
     database: {
         postgres: {
             enable: true, // Can be enabled for PostgreSQL
-            management: 'create-new', // 'create-new' | 'discover' | 'use-existing'
+            management: 'discover', // Discover existing Aurora cluster
+            publiclyAccessible: true, // Whether to expose the database publicly
         },
     },
     ssm: {
@@ -53,6 +59,17 @@ const appDefinition = {
         // AWS Configuration
         AWS_REGION: true,
         S3_BUCKET_NAME: true,
+
+        QUO_API_KEY: true,
+        QUO_BASE_URL: true,
+        AXISCARE_API_KEY: true,
+        AXISCARE_BASE_URL: true,
+        ATTIO_CLIENT_ID: true,
+        ATTIO_CLIENT_SECRET: true,
+        PIPEDRIVE_API_KEY: true,
+        ZOHO_CLIENT_ID: true,
+        ZOHO_CLIENT_SECRET: true,
+        SCALE_TEST_API_KEY: true,
     },
 };
 
