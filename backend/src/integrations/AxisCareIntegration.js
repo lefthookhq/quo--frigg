@@ -1,27 +1,31 @@
-const { IntegrationBase } = require('@friggframework/core');
-const axiscare = require('../api-modules/axiscare');
+const { BaseCRMIntegration } = require('../base/BaseCRMIntegration');
+const axisCare = require('../api-modules/axiscare');
+const quo = require('../api-modules/quo');
 
-class AxisCareIntegration extends IntegrationBase {
+/**
+ * AxisCareIntegration - Refactored to extend BaseCRMIntegration
+ *
+ * AxisCare-specific implementation for syncing clients/contacts with Quo.
+ * AxisCare is a home care management platform, so "clients" are the person objects.
+ */
+class AxisCareIntegration extends BaseCRMIntegration {
     static Definition = {
-        name: 'axiscare',
+        name: 'axisCare',
         version: '1.0.0',
         supportedVersions: ['1.0.0'],
         hasUserConfig: true,
 
         display: {
             label: 'AxisCare',
-            description: 'Home care management platform integration with Quo API',
+            description:
+                'Home care management platform integration with Quo API',
             category: 'Healthcare, CRM',
             detailsUrl: 'https://static.axiscare.com/api/documentation.html',
             icon: '',
         },
         modules: {
-            axiscare: {
-                definition: axiscare.Definition,
-            },
-            quo: {
-                definition: require('../api-modules/quo').Definition,
-            },
+            axisCare: { definition: axisCare.Definition },
+            quo: { definition: quo.Definition },
         },
         routes: [
             {
@@ -29,38 +33,41 @@ class AxisCareIntegration extends IntegrationBase {
                 method: 'GET',
                 event: 'LIST_AXISCARE_CLIENTS',
             },
-            {
-                path: '/axiscare/appointments',
-                method: 'GET',
-                event: 'LIST_AXISCARE_APPOINTMENTS',
-            },
-            {
-                path: '/axiscare/services',
-                method: 'GET',
-                event: 'LIST_AXISCARE_SERVICES',
-            },
-            {
-                path: '/axiscare/reports',
-                method: 'GET',
-                event: 'GET_AXISCARE_REPORTS',
-            },
         ],
     };
 
-    constructor() {
-        super();
+    /**
+     * CRM Configuration - Required by BaseCRMIntegration
+     */
+    static CRMConfig = {
+        personObjectTypes: [
+            { crmObjectName: 'Client', quoContactType: 'contact' },
+        ],
+        syncConfig: {
+            reverseChronological: true,
+            initialBatchSize: 50,
+            ongoingBatchSize: 25,
+            supportsWebhooks: false, // AxisCare has limited webhook support
+            pollIntervalMinutes: 60,
+        },
+        queueConfig: {
+            maxWorkers: 10,
+            provisioned: 3,
+            maxConcurrency: 30,
+            batchSize: 1,
+            timeout: 600,
+        },
+    };
+
+    constructor(params) {
+        super(params);
+
         this.events = {
+            ...this.events, // BaseCRMIntegration events
+
+            // Existing AxisCare-specific events
             LIST_AXISCARE_CLIENTS: {
                 handler: this.listClients,
-            },
-            LIST_AXISCARE_APPOINTMENTS: {
-                handler: this.listAppointments,
-            },
-            LIST_AXISCARE_SERVICES: {
-                handler: this.listServices,
-            },
-            GET_AXISCARE_REPORTS: {
-                handler: this.getReports,
             },
             SYNC_CLIENTS_TO_QUO: {
                 type: 'USER_ACTION',
@@ -69,396 +76,190 @@ class AxisCareIntegration extends IntegrationBase {
                 description: 'Synchronize AxisCare clients with Quo CRM',
                 userActionType: 'DATA',
             },
-            SYNC_APPOINTMENTS_TO_QUO: {
-                type: 'USER_ACTION',
-                handler: this.syncAppointmentsToQuo,
-                title: 'Sync Appointments to Quo',
-                description: 'Synchronize AxisCare appointments with Quo calendar',
-                userActionType: 'DATA',
-            },
-            CREATE_DUMMY_AXISCARE_DATA: {
-                type: 'USER_ACTION',
-                handler: this.createDummyData,
-                title: 'Create Dummy AxisCare Data',
-                description: 'Create sample clients and appointments for testing',
-                userActionType: 'TEST',
-            },
-            GET_AXISCARE_ANALYTICS: {
-                type: 'USER_ACTION',
-                handler: this.getAnalytics,
-                title: 'Get AxisCare Analytics',
-                description: 'Retrieve analytics and performance metrics from AxisCare',
-                userActionType: 'REPORT',
-            },
         };
     }
 
-    async listClients({ req, res }) {
+    /**
+     * Fetch a page of clients from AxisCare
+     * @param {Object} params
+     * @param {string} params.objectType - CRM object type (Client)
+     * @param {number} params.page - Page number (0-indexed)
+     * @param {number} params.limit - Records per page
+     * @param {Date} [params.modifiedSince] - Filter by modification date
+     * @param {boolean} [params.sortDesc=true] - Sort descending
+     * @returns {Promise<{data: Array, total: number, hasMore: boolean}>}
+     */
+    async fetchPersonPage({
+        objectType,
+        page,
+        limit,
+        modifiedSince,
+        sortDesc = true,
+    }) {
         try {
             const params = {
-                page: req.query.page ? parseInt(req.query.page) : 1,
-                limit: req.query.limit ? parseInt(req.query.limit) : 50,
-                search: req.query.search,
-                status: req.query.status,
+                page: page + 1, // AxisCare uses 1-indexed pages
+                per_page: limit,
+                sort_by: 'updated_at',
+                sort_order: sortDesc ? 'desc' : 'asc',
             };
 
-            const clients = await this.axiscare.api.listClients(params);
-            res.json(clients);
+            // Add modification filter if provided
+            if (modifiedSince) {
+                params.updated_since = modifiedSince.toISOString();
+            }
+
+            const response = await this.axiscare.api.listClients(params);
+
+            return {
+                data: response.results?.clients || [],
+                total: response.total_count || null,
+                hasMore: response.nextPage ? true : false,
+            };
         } catch (error) {
-            console.error('Failed to list AxisCare clients:', error);
-            res.status(500).json({ error: 'Failed to list clients', details: error.message });
+            console.error(`Error fetching ${objectType} page ${page}:`, error);
+            throw error;
         }
     }
 
-    async listAppointments({ req, res }) {
-        try {
-            const params = {
-                page: req.query.page ? parseInt(req.query.page) : 1,
-                limit: req.query.limit ? parseInt(req.query.limit) : 50,
-                date_from: req.query.date_from,
-                date_to: req.query.date_to,
-                client_id: req.query.client_id,
-            };
-
-            const appointments = await this.axiscare.api.listAppointments(params);
-            res.json(appointments);
-        } catch (error) {
-            console.error('Failed to list AxisCare appointments:', error);
-            res.status(500).json({ error: 'Failed to list appointments', details: error.message });
-        }
-    }
-
-    async listServices({ req, res }) {
-        try {
-            const params = {
-                page: req.query.page ? parseInt(req.query.page) : 1,
-                limit: req.query.limit ? parseInt(req.query.limit) : 50,
-                category: req.query.category,
-            };
-
-            const services = await this.axiscare.api.listServices(params);
-            res.json(services);
-        } catch (error) {
-            console.error('Failed to list AxisCare services:', error);
-            res.status(500).json({ error: 'Failed to list services', details: error.message });
-        }
-    }
-
-    async getReports({ req, res }) {
-        try {
-            const reportType = req.query.type || 'summary';
-            const params = {
-                date_from: req.query.date_from,
-                date_to: req.query.date_to,
-                format: req.query.format || 'json',
-            };
-
-            const reports = await this.axiscare.api.getReports(reportType, params);
-            res.json(reports);
-        } catch (error) {
-            console.error('Failed to get AxisCare reports:', error);
-            res.status(500).json({ error: 'Failed to get reports', details: error.message });
-        }
-    }
-
-    async syncClientsToQuo(args) {
-        try {
-            // Get clients from AxisCare
-            const axiscareClients = await this.axiscare.api.listClients({
-                limit: args.limit || 50,
-                status: args.status,
+    /**
+     * Transform AxisCare client object to Quo contact format
+     * @param {Object} client - AxisCare client object (from API - uses camelCase)
+     * @returns {Promise<Object>} Quo contact format
+     */
+    async transformPersonToQuo(client) {
+        // Extract phone numbers (AxisCare uses camelCase: homePhone, mobilePhone, otherPhone)
+        const phoneNumbers = [];
+        if (client.homePhone) {
+            phoneNumbers.push({
+                name: 'home',
+                value: client.homePhone,
+                primary: true,
             });
-
-            const syncResults = [];
-
-            for (const client of axiscareClients.clients?.slice(0, args.maxClients || 10) || []) {
-                try {
-                    // Transform client data for Quo
-                    const quoClientData = await this.transformClientForQuo(client);
-
-                    // Create or update in Quo if available
-                    let quoResult = null;
-                    if (this.quo?.api) {
-                        quoResult = await this.createQuoClient(quoClientData);
-                    }
-
-                    syncResults.push({
-                        axisCareClient: {
-                            id: client.id,
-                            name: client.name || `${client.first_name} ${client.last_name}`,
-                            email: client.email,
-                            phone: client.phone,
-                            status: client.status,
-                        },
-                        quoClient: quoResult,
-                        syncStatus: quoResult ? 'success' : 'quo_unavailable',
-                        timestamp: new Date().toISOString(),
-                    });
-                } catch (clientError) {
-                    syncResults.push({
-                        axisCareClient: client,
-                        error: clientError.message,
-                        syncStatus: 'error',
-                        timestamp: new Date().toISOString(),
-                    });
-                }
-            }
-
-            return {
-                label: 'Client Sync Results',
-                data: {
-                    totalClientsProcessed: syncResults.length,
-                    syncSummary: syncResults.reduce((summary, result) => {
-                        summary[result.syncStatus] = (summary[result.syncStatus] || 0) + 1;
-                        return summary;
-                    }, {}),
-                    syncResults,
-                    timestamp: new Date().toISOString(),
-                }
-            };
-        } catch (error) {
-            console.error('Client sync failed:', error);
-            throw new Error(`Client sync failed: ${error.message}`);
         }
-    }
-
-    async syncAppointmentsToQuo(args) {
-        try {
-            // Get appointments from AxisCare
-            const axiscareAppointments = await this.axiscare.api.listAppointments({
-                limit: args.limit || 50,
-                date_from: args.date_from,
-                date_to: args.date_to,
+        if (client.mobilePhone) {
+            phoneNumbers.push({
+                name: 'mobile',
+                value: client.mobilePhone,
+                primary: false,
             });
-
-            const syncResults = [];
-
-            for (const appointment of axiscareAppointments.appointments?.slice(0, args.maxAppointments || 10) || []) {
-                try {
-                    // Transform appointment data for Quo
-                    const quoAppointmentData = await this.transformAppointmentForQuo(appointment);
-
-                    // Create or update in Quo if available
-                    let quoResult = null;
-                    if (this.quo?.api) {
-                        quoResult = await this.createQuoEvent(quoAppointmentData);
-                    }
-
-                    syncResults.push({
-                        axisCareAppointment: {
-                            id: appointment.id,
-                            title: appointment.title || appointment.description,
-                            start_time: appointment.start_time,
-                            end_time: appointment.end_time,
-                            client_id: appointment.client_id,
-                            status: appointment.status,
-                        },
-                        quoEvent: quoResult,
-                        syncStatus: quoResult ? 'success' : 'quo_unavailable',
-                        timestamp: new Date().toISOString(),
-                    });
-                } catch (appointmentError) {
-                    syncResults.push({
-                        axisCareAppointment: appointment,
-                        error: appointmentError.message,
-                        syncStatus: 'error',
-                        timestamp: new Date().toISOString(),
-                    });
-                }
-            }
-
-            return {
-                label: 'Appointment Sync Results',
-                data: {
-                    totalAppointmentsProcessed: syncResults.length,
-                    syncSummary: syncResults.reduce((summary, result) => {
-                        summary[result.syncStatus] = (summary[result.syncStatus] || 0) + 1;
-                        return summary;
-                    }, {}),
-                    syncResults,
-                    timestamp: new Date().toISOString(),
-                }
-            };
-        } catch (error) {
-            console.error('Appointment sync failed:', error);
-            throw new Error(`Appointment sync failed: ${error.message}`);
         }
-    }
-
-    async createDummyData(args) {
-        try {
-            const dummyData = {
-                clients: [],
-                appointments: [],
-            };
-
-            // Create dummy clients
-            for (let i = 1; i <= (args.clientCount || 3); i++) {
-                try {
-                    const dummyClient = {
-                        first_name: `Client ${i}`,
-                        last_name: 'Test',
-                        email: `client${i}@test.com`,
-                        phone: `555-000${i.toString().padStart(4, '0')}`,
-                        address: `${i} Test Street, Test City`,
-                        date_of_birth: '1980-01-01',
-                        status: 'active',
-                    };
-
-                    const createdClient = await this.axiscare.api.createClient(dummyClient);
-                    dummyData.clients.push(createdClient);
-
-                    // Create dummy appointments for this client
-                    for (let j = 1; j <= (args.appointmentCountPerClient || 2); j++) {
-                        const dummyAppointment = {
-                            client_id: createdClient.id || createdClient.client_id,
-                            title: `Appointment ${j}`,
-                            description: `Test appointment ${j} for client ${i}`,
-                            start_time: new Date(Date.now() + (j * 24 * 60 * 60 * 1000)).toISOString(),
-                            end_time: new Date(Date.now() + (j * 24 * 60 * 60 * 1000 + 60 * 60 * 1000)).toISOString(),
-                            service_type: 'Home Visit',
-                            status: 'scheduled',
-                        };
-
-                        const createdAppointment = await this.axiscare.api.createAppointment(dummyAppointment);
-                        dummyData.appointments.push(createdAppointment);
-                    }
-                } catch (error) {
-                    console.warn(`Failed to create dummy client ${i}:`, error.message);
-                }
-            }
-
-            return {
-                label: 'Dummy Data Created',
-                data: {
-                    summary: {
-                        clientsCreated: dummyData.clients.length,
-                        appointmentsCreated: dummyData.appointments.length,
-                    },
-                    dummyData,
-                    timestamp: new Date().toISOString(),
-                }
-            };
-        } catch (error) {
-            console.error('Failed to create dummy data:', error);
-            throw new Error(`Failed to create dummy data: ${error.message}`);
+        if (client.otherPhone) {
+            phoneNumbers.push({
+                name: 'other',
+                value: client.otherPhone,
+                primary: false,
+            });
         }
-    }
 
-    async getAnalytics(args) {
-        try {
-            const params = {
-                period: args.period || 'month',
-                metric: args.metric || 'all',
-            };
-
-            const analytics = await this.axiscare.api.getAnalytics(params);
-
-            // Generate additional summary statistics
-            const summary = {
-                totalClients: analytics.clients?.total || 0,
-                activeClients: analytics.clients?.active || 0,
-                totalAppointments: analytics.appointments?.total || 0,
-                completedAppointments: analytics.appointments?.completed || 0,
-                upcomingAppointments: analytics.appointments?.upcoming || 0,
-                averageRating: analytics.ratings?.average || 0,
-                revenue: analytics.revenue?.total || 0,
-            };
-
-            return {
-                label: 'AxisCare Analytics',
-                data: {
-                    summary,
-                    analytics,
-                    timestamp: new Date().toISOString(),
-                }
-            };
-        } catch (error) {
-            console.error('Failed to get analytics:', error);
-            throw new Error(`Failed to get analytics: ${error.message}`);
+        // Extract emails (AxisCare uses personalEmail, billingEmail)
+        const emails = [];
+        if (client.personalEmail) {
+            emails.push({
+                name: 'primary',
+                value: client.personalEmail,
+                primary: true,
+            });
         }
-    }
+        if (client.billingEmail && client.billingEmail !== client.personalEmail) {
+            emails.push({
+                name: 'billing',
+                value: client.billingEmail,
+                primary: false,
+            });
+        }
 
-    async transformClientForQuo(axisCareClient) {
+        // Use "Goes By" if available, otherwise firstName (per mapping spec)
+        const displayFirstName = client.goesBy || client.firstName;
+
         return {
-            name: axisCareClient.name || `${axisCareClient.first_name} ${axisCareClient.last_name}`,
-            email: axisCareClient.email,
-            phone: axisCareClient.phone,
-            address: axisCareClient.address,
-            status: axisCareClient.status,
+            externalId: String(client.id),
+            source: 'axiscare',
+            defaultFields: {
+                firstName: displayFirstName,
+                lastName: client.lastName,
+                company: null, // Healthcare clients typically don't have companies
+                phoneNumbers,
+                emails,
+                role: 'Client', // Contact type per mapping spec
+            },
             customFields: {
-                axisCareId: axisCareClient.id,
-                dateOfBirth: axisCareClient.date_of_birth,
-                source: 'AxisCare',
+                crmId: client.id,
+                crmType: 'axiscare',
+                status: client.status?.label || client.status,
+                dateOfBirth: client.dateOfBirth,
+                ssn: client.ssn, // Only included if requested via requestedSensitiveFields
+                gender: client.gender,
+                goesBy: client.goesBy,
+                // Address from residentialAddress object
+                residentialAddress: client.residentialAddress
+                    ? {
+                          name: client.residentialAddress.name,
+                          streetAddress1: client.residentialAddress.streetAddress1,
+                          streetAddress2: client.residentialAddress.streetAddress2,
+                          locality: client.residentialAddress.locality,
+                          region: client.residentialAddress.region,
+                          postalCode: client.residentialAddress.postalCode,
+                          latitude: client.residentialAddress.latitude,
+                          longitude: client.residentialAddress.longitude,
+                      }
+                    : null,
+                billingAddress: client.billingAddress
+                    ? {
+                          name: client.billingAddress.name,
+                          streetAddress1: client.billingAddress.streetAddress1,
+                          streetAddress2: client.billingAddress.streetAddress2,
+                          locality: client.billingAddress.locality,
+                          region: client.billingAddress.region,
+                          postalCode: client.billingAddress.postalCode,
+                      }
+                    : null,
+                // Additional AxisCare-specific fields
+                medicaidNumber: client.medicaidNumber,
+                priorityNote: client.priorityNote,
+                classes:
+                    client.classes?.map((c) => ({
+                        code: c.code,
+                        name: c.name,
+                    })) || [],
+                region: client.region
+                    ? { id: client.region.id, name: client.region.name }
+                    : null,
+                administrators:
+                    client.administrators?.map((a) => ({
+                        id: a.id,
+                        name: a.name,
+                        username: a.username,
+                    })) || [],
+                preferredCaregiver: client.preferredCaregiver
+                    ? {
+                          id: client.preferredCaregiver.id,
+                          firstName: client.preferredCaregiver.firstName,
+                          lastName: client.preferredCaregiver.lastName,
+                      }
+                    : null,
+                referredBy: client.referredBy
+                    ? { type: client.referredBy.type, name: client.referredBy.name }
+                    : null,
+                // Important dates
+                createdDate: client.createdDate,
+                assessmentDate: client.assessmentDate,
+                conversionDate: client.conversionDate,
+                startDate: client.startDate,
+                effectiveEndDate: client.effectiveEndDate,
             },
         };
     }
 
-    async transformAppointmentForQuo(axisCareAppointment) {
-        return {
-            title: axisCareAppointment.title || axisCareAppointment.description,
-            startTime: axisCareAppointment.start_time,
-            endTime: axisCareAppointment.end_time,
-            description: axisCareAppointment.description,
-            status: axisCareAppointment.status,
-            customFields: {
-                axisCareAppointmentId: axisCareAppointment.id,
-                clientId: axisCareAppointment.client_id,
-                serviceType: axisCareAppointment.service_type,
-                source: 'AxisCare',
-            },
-        };
-    }
-
-    async createQuoClient(clientData) {
-        // Placeholder for creating client in Quo
-        // Implement specific Quo API calls based on Quo's client creation endpoints
-        if (!this.quo?.api) {
-            return { message: 'Quo API not available', status: 'simulated' };
-        }
-
-        try {
-            const quoClient = await this.quo.api.createClient(clientData);
-            return {
-                quoId: quoClient.id || quoClient.client_id,
-                name: clientData.name,
-                email: clientData.email,
-                status: 'created',
-            };
-        } catch (error) {
-            throw new Error(`Failed to create Quo client: ${error.message}`);
-        }
-    }
-
-    async createQuoEvent(appointmentData) {
-        // Placeholder for creating event in Quo
-        // Implement specific Quo API calls based on Quo's event/calendar endpoints
-        if (!this.quo?.api) {
-            return { message: 'Quo API not available', status: 'simulated' };
-        }
-
-        try {
-            const quoEvent = await this.quo.api.createEvent(appointmentData);
-            return {
-                quoId: quoEvent.id || quoEvent.event_id,
-                title: appointmentData.title,
-                startTime: appointmentData.startTime,
-                status: 'created',
-            };
-        } catch (error) {
-            throw new Error(`Failed to create Quo event: ${error.message}`);
-        }
-    }
-
-    async onCreate(params) {
-        this.record.status = 'ENABLED';
-        await this.record.save();
-        return this.record;
-    }
-
-    async onUpdate(params) {
-        await this.record.save();
-        return this.validateConfig();
+    /**
+     * Setup webhooks with AxisCare
+     * @returns {Promise<void>}
+     */
+    async setupWebhooks() {
+        // AxisCare has limited webhook support, use polling fallback
+        console.log(
+            'AxisCare webhooks not configured - using polling fallback',
+        );
     }
 
     async getConfigOptions() {
@@ -474,7 +275,8 @@ class AxisCareIntegration extends IntegrationBase {
             maxClientsPerSync: {
                 type: 'number',
                 title: 'Max Clients per Sync',
-                description: 'Maximum number of clients to sync in one operation',
+                description:
+                    'Maximum number of clients to sync in one operation',
                 default: 50,
                 minimum: 1,
                 maximum: 1000,
@@ -482,7 +284,8 @@ class AxisCareIntegration extends IntegrationBase {
             maxAppointmentsPerSync: {
                 type: 'number',
                 title: 'Max Appointments per Sync',
-                description: 'Maximum number of appointments to sync in one operation',
+                description:
+                    'Maximum number of appointments to sync in one operation',
                 default: 100,
                 minimum: 1,
                 maximum: 1000,
@@ -500,7 +303,8 @@ class AxisCareIntegration extends IntegrationBase {
                             limit: {
                                 type: 'number',
                                 title: 'Client Limit',
-                                description: 'Maximum clients to retrieve for sync',
+                                description:
+                                    'Maximum clients to retrieve for sync',
                                 minimum: 1,
                                 maximum: 1000,
                                 default: 50,
@@ -516,8 +320,14 @@ class AxisCareIntegration extends IntegrationBase {
                             status: {
                                 type: 'string',
                                 title: 'Client Status Filter',
-                                description: 'Only sync clients with this status',
-                                enum: ['active', 'inactive', 'pending', 'archived'],
+                                description:
+                                    'Only sync clients with this status',
+                                enum: [
+                                    'active',
+                                    'inactive',
+                                    'pending',
+                                    'archived',
+                                ],
                             },
                         },
                         required: [],
@@ -540,140 +350,369 @@ class AxisCareIntegration extends IntegrationBase {
                         ],
                     },
                 };
-            case 'SYNC_APPOINTMENTS_TO_QUO':
-                return {
-                    jsonSchema: {
-                        type: 'object',
-                        properties: {
-                            limit: {
-                                type: 'number',
-                                title: 'Appointment Limit',
-                                description: 'Maximum appointments to retrieve for sync',
-                                minimum: 1,
-                                maximum: 1000,
-                                default: 50,
-                            },
-                            maxAppointments: {
-                                type: 'number',
-                                title: 'Max Appointments to Sync',
-                                description: 'Maximum appointments to actually sync',
-                                minimum: 1,
-                                maximum: 100,
-                                default: 10,
-                            },
-                            date_from: {
-                                type: 'string',
-                                title: 'Start Date',
-                                description: 'Only sync appointments from this date',
-                                format: 'date',
-                            },
-                            date_to: {
-                                type: 'string',
-                                title: 'End Date',
-                                description: 'Only sync appointments until this date',
-                                format: 'date',
-                            },
-                        },
-                        required: [],
-                    },
-                    uiSchema: {
-                        type: 'VerticalLayout',
-                        elements: [
-                            {
-                                type: 'Control',
-                                scope: '#/properties/limit',
-                            },
-                            {
-                                type: 'Control',
-                                scope: '#/properties/maxAppointments',
-                            },
-                            {
-                                type: 'Control',
-                                scope: '#/properties/date_from',
-                            },
-                            {
-                                type: 'Control',
-                                scope: '#/properties/date_to',
-                            },
-                        ],
-                    },
-                };
-            case 'CREATE_DUMMY_AXISCARE_DATA':
-                return {
-                    jsonSchema: {
-                        type: 'object',
-                        properties: {
-                            clientCount: {
-                                type: 'number',
-                                title: 'Number of Clients',
-                                description: 'How many dummy clients to create',
-                                minimum: 1,
-                                maximum: 10,
-                                default: 3,
-                            },
-                            appointmentCountPerClient: {
-                                type: 'number',
-                                title: 'Appointments per Client',
-                                description: 'How many appointments to create per client',
-                                minimum: 1,
-                                maximum: 5,
-                                default: 2,
-                            },
-                        },
-                        required: [],
-                    },
-                    uiSchema: {
-                        type: 'VerticalLayout',
-                        elements: [
-                            {
-                                type: 'Control',
-                                scope: '#/properties/clientCount',
-                            },
-                            {
-                                type: 'Control',
-                                scope: '#/properties/appointmentCountPerClient',
-                            },
-                        ],
-                    },
-                };
-            case 'GET_AXISCARE_ANALYTICS':
-                return {
-                    jsonSchema: {
-                        type: 'object',
-                        properties: {
-                            period: {
-                                type: 'string',
-                                title: 'Analytics Period',
-                                description: 'Time period for analytics',
-                                enum: ['day', 'week', 'month', 'quarter', 'year'],
-                                default: 'month',
-                            },
-                            metric: {
-                                type: 'string',
-                                title: 'Metric Focus',
-                                description: 'Specific metric to focus on',
-                                enum: ['all', 'clients', 'appointments', 'revenue', 'ratings'],
-                                default: 'all',
-                            },
-                        },
-                        required: [],
-                    },
-                    uiSchema: {
-                        type: 'VerticalLayout',
-                        elements: [
-                            {
-                                type: 'Control',
-                                scope: '#/properties/period',
-                            },
-                            {
-                                type: 'Control',
-                                scope: '#/properties/metric',
-                            },
-                        ],
-                    },
-                };
         }
         return null;
+    }
+
+    async syncClientsToQuo(args) {
+        try {
+            // Get clients from AxisCare
+            const axiscareClients = await this.axiscare.api.listClients({
+                limit: args.limit || 50,
+                statuses: args.status,
+            });
+
+            const syncResults = [];
+
+            for (const client of axiscareClients.results?.clients?.slice(
+                0,
+                args.maxClients || 10,
+            ) || []) {
+                try {
+                    // Transform client data for Quo using the correct method
+                    const quoContactData = await this.transformPersonToQuo(client);
+
+                    // Create or update in Quo if available
+                    let quoResult = null;
+                    if (this.quo?.api) {
+                        quoResult = await this.quo.api.createContact(quoContactData);
+                    }
+
+                    syncResults.push({
+                        axisCareClient: {
+                            id: client.id,
+                            name: `${client.goesBy || client.firstName} ${client.lastName}`,
+                            email: client.personalEmail,
+                            phone: client.homePhone || client.mobilePhone,
+                            status: client.status?.label || client.status,
+                        },
+                        quoContact: quoResult,
+                        syncStatus: quoResult ? 'success' : 'quo_unavailable',
+                        timestamp: new Date().toISOString(),
+                    });
+                } catch (clientError) {
+                    syncResults.push({
+                        axisCareClient: client,
+                        error: clientError.message,
+                        syncStatus: 'error',
+                        timestamp: new Date().toISOString(),
+                    });
+                }
+            }
+
+            return {
+                label: 'Client Sync Results',
+                data: {
+                    totalClientsProcessed: syncResults.length,
+                    syncSummary: syncResults.reduce((summary, result) => {
+                        summary[result.syncStatus] =
+                            (summary[result.syncStatus] || 0) + 1;
+                        return summary;
+                    }, {}),
+                    syncResults,
+                    timestamp: new Date().toISOString(),
+                },
+            };
+        } catch (error) {
+            console.error('Client sync failed:', error);
+            throw new Error(`Client sync failed: ${error.message}`);
+        }
+    }
+
+    /**
+     * Fetch a single client by ID
+     * @param {string} id - Client ID
+     * @returns {Promise<Object>}
+     */
+    async fetchPersonById(id) {
+        return await this.axiscare.api.getClient(id);
+    }
+
+    /**
+     * Fetch multiple clients by IDs (for webhook batch processing)
+     * Optimized: Uses bulk API call when possible, falls back to sequential
+     * @param {string[]} ids - Array of client IDs
+     * @returns {Promise<Object[]>}
+     */
+    async fetchPersonsByIds(ids) {
+        if (!ids || ids.length === 0) {
+            return [];
+        }
+
+        try {
+            // Use bulk API call (much faster than sequential)
+            const response = await this.axiscare.api.listClients({
+                clientIds: ids.join(','),
+                limit: ids.length,
+            });
+
+            return response.results?.clients || [];
+        } catch (error) {
+            console.warn(
+                `Bulk fetch failed for ${ids.length} clients, falling back to sequential:`,
+                error.message,
+            );
+
+            // Fallback: Fetch one-by-one (slower but more resilient)
+            return await this._fetchPersonsByIdsSequential(ids);
+        }
+    }
+
+    /**
+     * Fallback method: Fetch clients sequentially
+     * @private
+     * @param {string[]} ids - Array of client IDs
+     * @returns {Promise<Object[]>}
+     */
+    async _fetchPersonsByIdsSequential(ids) {
+        const clients = [];
+        for (const id of ids) {
+            try {
+                const client = await this.fetchPersonById(id);
+                clients.push(client);
+            } catch (error) {
+                console.error(`Failed to fetch client ${id}:`, error.message);
+            }
+        }
+        return clients;
+    }
+
+    async listClients({ req, res }) {
+        try {
+            const params = {
+                startAfterId: req.query.startAfterId
+                    ? parseInt(req.query.startAfterId)
+                    : undefined,
+                limit: req.query.limit ? parseInt(req.query.limit) : 100,
+            };
+
+            const clients = await this.axiscare.api.listClients(params);
+            res.json(clients);
+        } catch (error) {
+            console.error('Failed to list AxisCare clients:', error);
+            res.status(500).json({
+                error: 'Failed to list clients',
+                details: error.message,
+            });
+        }
+    }
+
+    /**
+     * Handler: Fetch a page of clients from AxisCare
+     *
+     * OVERRIDE: This overrides BaseCRMIntegration.fetchPersonPageHandler to handle
+     * AxisCare's cursor-based pagination (nextPage URLs) instead of page-based.
+     *
+     * Flow:
+     * 1. Get nextPageUrl from process metadata (null for first page)
+     * 2. Fetch from AxisCare (use URL if available, else first page)
+     * 3. Store nextPage URL in metadata for next iteration
+     * 4. Queue batch processing for this page's clients
+     * 5. Queue next page OR complete sync if no more pages
+     *
+     * Metadata stored:
+     * - nextPageUrl: URL for next fetch (null when no more pages)
+     * - totalFetched: Running count of all clients fetched
+     * - pageCount: Number of pages processed
+     *
+     * @param {Object} params
+     * @param {Object} params.data - Event data from queue
+     * @param {string} params.data.processId - Process tracking ID
+     * @param {string} params.data.personObjectType - "Client"
+     * @param {number} params.data.page - Page counter (0-indexed, just for logging)
+     * @param {number} params.data.limit - Records per page
+     */
+    async fetchPersonPageHandler({ data }) {
+        const { processId, personObjectType, page, limit } = data;
+
+        try {
+            console.log(
+                `[AxisCare] Fetching page ${page} (processId: ${processId})`,
+            );
+
+            // Update process state
+            await this.processManager.updateState(processId, 'FETCHING_PAGE');
+
+            // ═══════════════════════════════════════════════════════════
+            // STEP 1: Get nextPageUrl from metadata
+            // ═══════════════════════════════════════════════════════════
+            const metadata = await this.processManager.getMetadata(processId);
+            const nextPageUrl = metadata?.nextPageUrl;
+
+            console.log(
+                `[AxisCare] Using ${nextPageUrl ? 'stored nextPage URL' : 'initial listClients'}`,
+            );
+
+            // ═══════════════════════════════════════════════════════════
+            // STEP 2: Fetch from AxisCare API (with retry)
+            // ═══════════════════════════════════════════════════════════
+            let response;
+
+            if (nextPageUrl) {
+                // Subsequent pages: use stored URL with retry
+                response = await this._fetchWithRetry(() =>
+                    this.axiscare.api.getFromUrl(nextPageUrl),
+                );
+            } else {
+                // First page: use listClients with limit and retry
+                response = await this._fetchWithRetry(() =>
+                    this.axiscare.api.listClients({
+                        limit: limit || 50,
+                    }),
+                );
+            }
+
+            // Validate API response for errors
+            if (response.errors && response.errors.length > 0) {
+                const errorMessage = `AxisCare API returned errors: ${JSON.stringify(response.errors)}`;
+                console.error(`[AxisCare] ${errorMessage}`);
+                throw new Error(errorMessage);
+            }
+
+            const clients = response.results?.clients || [];
+            console.log(`[AxisCare] Fetched ${clients.length} clients`);
+
+            // Handle empty first page (edge case: no clients exist)
+            if (page === 0 && clients.length === 0) {
+                console.log('[AxisCare] No clients found, queuing completion');
+                await this.processManager.updateTotal(processId, 0, 0);
+                await this.queueManager.queueCompleteSync(processId);
+                return;
+            }
+
+            // ═══════════════════════════════════════════════════════════
+            // STEP 3: Update metadata with next URL and totals
+            // ═══════════════════════════════════════════════════════════
+            const totalFetched = (metadata?.totalFetched || 0) + clients.length;
+            const pageCount = page + 1;
+
+            await this.processManager.updateMetadata(processId, {
+                nextPageUrl: response.nextPage || null,
+                totalFetched,
+                pageCount,
+            });
+
+            // Update process totals (estimated, will be corrected as we go)
+            if (page === 0) {
+                // First page: provide initial estimate
+                await this.processManager.updateTotal(
+                    processId,
+                    totalFetched,
+                    1,
+                );
+                await this.processManager.updateState(
+                    processId,
+                    'PROCESSING_BATCHES',
+                );
+            } else {
+                // Update with actual count so far
+                await this.processManager.updateTotal(
+                    processId,
+                    totalFetched,
+                    pageCount,
+                );
+            }
+
+            console.log(
+                `[AxisCare] Progress: ${totalFetched} clients fetched across ${pageCount} pages`,
+            );
+
+            // ═══════════════════════════════════════════════════════════
+            // STEP 4: Queue batch processing for this page's clients
+            // ═══════════════════════════════════════════════════════════
+            if (clients.length > 0) {
+                console.log(
+                    `[AxisCare] Queuing batch processing for ${clients.length} clients`,
+                );
+                await this.queueManager.queueProcessPersonBatch({
+                    processId,
+                    crmPersonIds: clients.map((c) => String(c.id)),
+                    page,
+                    totalInPage: clients.length,
+                });
+            }
+
+            // ═══════════════════════════════════════════════════════════
+            // STEP 5: Queue next page OR complete sync
+            // ═══════════════════════════════════════════════════════════
+            if (response.nextPage) {
+                // More pages exist
+                console.log(
+                    `[AxisCare] More pages available, queuing page ${page + 1}`,
+                );
+                await this.queueManager.queueFetchPersonPage({
+                    processId,
+                    personObjectType,
+                    page: page + 1,
+                    limit,
+                });
+            } else {
+                // No more pages - all data fetched
+                console.log(
+                    `[AxisCare] All pages fetched. Total: ${totalFetched} clients`,
+                );
+                console.log(
+                    '[AxisCare] Queuing sync completion (will complete after all batches process)',
+                );
+                await this.queueManager.queueCompleteSync(processId);
+            }
+        } catch (error) {
+            console.error(`[AxisCare] Error fetching page ${page}:`, error);
+            await this.processManager.handleError(processId, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Fetch with exponential backoff retry
+     * Lambda-compatible: Handles transient failures gracefully
+     * @private
+     * @param {Function} fetchFn - Async function to execute
+     * @param {number} maxRetries - Maximum retry attempts (default: 3)
+     * @param {number} baseDelay - Base delay in ms (default: 1000)
+     * @returns {Promise<*>} Result from fetchFn
+     */
+    async _fetchWithRetry(fetchFn, maxRetries = 3, baseDelay = 1000) {
+        let lastError;
+
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                return await fetchFn();
+            } catch (error) {
+                lastError = error;
+
+                // Check if error is retryable (network/timeout errors)
+                const isRetryable =
+                    error.code === 'ECONNRESET' ||
+                    error.code === 'ETIMEDOUT' ||
+                    error.code === 'ENOTFOUND' ||
+                    error.message?.includes('timeout') ||
+                    error.message?.includes('network') ||
+                    (error.response?.status >= 500 &&
+                        error.response?.status < 600) || // Server errors
+                    error.response?.status === 429; // Rate limit
+
+                // Don't retry on last attempt or non-retryable errors
+                if (attempt === maxRetries || !isRetryable) {
+                    throw error;
+                }
+
+                // Calculate exponential backoff with jitter
+                const delay = Math.min(
+                    baseDelay * Math.pow(2, attempt - 1) +
+                        Math.random() * 1000,
+                    10000, // Max 10 seconds
+                );
+
+                console.log(
+                    `[AxisCare] Retry ${attempt}/${maxRetries} after ${Math.round(delay)}ms (${error.message})`,
+                );
+
+                await new Promise((resolve) => setTimeout(resolve, delay));
+            }
+        }
+
+        throw lastError;
     }
 }
 
