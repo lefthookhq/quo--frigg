@@ -2,9 +2,6 @@
   "name": "quo-integrations-frigg",
   "version": "0.1.0",
   "private": true,
-  "workspaces": [
-    "backend"
-  ],
   "devDependencies": {
     "concurrently": "^8.2.2"
   },
@@ -12,5 +9,8 @@
     "start": "cd backend && npm run frigg:start",
     "docker:start": "cd backend && npm run docker:start",
     "test": "npm test -workspaces"
+  },
+  "dependencies": {
+    "@friggframework/api-module-frigg-scale-test": "^0.2.0-next.2"
   }
 }
