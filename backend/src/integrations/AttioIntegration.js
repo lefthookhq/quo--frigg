@@ -1,8 +1,8 @@
 const { BaseCRMIntegration } = require('../base/BaseCRMIntegration');
-const attio = require('@friggframework/api-module-attio');
-const quo = require('../api-modules/quo');
 
 /**
+ * AttioIntegration - Refactored to extend BaseCRMIntegration
+ * 
  * Attio-specific implementation for syncing people/companies with Quo.
  * Attio uses a modern record-based API with flexible data structures.
  */
@@ -21,8 +21,26 @@ class AttioIntegration extends BaseCRMIntegration {
             icon: '',
         },
         modules: {
-            attio: { definition: attio.Definition },
-            quo: { definition: quo.Definition },
+            attio: {
+                definition: {
+                    name: 'attio',
+                    version: '1.0.0',
+                    display: {
+                        name: 'Attio',
+                        description: 'Attio CRM API',
+                    },
+                },
+            },
+            quo: {
+                definition: {
+                    name: 'quo',
+                    version: '1.0.0',
+                    display: {
+                        name: 'Quo CRM',
+                        description: 'Quo CRM API',
+                    },
+                },
+            },
         },
         routes: [
             {
@@ -129,13 +147,7 @@ class AttioIntegration extends BaseCRMIntegration {
      * @param {boolean} [params.sortDesc=true] - Sort descending
      * @returns {Promise<{data: Array, total: number, hasMore: boolean}>}
      */
-    async fetchPersonPage({
-        objectType,
-        page,
-        limit,
-        modifiedSince,
-        sortDesc = true,
-    }) {
+    async fetchPersonPage({ objectType, page, limit, modifiedSince, sortDesc = true }) {
         try {
             const params = {
                 limit,
@@ -155,11 +167,8 @@ class AttioIntegration extends BaseCRMIntegration {
             }
 
             // Attio uses object slugs (e.g., 'people', 'companies')
-            const response = await this.attio.api.objects.listRecords(
-                objectType,
-                params,
-            );
-
+            const response = await this.attio.api.objects.listRecords(objectType, params);
+            
             return {
                 data: response.data || [],
                 total: response.total || null,
@@ -218,15 +227,12 @@ class AttioIntegration extends BaseCRMIntegration {
             try {
                 const companyRecord = await this.attio.api.objects.getRecord(
                     'companies',
-                    companyLinks[0].target_record_id,
+                    companyLinks[0].target_record_id
                 );
                 const companyName = companyRecord.values?.name?.[0]?.value;
                 company = companyName || null;
             } catch (error) {
-                console.warn(
-                    `Failed to fetch company for person ${person.id.record_id}:`,
-                    error.message,
-                );
+                console.warn(`Failed to fetch company for person ${person.id.record_id}:`, error.message);
             }
         }
 
@@ -260,14 +266,9 @@ class AttioIntegration extends BaseCRMIntegration {
     async logSMSToActivity(activity) {
         try {
             // Find the person by external ID
-            const person = await this.attio.api.objects.getRecord(
-                'people',
-                activity.contactExternalId,
-            );
+            const person = await this.attio.api.objects.getRecord('people', activity.contactExternalId);
             if (!person) {
-                console.warn(
-                    `Person not found for SMS logging: ${activity.contactExternalId}`,
-                );
+                console.warn(`Person not found for SMS logging: ${activity.contactExternalId}`);
                 return;
             }
 
@@ -295,14 +296,9 @@ class AttioIntegration extends BaseCRMIntegration {
     async logCallToActivity(activity) {
         try {
             // Find the person by external ID
-            const person = await this.attio.api.objects.getRecord(
-                'people',
-                activity.contactExternalId,
-            );
+            const person = await this.attio.api.objects.getRecord('people', activity.contactExternalId);
             if (!person) {
-                console.warn(
-                    `Person not found for call logging: ${activity.contactExternalId}`,
-                );
+                console.warn(`Person not found for call logging: ${activity.contactExternalId}`);
                 return;
             }
 
@@ -329,7 +325,7 @@ class AttioIntegration extends BaseCRMIntegration {
     async setupWebhooks() {
         try {
             const webhookUrl = `${process.env.BASE_URL}/integrations/${this.id}/webhook`;
-
+            
             // Create webhook for record.created events
             await this.attio.api.webhooks.create({
                 url: webhookUrl,
@@ -416,10 +412,7 @@ class AttioIntegration extends BaseCRMIntegration {
                 offset: req.query.offset ? parseInt(req.query.offset) : 0,
             };
 
-            const companies = await this.attio.api.objects.listRecords(
-                'companies',
-                params,
-            );
+            const companies = await this.attio.api.objects.listRecords('companies', params);
             res.json(companies);
         } catch (error) {
             console.error('Failed to list Attio companies:', error);
@@ -437,10 +430,7 @@ class AttioIntegration extends BaseCRMIntegration {
                 offset: req.query.offset ? parseInt(req.query.offset) : 0,
             };
 
-            const people = await this.attio.api.objects.listRecords(
-                'people',
-                params,
-            );
+            const people = await this.attio.api.objects.listRecords('people', params);
             res.json(people);
         } catch (error) {
             console.error('Failed to list Attio people:', error);
@@ -455,8 +445,8 @@ class AttioIntegration extends BaseCRMIntegration {
         try {
             const objects = await this.attio.api.objects.list();
             // Filter to only custom objects (not standard ones like 'people', 'companies')
-            const customObjects = objects.data?.filter(
-                (obj) => !['people', 'companies'].includes(obj.api_slug),
+            const customObjects = objects.data?.filter(obj => 
+                !['people', 'companies'].includes(obj.api_slug)
             );
             res.json({ data: customObjects });
         } catch (error) {
@@ -471,17 +461,14 @@ class AttioIntegration extends BaseCRMIntegration {
     async createRecord({ req, res }) {
         try {
             const { objectType, values } = req.body;
-
+            
             if (!objectType || !values) {
                 return res.status(400).json({
                     error: 'objectType and values are required',
                 });
             }
 
-            const result = await this.attio.api.objects.createRecord(
-                objectType,
-                { values },
-            );
+            const result = await this.attio.api.objects.createRecord(objectType, { values });
             res.json(result);
         } catch (error) {
             console.error('Failed to create Attio record:', error);
@@ -495,7 +482,7 @@ class AttioIntegration extends BaseCRMIntegration {
     async searchRecords({ req, res }) {
         try {
             const { query, object_types } = req.body;
-
+            
             if (!query) {
                 return res.status(400).json({
                     error: 'Search query is required',
@@ -506,7 +493,7 @@ class AttioIntegration extends BaseCRMIntegration {
                 query,
                 object_types: object_types || ['people', 'companies'],
             });
-
+            
             res.json(result);
         } catch (error) {
             console.error('Failed to search Attio records:', error);
@@ -519,3 +506,4 @@ class AttioIntegration extends BaseCRMIntegration {
 }
 
 module.exports = AttioIntegration;
+

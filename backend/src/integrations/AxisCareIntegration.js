@@ -116,7 +116,9 @@ class AxisCareIntegration extends BaseCRMIntegration {
 
             let response, persons;
 
-            console.log(`[AxisCare] Fetching ${objectType} page with cursor=${cursor}`);
+            console.log(
+                `[AxisCare] Fetching ${objectType} page with cursor=${cursor}`,
+            );
 
             switch (objectType) {
                 case 'Client':
@@ -157,7 +159,10 @@ class AxisCareIntegration extends BaseCRMIntegration {
                         url.searchParams.toString(),
                     );
                     nextCursor = url.searchParams.get('startAfterId');
-                    console.log('[AxisCare] DEBUG extracted cursor:', nextCursor);
+                    console.log(
+                        '[AxisCare] DEBUG extracted cursor:',
+                        nextCursor,
+                    );
                 } catch (error) {
                     console.warn(
                         '[AxisCare] Failed to parse nextPage URL:',
@@ -191,6 +196,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
             );
             throw error;
         }
+    }
 
     /**
      * Transform AxisCare person object to Quo contact format
@@ -305,7 +311,10 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 primary: true,
             });
         }
-        if (person.billingEmail && person.billingEmail !== person.personalEmail) {
+        if (
+            person.billingEmail &&
+            person.billingEmail !== person.personalEmail
+        ) {
             emails.push({
                 name: 'billing',
                 value: person.billingEmail,
