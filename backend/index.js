@@ -20,9 +20,9 @@ const appDefinition = {
         individualUserRequired: true,
         organizationUserRequired: false,
         authModes: {
-            friggToken: true,       // Support web UI login
-            xFriggHeaders: true,    // Enable backend-to-backend API communication
-            adopterJwt: false,      // Not using custom JWT
+            friggToken: true, // Support web UI login
+            xFriggHeaders: true, // Enable backend-to-backend API communication
+            adopterJwt: false, // Not using custom JWT
         },
     },
     encryption: {
