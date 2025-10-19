@@ -1,8 +1,10 @@
 const { BaseCRMIntegration } = require('../base/BaseCRMIntegration');
+const attio = require('@friggframework/api-module-attio');
+const quo = require('../api-modules/quo');
 
 /**
  * AttioIntegration - Refactored to extend BaseCRMIntegration
- * 
+ *
  * Attio-specific implementation for syncing people/companies with Quo.
  * Attio uses a modern record-based API with flexible data structures.
  */
@@ -21,33 +23,10 @@ class AttioIntegration extends BaseCRMIntegration {
             icon: '',
         },
         modules: {
-            attio: {
-                definition: {
-                    name: 'attio',
-                    version: '1.0.0',
-                    display: {
-                        name: 'Attio',
-                        description: 'Attio CRM API',
-                    },
-                },
-            },
-            quo: {
-                definition: {
-                    name: 'quo',
-                    version: '1.0.0',
-                    display: {
-                        name: 'Quo CRM',
-                        description: 'Quo CRM API',
-                    },
-                },
-            },
+            attio: { definition: attio.Definition },
+            quo: { definition: quo.Definition },
         },
         routes: [
-            {
-                path: '/attio/workspaces',
-                method: 'GET',
-                event: 'LIST_ATTIO_WORKSPACES',
-            },
             {
                 path: '/attio/objects',
                 method: 'GET',
@@ -74,6 +53,9 @@ class AttioIntegration extends BaseCRMIntegration {
             { crmObjectName: 'people', quoContactType: 'contact' },
         ],
         syncConfig: {
+            paginationType: 'CURSOR_BASED',
+            supportsTotal: false,
+            returnFullRecords: true,
             reverseChronological: true,
             initialBatchSize: 50,
             ongoingBatchSize: 25,
@@ -97,9 +79,6 @@ class AttioIntegration extends BaseCRMIntegration {
             ...this.events, // BaseCRMIntegration events
 
             // Existing Attio-specific events
-            LIST_ATTIO_WORKSPACES: {
-                handler: this.listWorkspaces,
-            },
             LIST_ATTIO_OBJECTS: {
                 handler: this.listObjects,
             },
@@ -138,44 +117,69 @@ class AttioIntegration extends BaseCRMIntegration {
     // ============================================================================
 
     /**
-     * Fetch a page of persons from Attio
+     * Fetch a page of persons from Attio (CURSOR_BASED)
      * @param {Object} params
      * @param {string} params.objectType - CRM object type (people)
-     * @param {number} params.page - Page number (0-indexed)
+     * @param {number|null} params.cursor - Cursor position (offset)
      * @param {number} params.limit - Records per page
      * @param {Date} [params.modifiedSince] - Filter by modification date
      * @param {boolean} [params.sortDesc=true] - Sort descending
-     * @returns {Promise<{data: Array, total: number, hasMore: boolean}>}
+     * @returns {Promise<{data: Array, cursor: number|null, hasMore: boolean}>}
      */
-    async fetchPersonPage({ objectType, page, limit, modifiedSince, sortDesc = true }) {
+    async fetchPersonPage({
+        objectType,
+        cursor = null,
+        limit,
+        modifiedSince,
+        sortDesc = true,
+    }) {
         try {
             const params = {
                 limit,
-                offset: page * limit,
-                sort: {
-                    attribute: 'updated_at',
-                    direction: sortDesc ? 'desc' : 'asc',
-                },
+                offset: cursor || 0,
+                sorts: [
+                    {
+                        attribute: 'updated_at',
+                        direction: sortDesc ? 'desc' : 'asc',
+                    },
+                ],
             };
 
             // Add modification filter if provided
             if (modifiedSince) {
                 params.filter = {
-                    attribute: 'updated_at',
-                    gte: modifiedSince.toISOString(),
+                    updated_at: {
+                        $gte: modifiedSince.toISOString(),
+                    },
                 };
             }
 
             // Attio uses object slugs (e.g., 'people', 'companies')
-            const response = await this.attio.api.objects.listRecords(objectType, params);
-            
+            const response = await this.attio.api.listRecords(
+                objectType,
+                params,
+            );
+            const persons = response.data || [];
+
+            // Calculate next cursor (offset)
+            const nextCursor =
+                persons.length === limit ? (cursor || 0) + limit : null;
+
+            console.log(
+                `[Attio] Fetched ${persons.length} ${objectType} at offset ${cursor || 0}, ` +
+                    `hasMore=${!!nextCursor}`,
+            );
+
             return {
-                data: response.data || [],
-                total: response.total || null,
-                hasMore: response.has_more || false,
+                data: persons,
+                cursor: nextCursor,
+                hasMore: persons.length === limit,
             };
         } catch (error) {
-            console.error(`Error fetching ${objectType} page ${page}:`, error);
+            console.error(
+                `Error fetching ${objectType} at cursor ${cursor}:`,
+                error,
+            );
             throw error;
         }
     }
@@ -220,21 +224,23 @@ class AttioIntegration extends BaseCRMIntegration {
             }
         }
 
-        // Extract company (from primary company relationship)
+        // Extract company - DISABLED for initial sync to avoid N+1 problem
+        // TODO: Implement batch company fetch or caching for better performance
+        // During initial sync, fetching company for every person = 5000 people × 2 API calls = 10,000 calls!
         let company = null;
-        const companyLinks = attributes.primary_company || [];
-        if (companyLinks.length > 0 && companyLinks[0].target_record_id) {
-            try {
-                const companyRecord = await this.attio.api.objects.getRecord(
-                    'companies',
-                    companyLinks[0].target_record_id
-                );
-                const companyName = companyRecord.values?.name?.[0]?.value;
-                company = companyName || null;
-            } catch (error) {
-                console.warn(`Failed to fetch company for person ${person.id.record_id}:`, error.message);
-            }
-        }
+        // const companyLinks = attributes.primary_company || [];
+        // if (companyLinks.length > 0 && companyLinks[0].target_record_id) {
+        //     try {
+        //         const companyRecord = await this.attio.api.objects.getRecord(
+        //             'companies',
+        //             companyLinks[0].target_record_id
+        //         );
+        //         const companyName = companyRecord.values?.name?.[0]?.value;
+        //         company = companyName || null;
+        //     } catch (error) {
+        //         console.warn(`Failed to fetch company for person ${person.id.record_id}:`, error.message);
+        //     }
+        // }
 
         return {
             externalId: person.id.record_id,
@@ -266,9 +272,14 @@ class AttioIntegration extends BaseCRMIntegration {
     async logSMSToActivity(activity) {
         try {
             // Find the person by external ID
-            const person = await this.attio.api.objects.getRecord('people', activity.contactExternalId);
+            const person = await this.attio.api.getRecord(
+                'people',
+                activity.contactExternalId,
+            );
             if (!person) {
-                console.warn(`Person not found for SMS logging: ${activity.contactExternalId}`);
+                console.warn(
+                    `Person not found for SMS logging: ${activity.contactExternalId}`,
+                );
                 return;
             }
 
@@ -277,11 +288,12 @@ class AttioIntegration extends BaseCRMIntegration {
                 parent_object: 'people',
                 parent_record_id: activity.contactExternalId,
                 title: `SMS: ${activity.direction}`,
+                format: 'plaintext',
                 content: activity.content,
                 created_at: activity.timestamp,
             };
 
-            await this.attio.api.notes.create(noteData);
+            await this.attio.api.createNote(noteData);
         } catch (error) {
             console.error('Failed to log SMS activity to Attio:', error);
             throw error;
@@ -296,9 +308,14 @@ class AttioIntegration extends BaseCRMIntegration {
     async logCallToActivity(activity) {
         try {
             // Find the person by external ID
-            const person = await this.attio.api.objects.getRecord('people', activity.contactExternalId);
+            const person = await this.attio.api.getRecord(
+                'people',
+                activity.contactExternalId,
+            );
             if (!person) {
-                console.warn(`Person not found for call logging: ${activity.contactExternalId}`);
+                console.warn(
+                    `Person not found for call logging: ${activity.contactExternalId}`,
+                );
                 return;
             }
 
@@ -307,11 +324,12 @@ class AttioIntegration extends BaseCRMIntegration {
                 parent_object: 'people',
                 parent_record_id: activity.contactExternalId,
                 title: `Call: ${activity.direction} (${activity.duration}s)`,
+                format: 'plaintext',
                 content: activity.summary || 'Phone call',
                 created_at: activity.timestamp,
             };
 
-            await this.attio.api.notes.create(noteData);
+            await this.attio.api.createNote(noteData);
         } catch (error) {
             console.error('Failed to log call activity to Attio:', error);
             throw error;
@@ -325,16 +343,15 @@ class AttioIntegration extends BaseCRMIntegration {
     async setupWebhooks() {
         try {
             const webhookUrl = `${process.env.BASE_URL}/integrations/${this.id}/webhook`;
-            
-            // Create webhook for record.created events
-            await this.attio.api.webhooks.create({
-                url: webhookUrl,
-                subscribed_events: [
-                    'record.created',
-                    'record.updated',
-                    'record.deleted',
+
+            // Create webhook for record events
+            await this.attio.api.createWebhook({
+                target_url: webhookUrl,
+                subscriptions: [
+                    { event_type: 'record.created', filter: null },
+                    { event_type: 'record.updated', filter: null },
+                    { event_type: 'record.deleted', filter: null },
                 ],
-                object_types: ['people'],
             });
 
             console.log(`Attio webhooks created for integration ${this.id}`);
@@ -379,22 +396,9 @@ class AttioIntegration extends BaseCRMIntegration {
     // EXISTING METHODS - Backward Compatibility
     // ============================================================================
 
-    async listWorkspaces({ req, res }) {
-        try {
-            const workspaces = await this.attio.api.workspaces.list();
-            res.json(workspaces);
-        } catch (error) {
-            console.error('Failed to list Attio workspaces:', error);
-            res.status(500).json({
-                error: 'Failed to list workspaces',
-                details: error.message,
-            });
-        }
-    }
-
     async listObjects({ req, res }) {
         try {
-            const objects = await this.attio.api.objects.list();
+            const objects = await this.attio.api.listObjects();
             res.json(objects);
         } catch (error) {
             console.error('Failed to list Attio objects:', error);
@@ -412,7 +416,10 @@ class AttioIntegration extends BaseCRMIntegration {
                 offset: req.query.offset ? parseInt(req.query.offset) : 0,
             };
 
-            const companies = await this.attio.api.objects.listRecords('companies', params);
+            const companies = await this.attio.api.listRecords(
+                'companies',
+                params,
+            );
             res.json(companies);
         } catch (error) {
             console.error('Failed to list Attio companies:', error);
@@ -430,7 +437,10 @@ class AttioIntegration extends BaseCRMIntegration {
                 offset: req.query.offset ? parseInt(req.query.offset) : 0,
             };
 
-            const people = await this.attio.api.objects.listRecords('people', params);
+            const people = await this.attio.api.listRecords(
+                'people',
+                params,
+            );
             res.json(people);
         } catch (error) {
             console.error('Failed to list Attio people:', error);
@@ -443,10 +453,10 @@ class AttioIntegration extends BaseCRMIntegration {
 
     async getCustomObjects({ req, res }) {
         try {
-            const objects = await this.attio.api.objects.list();
+            const objects = await this.attio.api.listObjects();
             // Filter to only custom objects (not standard ones like 'people', 'companies')
-            const customObjects = objects.data?.filter(obj => 
-                !['people', 'companies'].includes(obj.api_slug)
+            const customObjects = objects.data?.filter(
+                (obj) => !['people', 'companies'].includes(obj.api_slug),
             );
             res.json({ data: customObjects });
         } catch (error) {
@@ -461,14 +471,17 @@ class AttioIntegration extends BaseCRMIntegration {
     async createRecord({ req, res }) {
         try {
             const { objectType, values } = req.body;
-            
+
             if (!objectType || !values) {
                 return res.status(400).json({
                     error: 'objectType and values are required',
                 });
             }
 
-            const result = await this.attio.api.objects.createRecord(objectType, { values });
+            const result = await this.attio.api.createRecord(
+                objectType,
+                { values },
+            );
             res.json(result);
         } catch (error) {
             console.error('Failed to create Attio record:', error);
@@ -482,18 +495,19 @@ class AttioIntegration extends BaseCRMIntegration {
     async searchRecords({ req, res }) {
         try {
             const { query, object_types } = req.body;
-            
+
             if (!query) {
                 return res.status(400).json({
                     error: 'Search query is required',
                 });
             }
 
-            const result = await this.attio.api.search({
+            const result = await this.attio.api.searchRecords({
                 query,
-                object_types: object_types || ['people', 'companies'],
+                objects: object_types || ['people', 'companies'],
+                request_as: { type: 'workspace' },
             });
-            
+
             res.json(result);
         } catch (error) {
             console.error('Failed to search Attio records:', error);
@@ -506,4 +520,3 @@ class AttioIntegration extends BaseCRMIntegration {
 }
 
 module.exports = AttioIntegration;
-
