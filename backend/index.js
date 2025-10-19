@@ -47,6 +47,7 @@ const appDefinition = {
             management: 'discover', // Discover existing Aurora cluster
             publiclyAccessible: true, // Whether to expose the database publicly
             autoCreateCredentials: false, // Auto-create and rotate credentials for discovered cluster
+            database: 'postgres', // Use default postgres database (schema already exists here)
         },
     },
     ssm: {
