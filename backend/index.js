@@ -44,10 +44,12 @@ const appDefinition = {
     database: {
         postgres: {
             enable: true, // Can be enabled for PostgreSQL
-            management: 'discover', // Discover existing Aurora cluster
-            publiclyAccessible: true, // Whether to expose the database publicly
-            autoCreateCredentials: false, // Auto-create and rotate credentials for discovered cluster
-            database: 'postgres', // Use default postgres database (schema already exists here)
+            management: 'create-new', // Create new Aurora Serverless v2 cluster for dev
+            publiclyAccessible: true, // Whether to expose the database publicly (dev only - QA/prod should be false)
+            autoCreateCredentials: true, // Auto-create Secrets Manager secret with secure password
+            database: 'postgres', // Database name
+            minCapacity: 0.5, // Minimum Aurora capacity units (cost optimization for dev)
+            maxCapacity: 1, // Maximum Aurora capacity units
         },
     },
     ssm: {
