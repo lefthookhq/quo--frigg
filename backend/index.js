@@ -46,7 +46,7 @@ const appDefinition = {
             enable: true, // Can be enabled for PostgreSQL
             management: 'discover', // Discover existing Aurora cluster
             publiclyAccessible: true, // Whether to expose the database publicly
-            autoCreateCredentials: true, // Auto-create and rotate credentials for discovered cluster
+            autoCreateCredentials: false, // Auto-create and rotate credentials for discovered cluster
         },
     },
     ssm: {
@@ -59,6 +59,7 @@ const appDefinition = {
         DATABASE_USER: true,
         DATABASE_PASSWORD: true,
         REDIRECT_PATH: true,
+        HEALTH_API_KEY: true,
         // AWS Configuration
         AWS_REGION: true,
         S3_BUCKET_NAME: true,
