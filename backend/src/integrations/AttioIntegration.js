@@ -137,21 +137,12 @@ class AttioIntegration extends BaseCRMIntegration {
             const params = {
                 limit,
                 offset: cursor || 0,
-                sorts: [
-                    {
-                        attribute: 'updated_at',
-                        direction: sortDesc ? 'desc' : 'asc',
-                    },
-                ],
             };
 
-            // Add modification filter if provided
             if (modifiedSince) {
-                params.filter = {
-                    updated_at: {
-                        $gte: modifiedSince.toISOString(),
-                    },
-                };
+                console.warn(
+                    '[Attio] modifiedSince filter not supported - Attio has no updated_at attribute',
+                );
             }
 
             // Attio uses object slugs (e.g., 'people', 'companies')
@@ -187,39 +178,50 @@ class AttioIntegration extends BaseCRMIntegration {
     /**
      * Transform Attio person object to Quo contact format
      * @param {Object} person - Attio person record
-     * @returns {Promise<Object>} Quo contact format
+     * @returns {Object} Quo contact format
      */
-    async transformPersonToQuo(person) {
+    transformPersonToQuo(person) {
         // Attio uses a flexible attribute-based structure
         const attributes = person.values || {};
 
-        // Extract name from attributes
-        const nameAttr = attributes.name?.[0];
-        const firstName = nameAttr?.first_name || '';
+        // Extract name from attributes - use active value filtering
+        const nameAttr = this.getActiveValue(attributes.name);
+        let firstName = nameAttr?.first_name || '';
         const lastName = nameAttr?.last_name || '';
 
-        // Extract email addresses
+        // Handle missing firstName (required by Quo) - use 'Unknown' fallback
+        if (!firstName || firstName.trim() === '') {
+            firstName = 'Unknown';
+        }
+
+        // Extract role/job title
+        const roleAttr =
+            this.getActiveValue(attributes.job_title) ||
+            this.getActiveValue(attributes.role);
+        const role = roleAttr?.value || null;
+
+        // Extract email addresses - filter only active emails
         const emails = [];
         const emailAttrs = attributes.email_addresses || [];
         for (const emailAttr of emailAttrs) {
-            if (emailAttr.email_address) {
+            // Only include active emails
+            if (emailAttr.active_until === null && emailAttr.email_address) {
                 emails.push({
-                    name: emailAttr.attribute_type || 'work',
+                    name: 'email',
                     value: emailAttr.email_address,
-                    primary: emailAttr.is_primary || false,
                 });
             }
         }
 
-        // Extract phone numbers
+        // Extract phone numbers - filter only active phones
         const phoneNumbers = [];
         const phoneAttrs = attributes.phone_numbers || [];
         for (const phoneAttr of phoneAttrs) {
-            if (phoneAttr.phone_number) {
+            // Only include active phone numbers
+            if (phoneAttr.active_until === null && phoneAttr.phone_number) {
                 phoneNumbers.push({
-                    name: phoneAttr.attribute_type || 'work',
+                    name: 'phone',
                     value: phoneAttr.phone_number,
-                    primary: phoneAttr.is_primary || false,
                 });
             }
         }
@@ -231,7 +233,7 @@ class AttioIntegration extends BaseCRMIntegration {
         // const companyLinks = attributes.primary_company || [];
         // if (companyLinks.length > 0 && companyLinks[0].target_record_id) {
         //     try {
-        //         const companyRecord = await this.attio.api.objects.getRecord(
+        //         const companyRecord = await this.attio.api.getRecord(
         //             'companies',
         //             companyLinks[0].target_record_id
         //         );
@@ -249,19 +251,39 @@ class AttioIntegration extends BaseCRMIntegration {
                 firstName,
                 lastName,
                 company,
+                role,
                 phoneNumbers,
                 emails,
             },
-            customFields: {
-                crmId: person.id.record_id,
-                crmType: 'attio',
-                objectId: person.id.object_id,
-                createdAt: person.created_at,
-                updatedAt: person.updated_at,
-                // Store all Attio attributes for reference
-                attioAttributes: attributes,
-            },
+            customFields: [
+                { key: 'crmId', value: person.id.record_id },
+                { key: 'crmType', value: 'attio' },
+                { key: 'attioWorkspaceId', value: person.id.workspace_id },
+                { key: 'attioObjectId', value: person.id.object_id },
+                { key: 'attioCreatedAt', value: person.created_at },
+                { key: 'attioWebUrl', value: person.web_url },
+            ],
         };
+    }
+
+    /**
+     * Get the first active value from an Attio attribute array
+     * Attio attributes are arrays where each item has active_from/active_until timestamps
+     * @param {Array} attributeArray - Array of attribute value objects
+     * @returns {Object|null} First active value (active_until === null) or first item as fallback
+     */
+    getActiveValue(attributeArray) {
+        if (!Array.isArray(attributeArray) || attributeArray.length === 0) {
+            return null;
+        }
+
+        // Find first active value (active_until === null means currently active)
+        const activeValue = attributeArray.find(
+            (attr) => attr.active_until === null,
+        );
+
+        // Return active value or fallback to first item
+        return activeValue || attributeArray[0];
     }
 
     /**
@@ -437,10 +459,7 @@ class AttioIntegration extends BaseCRMIntegration {
                 offset: req.query.offset ? parseInt(req.query.offset) : 0,
             };
 
-            const people = await this.attio.api.listRecords(
-                'people',
-                params,
-            );
+            const people = await this.attio.api.listRecords('people', params);
             res.json(people);
         } catch (error) {
             console.error('Failed to list Attio people:', error);
@@ -478,10 +497,9 @@ class AttioIntegration extends BaseCRMIntegration {
                 });
             }
 
-            const result = await this.attio.api.createRecord(
-                objectType,
-                { values },
-            );
+            const result = await this.attio.api.createRecord(objectType, {
+                values,
+            });
             res.json(result);
         } catch (error) {
             console.error('Failed to create Attio record:', error);
