@@ -4,7 +4,7 @@ const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 5173;
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
-const JWT_TOKEN = process.env.JWT_TOKEN || '';
+const FRIGG_JWT_TOKEN = process.env.FRIGG_JWT_TOKEN || '';
 
 // Handle OAuth redirect callback
 app.get('/redirect/:appId', async (req, res) => {
@@ -43,8 +43,8 @@ app.get('/redirect/:appId', async (req, res) => {
             'Content-Type': 'application/json',
         };
 
-        if (JWT_TOKEN) {
-            headers['Authorization'] = `Bearer ${JWT_TOKEN}`;
+        if (FRIGG_JWT_TOKEN) {
+            headers['Authorization'] = `Bearer ${FRIGG_JWT_TOKEN}`;
         }
 
         const response = await fetch(`${BACKEND_URL}/api/authorize`, {
@@ -83,6 +83,8 @@ app.listen(PORT, () => {
     console.log(`✅ Listening on: http://localhost:${PORT}`);
     console.log(`📍 Redirect URL: http://localhost:${PORT}/redirect/attio`);
     console.log(`🔗 Backend URL: ${BACKEND_URL}`);
-    console.log(`🔑 JWT Token: ${JWT_TOKEN ? 'Configured ✓' : 'Not set ✗'}`);
+    console.log(
+        `🔑 FRIGG JWT Token: ${FRIGG_JWT_TOKEN ? 'Configured ✓' : 'Not set ✗'}`,
+    );
     console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
 });

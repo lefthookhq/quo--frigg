@@ -178,9 +178,9 @@ class ScalingTestIntegration extends BaseCRMIntegration {
     /**
      * Transform synthetic contact to Quo format
      * @param {Object} contact - Synthetic contact
-     * @returns {Promise<Object>} Quo contact format matching OpenAPI spec
+     * @returns {Object} Quo contact format matching OpenAPI spec
      */
-    async transformPersonToQuo(contact) {
+    transformPersonToQuo(contact) {
         const quoContact = {
             externalId: String(contact.id),
             source: 'scalingtest',
@@ -201,7 +201,7 @@ class ScalingTestIntegration extends BaseCRMIntegration {
         };
 
         console.log(
-            `[ScalingTest] transformPersonToQuo: contact.id=${contact.id} -> externalId=${quoContact.externalId}, name=${contact.first_name} ${contact.last_name}`,
+            `[ScalingTest] transformPersonToQuo: externalId=${quoContact.externalId}, name=${contact.first_name} ${contact.last_name} `,
         );
         return quoContact;
     }
@@ -243,7 +243,7 @@ class ScalingTestIntegration extends BaseCRMIntegration {
         };
 
         console.log(
-            `[ScalingTest] transformApiContactToQuo: ${apiContact.id} -> id=${contactId}, name=${apiContact.firstName} ${apiContact.lastName}`,
+            `[ScalingTest] transformApiContactToQuo: id=${contactId}, name=${apiContact.firstName} ${apiContact.lastName}`,
         );
         return result;
     }

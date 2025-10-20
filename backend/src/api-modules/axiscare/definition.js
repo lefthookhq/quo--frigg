@@ -9,6 +9,31 @@ const Definition = {
     moduleName: config.name,
     modelName: 'AxisCare',
     requiredAuthMethods: {
+        getAuthorizationRequirements: (api) => {
+            return {
+                type: 'apiKey',
+                data: {
+                    jsonSchema: {
+                        title: 'AxisCare API Authorization',
+                        type: 'object',
+                        required: ['apiKey'],
+                        properties: {
+                            apiKey: {
+                                type: 'string',
+                                title: 'API Key',
+                            },
+                        },
+                    },
+                    uiSchema: {
+                        apiKey: {
+                            'ui:widget': 'password',
+                            'ui:help': 'Your AxisCare API key',
+                            'ui:placeholder': 'Enter your API key...',
+                        },
+                    },
+                },
+            };
+        },
         getToken: async (api, params) => {
             // For AxisCare API, use API key authentication
             const apiKey =
