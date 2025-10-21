@@ -44,7 +44,7 @@ const appDefinition = {
     database: {
         postgres: {
             enable: true, // Can be enabled for PostgreSQL
-            management: 'discover', // 'managed' = Frigg creates/manages, 'discover' = use existing or create if missing
+            management: 'managed', // 'managed' = Frigg creates/manages dedicated resource
             publiclyAccessible: true, // Whether to expose the database publicly (dev only - QA/prod should be false)
             autoCreateCredentials: true, // Auto-create Secrets Manager secret with secure password
             database: 'postgres', // Database name
