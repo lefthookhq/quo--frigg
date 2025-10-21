@@ -1,7 +1,0 @@
-{
-    "name": "pipedrive",
-    "version": "1.0.0",
-    "moduleName": "Pipedrive",
-    "description": "Pipedrive CRM API integration",
-    "baseUrl": "https://api.pipedrive.com/v1"
-}

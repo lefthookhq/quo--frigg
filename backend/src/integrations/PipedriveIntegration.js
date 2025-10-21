@@ -1,5 +1,5 @@
 const { BaseCRMIntegration } = require('../base/BaseCRMIntegration');
-const pipedrive = require('../api-modules/pipedrive');
+const pipedrive = require('@friggframework/api-module-pipedrive');
 const quo = require('../api-modules/quo');
 
 /**
