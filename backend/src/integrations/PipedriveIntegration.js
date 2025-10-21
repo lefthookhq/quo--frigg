@@ -1,8 +1,10 @@
 const { BaseCRMIntegration } = require('../base/BaseCRMIntegration');
+const pipedrive = require('../api-modules/pipedrive');
+const quo = require('../api-modules/quo');
 
 /**
  * PipedriveIntegration - Refactored to extend BaseCRMIntegration
- * 
+ *
  * Pipedrive-specific implementation for syncing persons/deals with Quo.
  * Demonstrates BaseCRMIntegration pattern with webhook support.
  */
@@ -21,26 +23,8 @@ class PipedriveIntegration extends BaseCRMIntegration {
             icon: '',
         },
         modules: {
-            pipedrive: {
-                definition: {
-                    name: 'pipedrive',
-                    version: '1.0.0',
-                    display: {
-                        name: 'Pipedrive',
-                        description: 'Pipedrive API',
-                    },
-                },
-            },
-            quo: {
-                definition: {
-                    name: 'quo',
-                    version: '1.0.0',
-                    display: {
-                        name: 'Quo CRM',
-                        description: 'Quo CRM API',
-                    },
-                },
-            },
+            pipedrive: { definition: pipedrive.Definition },
+            quo: { definition: quo.Definition },
         },
         routes: [
             {
