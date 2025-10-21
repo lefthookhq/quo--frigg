@@ -74,7 +74,6 @@ class AttioIntegration extends BaseCRMIntegration {
     constructor(params) {
         super(params);
 
-        // Add existing events (backward compatibility)
         this.events = {
             ...this.events, // BaseCRMIntegration events
 
@@ -226,24 +225,7 @@ class AttioIntegration extends BaseCRMIntegration {
             }
         }
 
-        // Extract company - DISABLED for initial sync to avoid N+1 problem
-        // TODO: Implement batch company fetch or caching for better performance
-        // During initial sync, fetching company for every person = 5000 people × 2 API calls = 10,000 calls!
         let company = null;
-        // const companyLinks = attributes.primary_company || [];
-        // if (companyLinks.length > 0 && companyLinks[0].target_record_id) {
-        //     try {
-        //         const companyRecord = await this.attio.api.getRecord(
-        //             'companies',
-        //             companyLinks[0].target_record_id
-        //         );
-        //         const companyName = companyRecord.values?.name?.[0]?.value;
-        //         company = companyName || null;
-        //     } catch (error) {
-        //         console.warn(`Failed to fetch company for person ${person.id.record_id}:`, error.message);
-        //     }
-        // }
-
         return {
             externalId: person.id.record_id,
             source: 'attio',
@@ -255,14 +237,7 @@ class AttioIntegration extends BaseCRMIntegration {
                 phoneNumbers,
                 emails,
             },
-            customFields: [
-                { key: 'crmId', value: person.id.record_id },
-                { key: 'crmType', value: 'attio' },
-                { key: 'attioWorkspaceId', value: person.id.workspace_id },
-                { key: 'attioObjectId', value: person.id.object_id },
-                { key: 'attioCreatedAt', value: person.created_at },
-                { key: 'attioWebUrl', value: person.web_url },
-            ],
+            customFields: [],
         };
     }
 
