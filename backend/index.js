@@ -1,6 +1,6 @@
 const ScalingTestIntegration = require('./src/integrations/ScalingTestIntegration');
 // const ZohoCRMIntegration = require('./src/integrations/ZohoCRMIntegration');
-// const PipeDriveIntegration = require('./src/integrations/PipeDriveIntegration');
+const PipedriveIntegration = require('./src/integrations/PipedriveIntegration');
 const AttioIntegration = require('./src/integrations/AttioIntegration');
 const AxisCareIntegration = require('./src/integrations/AxisCareIntegration');
 
@@ -10,7 +10,7 @@ const appDefinition = {
     integrations: [
         ScalingTestIntegration,
         // ZohoCRMIntegration,
-        // PipeDriveIntegration,
+        PipedriveIntegration,
         AttioIntegration,
         AxisCareIntegration,
     ],

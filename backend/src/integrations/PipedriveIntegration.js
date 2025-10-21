@@ -1,8 +1,10 @@
 const { BaseCRMIntegration } = require('../base/BaseCRMIntegration');
+const pipedrive = require('@friggframework/api-module-pipedrive');
+const quo = require('../api-modules/quo');
 
 /**
  * PipedriveIntegration - Refactored to extend BaseCRMIntegration
- * 
+ *
  * Pipedrive-specific implementation for syncing persons/deals with Quo.
  * Demonstrates BaseCRMIntegration pattern with webhook support.
  */
@@ -15,32 +17,15 @@ class PipedriveIntegration extends BaseCRMIntegration {
 
         display: {
             label: 'Pipedrive',
-            description: 'Pipeline management platform integration with Quo API',
+            description:
+                'Pipeline management platform integration with Quo API',
             category: 'CRM & Sales',
             detailsUrl: 'https://www.pipedrive.com',
             icon: '',
         },
         modules: {
-            pipedrive: {
-                definition: {
-                    name: 'pipedrive',
-                    version: '1.0.0',
-                    display: {
-                        name: 'Pipedrive',
-                        description: 'Pipedrive API',
-                    },
-                },
-            },
-            quo: {
-                definition: {
-                    name: 'quo',
-                    version: '1.0.0',
-                    display: {
-                        name: 'Quo CRM',
-                        description: 'Quo CRM API',
-                    },
-                },
-            },
+            pipedrive: { definition: pipedrive.Definition },
+            quo: { definition: quo.Definition },
         },
         routes: [
             {
@@ -74,11 +59,14 @@ class PipedriveIntegration extends BaseCRMIntegration {
             { crmObjectName: 'Person', quoContactType: 'contact' },
         ],
         syncConfig: {
+            paginationType: 'CURSOR_BASED',
+            supportsTotal: false,
+            returnFullRecords: true,
             reverseChronological: true,
             initialBatchSize: 100,
             ongoingBatchSize: 50,
-            supportsWebhooks: true, // Pipedrive has good webhook support
-            pollIntervalMinutes: 30, // Fallback polling interval
+            supportsWebhooks: true,
+            pollIntervalMinutes: 30,
         },
         queueConfig: {
             maxWorkers: 20,
@@ -92,11 +80,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
     constructor(params) {
         super(params);
 
-        // Add existing events (backward compatibility)
         this.events = {
-            ...this.events, // BaseCRMIntegration events
+            ...this.events,
 
-            // Existing Pipedrive-specific events
             LIST_PIPEDRIVE_DEALS: {
                 handler: this.listDeals,
             },
@@ -127,7 +113,8 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 type: 'USER_ACTION',
                 handler: this.getStats,
                 title: 'Get Pipedrive Stats',
-                description: 'Get statistics and performance metrics from Pipedrive',
+                description:
+                    'Get statistics and performance metrics from Pipedrive',
                 userActionType: 'REPORT',
             },
         };
@@ -138,40 +125,57 @@ class PipedriveIntegration extends BaseCRMIntegration {
     // ============================================================================
 
     /**
-     * Fetch a page of persons from Pipedrive
+     * Fetch a page of persons from Pipedrive (CURSOR_BASED)
      * @param {Object} params
      * @param {string} params.objectType - CRM object type (Person)
-     * @param {number} params.page - Page number (0-indexed)
+     * @param {string|null} [params.cursor] - Cursor for pagination
      * @param {number} params.limit - Records per page
      * @param {Date} [params.modifiedSince] - Filter by modification date
      * @param {boolean} [params.sortDesc=true] - Sort descending
-     * @returns {Promise<{data: Array, total: number, hasMore: boolean}>}
+     * @returns {Promise<{data: Array, cursor: string|null, hasMore: boolean}>}
      */
-    async fetchPersonPage({ objectType, page, limit, modifiedSince, sortDesc = true }) {
+    async fetchPersonPage({
+        objectType,
+        cursor = null,
+        limit,
+        modifiedSince,
+        sortDesc = true,
+    }) {
         try {
             const params = {
-                start: page * limit, // Pipedrive uses offset-based pagination
                 limit,
-                sort: `update_time ${sortDesc ? 'DESC' : 'ASC'}`,
             };
 
-            // Add modification filter if provided
-            if (modifiedSince) {
-                // Pipedrive uses filter_id for complex queries
-                // For simplicity, we'll fetch all and filter in memory for now
-                // In production, you'd want to create a Pipedrive filter
-                params.since = modifiedSince.toISOString().split('T')[0];
+            if (cursor) {
+                params.cursor = cursor;
             }
 
-            const response = await this.pipedrive.api.persons.getAll(params);
-            
+            if (modifiedSince) {
+                params.updated_since = modifiedSince.toISOString();
+            }
+
+            params.sort_by = 'update_time';
+            params.sort_direction = sortDesc ? 'desc' : 'asc';
+
+            const response = await this.pipedrive.api.listPersons(params);
+            const persons = response.data || [];
+            const nextCursor = response.additional_data?.next_cursor || null;
+
+            console.log(
+                `[Pipedrive] Fetched ${persons.length} ${objectType}(s) at cursor ${cursor || 'start'}, ` +
+                    `hasMore=${!!nextCursor}`,
+            );
+
             return {
-                data: response.data || [],
-                total: response.additional_data?.pagination?.total || null,
-                hasMore: response.additional_data?.pagination?.more_items_in_collection || false,
+                data: persons,
+                cursor: nextCursor,
+                hasMore: !!nextCursor,
             };
         } catch (error) {
-            console.error(`Error fetching ${objectType} page ${page}:`, error);
+            console.error(
+                `Error fetching ${objectType} at cursor ${cursor}:`,
+                error,
+            );
             throw error;
         }
     }
@@ -179,69 +183,45 @@ class PipedriveIntegration extends BaseCRMIntegration {
     /**
      * Transform Pipedrive person object to Quo contact format
      * @param {Object} person - Pipedrive person object
-     * @returns {Promise<Object>} Quo contact format
+     * @returns {Object} Quo contact format
      */
-    async transformPersonToQuo(person) {
-        // Extract phone numbers from Pipedrive's phone array
+    transformPersonToQuo(person) {
         const phoneNumbers = [];
-        if (person.phone && person.phone.length > 0) {
-            phoneNumbers.push(...person.phone.map(p => ({
-                name: p.label || 'work',
-                value: p.value,
-                primary: p.primary || false,
-            })));
+        if (person.phones && person.phones.length > 0) {
+            phoneNumbers.push(
+                ...person.phones.map((p) => ({
+                    name: p.label || 'work',
+                    value: p.value,
+                    primary: p.primary || false,
+                })),
+            );
         }
 
-        // Extract emails from Pipedrive's email array
         const emails = [];
-        if (person.email && person.email.length > 0) {
-            emails.push(...person.email.map(e => ({
-                name: e.label || 'work',
-                value: e.value,
-                primary: e.primary || false,
-            })));
+        if (person.emails && person.emails.length > 0) {
+            emails.push(
+                ...person.emails.map((e) => ({
+                    name: e.label || 'work',
+                    value: e.value,
+                    primary: e.primary || false,
+                })),
+            );
         }
 
-        // Get organization name if available
-        let company = null;
-        if (person.org_id) {
-            try {
-                const org = await this.pipedrive.api.organizations.get(person.org_id.value);
-                company = org.data?.name;
-            } catch (error) {
-                console.warn(`Failed to fetch organization ${person.org_id.value}:`, error.message);
-            }
-        } else if (person.org_name) {
-            company = person.org_name;
-        }
+        const company = null;
+        const firstName = person.first_name || 'Unknown';
 
         return {
             externalId: String(person.id),
             source: 'pipedrive',
             defaultFields: {
-                firstName: person.first_name,
+                firstName,
                 lastName: person.last_name,
                 company,
                 phoneNumbers,
                 emails,
             },
-            customFields: {
-                crmId: person.id,
-                crmType: 'pipedrive',
-                label: person.label,
-                openDealsCount: person.open_deals_count,
-                closedDealsCount: person.closed_deals_count,
-                wonDealsCount: person.won_deals_count,
-                lostDealsCount: person.lost_deals_count,
-                nextActivityDate: person.next_activity_date,
-                lastActivityDate: person.last_activity_date,
-                updateTime: person.update_time,
-                addTime: person.add_time,
-                // Pipedrive-specific fields
-                visibleTo: person.visible_to,
-                ownerId: person.owner_id?.id,
-                ownerName: person.owner_id?.name,
-            },
+            customFields: [],
         };
     }
 
@@ -252,22 +232,24 @@ class PipedriveIntegration extends BaseCRMIntegration {
      */
     async logSMSToActivity(activity) {
         try {
-            // Find the person by external ID
-            const person = await this.pipedrive.api.persons.get(activity.contactExternalId);
+            const person = await this.pipedrive.api.persons.get(
+                activity.contactExternalId,
+            );
             if (!person || !person.data) {
-                console.warn(`Person not found for SMS logging: ${activity.contactExternalId}`);
+                console.warn(
+                    `Person not found for SMS logging: ${activity.contactExternalId}`,
+                );
                 return;
             }
 
-            // Create activity in Pipedrive
             const activityData = {
                 subject: `SMS: ${activity.direction}`,
-                type: 'sms', // Custom activity type (may need to be configured in Pipedrive)
-                done: 1, // Mark as done
+                type: 'sms',
+                done: 1,
                 note: activity.content,
                 person_id: person.data.id,
-                due_date: activity.timestamp.split('T')[0], // YYYY-MM-DD format
-                due_time: activity.timestamp.split('T')[1]?.substring(0, 5), // HH:MM format
+                due_date: activity.timestamp.split('T')[0],
+                due_time: activity.timestamp.split('T')[1]?.substring(0, 5),
             };
 
             await this.pipedrive.api.activities.create(activityData);
@@ -284,23 +266,25 @@ class PipedriveIntegration extends BaseCRMIntegration {
      */
     async logCallToActivity(activity) {
         try {
-            // Find the person by external ID
-            const person = await this.pipedrive.api.persons.get(activity.contactExternalId);
+            const person = await this.pipedrive.api.persons.get(
+                activity.contactExternalId,
+            );
             if (!person || !person.data) {
-                console.warn(`Person not found for call logging: ${activity.contactExternalId}`);
+                console.warn(
+                    `Person not found for call logging: ${activity.contactExternalId}`,
+                );
                 return;
             }
 
-            // Create activity in Pipedrive
             const activityData = {
                 subject: `Call: ${activity.direction} (${activity.duration}s)`,
                 type: 'call',
-                done: 1, // Mark as done
+                done: 1,
                 note: activity.summary || 'Phone call',
                 person_id: person.data.id,
-                due_date: activity.timestamp.split('T')[0], // YYYY-MM-DD format
-                due_time: activity.timestamp.split('T')[1]?.substring(0, 5), // HH:MM format
-                duration: Math.floor(activity.duration / 60), // Convert seconds to minutes
+                due_date: activity.timestamp.split('T')[0],
+                due_time: activity.timestamp.split('T')[1]?.substring(0, 5),
+                duration: Math.floor(activity.duration / 60),
             };
 
             await this.pipedrive.api.activities.create(activityData);
@@ -317,32 +301,30 @@ class PipedriveIntegration extends BaseCRMIntegration {
     async setupWebhooks() {
         try {
             const webhookUrl = `${process.env.BASE_URL}/integrations/${this.id}/webhook`;
-            
-            // Create webhook for person.added
+
             await this.pipedrive.api.webhooks.create({
                 subscription_url: webhookUrl,
                 event_action: 'added',
                 event_object: 'person',
             });
 
-            // Create webhook for person.updated
             await this.pipedrive.api.webhooks.create({
                 subscription_url: webhookUrl,
                 event_action: 'updated',
                 event_object: 'person',
             });
 
-            // Create webhook for person.deleted
             await this.pipedrive.api.webhooks.create({
                 subscription_url: webhookUrl,
                 event_action: 'deleted',
                 event_object: 'person',
             });
 
-            console.log(`Pipedrive webhooks created for integration ${this.id}`);
+            console.log(
+                `Pipedrive webhooks created for integration ${this.id}`,
+            );
         } catch (error) {
             console.error('Failed to setup Pipedrive webhooks:', error);
-            // Don't throw - fallback to polling
         }
     }
 
@@ -428,7 +410,8 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 sort: req.query.sort || 'update_time DESC',
             };
 
-            const organizations = await this.pipedrive.api.organizations.getAll(params);
+            const organizations =
+                await this.pipedrive.api.organizations.getAll(params);
             res.json(organizations);
         } catch (error) {
             console.error('Failed to list Pipedrive organizations:', error);
@@ -446,7 +429,8 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 limit: req.query.limit ? parseInt(req.query.limit) : 50,
             };
 
-            const activities = await this.pipedrive.api.activities.getAll(params);
+            const activities =
+                await this.pipedrive.api.activities.getAll(params);
             res.json(activities);
         } catch (error) {
             console.error('Failed to list Pipedrive activities:', error);
@@ -460,7 +444,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
     async createDeal({ req, res }) {
         try {
             const dealData = req.body;
-            
+
             if (!dealData.title) {
                 return res.status(400).json({
                     error: 'Deal title is required',
@@ -481,7 +465,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
     async searchData({ req, res }) {
         try {
             const { term, item_types, exact_match } = req.body;
-            
+
             if (!term) {
                 return res.status(400).json({
                     error: 'Search term is required',
@@ -493,7 +477,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 item_types: item_types || 'person,organization,deal',
                 exact_match: exact_match || false,
             });
-            
+
             res.json(result);
         } catch (error) {
             console.error('Failed to search Pipedrive data:', error);
@@ -506,7 +490,6 @@ class PipedriveIntegration extends BaseCRMIntegration {
 
     async getStats({ req, res }) {
         try {
-            // Fetch various statistics from Pipedrive
             const [deals, persons, activities] = await Promise.all([
                 this.pipedrive.api.deals.getAll({ limit: 1 }),
                 this.pipedrive.api.persons.getAll({ limit: 1 }),
@@ -516,7 +499,8 @@ class PipedriveIntegration extends BaseCRMIntegration {
             const stats = {
                 totalDeals: deals.additional_data?.pagination?.total || 0,
                 totalPersons: persons.additional_data?.pagination?.total || 0,
-                totalActivities: activities.additional_data?.pagination?.total || 0,
+                totalActivities:
+                    activities.additional_data?.pagination?.total || 0,
             };
 
             res.json(stats);
@@ -531,4 +515,3 @@ class PipedriveIntegration extends BaseCRMIntegration {
 }
 
 module.exports = PipedriveIntegration;
-

@@ -23,7 +23,7 @@ jest.mock('../base/BaseCRMIntegration', () => {
     };
 });
 
-const PipedriveIntegration = require('./PipedriveIntegration.refactored');
+const PipedriveIntegration = require('./PipedriveIntegration');
 
 describe('PipedriveIntegration (Refactored)', () => {
     let integration;
