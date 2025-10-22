@@ -2,16 +2,9 @@ const { BaseCRMIntegration } = require('../base/BaseCRMIntegration');
 const { Definition: QuoDefinition } = require('../api-modules/quo/definition');
 const zohoCrm = require('@friggframework/api-module-zoho-crm');
 
-/**
- * ZohoCRMIntegration - Refactored to extend BaseCRMIntegration
- *
- * This refactored version demonstrates how to migrate from the old IntegrationBase
- * to the new BaseCRMIntegration framework. It maintains backward compatibility
- * while leveraging the new sync orchestration capabilities.
- */
 class ZohoCRMIntegration extends BaseCRMIntegration {
     static Definition = {
-        name: 'zohocrm',
+        name: 'zohoCrm',
         version: '1.0.0',
         supportedVersions: ['1.0.0'],
         hasUserConfig: true,
@@ -25,25 +18,15 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         },
         modules: {
             quo: { definition: QuoDefinition },
-            'zoho-crm': {
+            zohoCrm: {
                 definition: zohoCrm.Definition,
             },
         },
         routes: [
             {
-                path: '/zoho/leads',
-                method: 'GET',
-                event: 'LIST_ZOHO_LEADS',
-            },
-            {
                 path: '/zoho/contacts',
                 method: 'GET',
                 event: 'LIST_ZOHO_CONTACTS',
-            },
-            {
-                path: '/zoho/deals',
-                method: 'GET',
-                event: 'LIST_ZOHO_DEALS',
             },
             {
                 path: '/zoho/accounts',
@@ -53,18 +36,15 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         ],
     };
 
-    /**
-     * CRM Configuration - Required by BaseCRMIntegration
-     */
     static CRMConfig = {
         personObjectTypes: [
             { crmObjectName: 'Contact', quoContactType: 'contact' },
-            { crmObjectName: 'Lead', quoContactType: 'contact' },
+            { crmObjectName: 'Account', quoContactType: 'contact' },
         ],
         syncConfig: {
-            paginationType: 'PAGE_BASED',
-            supportsTotal: true,
-            returnFullRecords: false,
+            paginationType: 'CURSOR_BASED',
+            supportsTotal: false,
+            returnFullRecords: true,
             reverseChronological: true,
             initialBatchSize: 50,
             ongoingBatchSize: 25,
@@ -83,78 +63,35 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
     constructor(params) {
         super(params);
 
-        // Add existing events (backward compatibility)
         this.events = {
-            ...this.events, // BaseCRMIntegration events (INITIAL_SYNC, etc.)
+            ...this.events,
 
-            // Existing Zoho-specific events
-            LIST_ZOHO_LEADS: {
-                handler: this.listLeads,
-            },
             LIST_ZOHO_CONTACTS: {
                 handler: this.listContacts,
-            },
-            LIST_ZOHO_DEALS: {
-                handler: this.listDeals,
             },
             LIST_ZOHO_ACCOUNTS: {
                 handler: this.listAccounts,
             },
-            CREATE_ZOHO_RECORD: {
-                type: 'USER_ACTION',
-                handler: this.createRecord,
-                title: 'Create Zoho Record',
-                description: 'Create a new record in Zoho CRM',
-                userActionType: 'DATA',
-            },
-            SEARCH_ZOHO_DATA: {
-                type: 'USER_ACTION',
-                handler: this.searchData,
-                title: 'Search Zoho Records',
-                description: 'Search across Zoho CRM records',
-                userActionType: 'SEARCH',
-            },
-            GET_ZOHO_MODULES: {
-                type: 'USER_ACTION',
-                handler: this.getModules,
-                title: 'Get Available Modules',
-                description: 'List all available Zoho CRM modules',
-                userActionType: 'DATA',
-            },
         };
     }
 
-    // ============================================================================
-    // REQUIRED METHODS - BaseCRMIntegration Abstract Methods
-    // ============================================================================
-
-    /**
-     * Fetch a page of persons from Zoho CRM
-     * @param {Object} params
-     * @param {string} params.objectType - CRM object type (Contact, Lead)
-     * @param {number} params.page - Page number (0-indexed)
-     * @param {number} params.limit - Records per page
-     * @param {Date} [params.modifiedSince] - Filter by modification date
-     * @param {boolean} [params.sortDesc=true] - Sort descending
-     * @returns {Promise<{data: Array, total: number, hasMore: boolean}>}
-     */
     async fetchPersonPage({
         objectType,
-        page,
+        cursor = null,
         limit,
         modifiedSince,
         sortDesc = true,
     }) {
         try {
-            const zohoPage = page + 1;
-            const apiEndpoint = objectType === 'Lead' ? 'leads' : 'contacts';
-
             const params = {
                 per_page: limit,
-                page: zohoPage,
                 sort_order: sortDesc ? 'desc' : 'asc',
                 sort_by: 'Modified_Time',
             };
+
+            if (cursor) {
+                params.page_token = cursor;
+            }
 
             if (modifiedSince) {
                 params.modified_since = modifiedSince
@@ -162,47 +99,69 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                     .split('T')[0];
             }
 
-            const response = await this.zoho.api[apiEndpoint].getAll(params);
+            let response;
+
+            switch (objectType) {
+                case 'Contact':
+                    response = await this.zohoCrm.api.listContacts(params);
+                    break;
+
+                case 'Account':
+                    response = await this.zohoCrm.api.listAccounts(params);
+                    break;
+
+                default:
+                    throw new Error(`Unsupported objectType: ${objectType}`);
+            }
+
+            const persons = response.data || [];
+
+            const taggedPersons = persons.map((person) => ({
+                ...person,
+                _objectType: objectType,
+            }));
+
+            const nextCursor = response.info?.next_page_token || null;
+            const hasMore = response.info?.more_records || false;
+
+            console.log(
+                `[Zoho] Fetched ${taggedPersons.length} ${objectType}(s) at cursor ${cursor || 'start'}, ` +
+                    `hasMore=${hasMore}`,
+            );
 
             return {
-                data: response.data || [],
-                total: response.info?.count || null,
-                hasMore: response.info?.more_records || false,
+                data: taggedPersons,
+                cursor: nextCursor,
+                hasMore: hasMore,
             };
         } catch (error) {
-            console.error(`Error fetching ${objectType} page ${page}:`, error);
+            console.error(
+                `Error fetching ${objectType} at cursor ${cursor}:`,
+                error,
+            );
             throw error;
         }
     }
 
-    /**
-     * Transform Zoho person object to Quo contact format
-     * @param {Object} person - Zoho person object (Contact or Lead)
-     * @returns {Object} Quo contact format
-     */
     transformPersonToQuo(person) {
-        const phoneNumbers = [];
-        if (person.Phone) {
-            phoneNumbers.push({ name: 'work', value: person.Phone });
-        }
-        if (person.Mobile) {
-            phoneNumbers.push({ name: 'mobile', value: person.Mobile });
-        }
+        const objectType = person._objectType || 'Contact';
 
-        const emails = [];
-        if (person.Email) {
-            emails.push({ name: 'work', value: person.Email });
-        }
+        const phoneNumbers = this._extractPhoneNumbers(person, objectType);
+        const emails = this._extractEmails(person, objectType);
+        const firstName = this._extractFirstName(person, objectType);
+        const company = this._extractCompany(person, objectType);
 
-        const isLead = person.Lead_Source !== undefined;
+        const externalId = String(person.id || person.Id || 'unknown');
+        const source =
+            objectType === 'Account' ? 'zoho-account' : 'zoho-contact';
 
         return {
-            externalId: person.id,
-            source: isLead ? 'zoho-lead' : 'zoho-contact',
+            externalId,
+            source,
             defaultFields: {
-                firstName: person.First_Name,
-                lastName: person.Last_Name,
-                company: person.Account_Name || person.Company,
+                firstName,
+                lastName: person.Last_Name || '',
+                company,
                 phoneNumbers,
                 emails,
             },
@@ -210,149 +169,107 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         };
     }
 
-    /**
-     * Log SMS message to Zoho CRM as an activity
-     * @param {Object} activity - SMS activity
-     * @returns {Promise<void>}
-     */
+    _extractFirstName(person, objectType) {
+        if (objectType === 'Account') {
+            return person.Account_Name || 'Unknown';
+        }
+        return person.First_Name || 'Unknown';
+    }
+
+    _extractPhoneNumbers(person, objectType) {
+        const phones = [];
+
+        if (person.Phone) {
+            phones.push({ name: 'work', value: person.Phone });
+        }
+
+        if (objectType === 'Contact' && person.Mobile) {
+            phones.push({ name: 'mobile', value: person.Mobile });
+        }
+
+        return phones;
+    }
+
+    _extractEmails(person, objectType) {
+        const emails = [];
+
+        if (objectType === 'Contact' && person.Email) {
+            emails.push({ name: 'work', value: person.Email });
+        }
+
+        return emails;
+    }
+
+    _extractCompany(person, objectType) {
+        if (objectType === 'Account') {
+            return person.Parent_Account?.name || null;
+        }
+        return person.Account_Name?.name || person.Company || null;
+    }
+
     async logSMSToActivity(activity) {
-        try {
-            const person = await this.findPersonByExternalId(
-                activity.contactExternalId,
-            );
-            if (!person) {
-                console.warn(
-                    `Person not found for SMS logging: ${activity.contactExternalId}`,
-                );
-                return;
-            }
-
-            const activityData = {
-                Subject: `SMS: ${activity.direction}`,
-                Description: activity.content,
-                Who_Id: person.id,
-                Activity_Type: 'SMS',
-                Status: 'Completed',
-                Start_DateTime: activity.timestamp,
-            };
-
-            await this.zoho.api.activities.create(activityData);
-        } catch (error) {
-            console.error('Failed to log SMS activity to Zoho:', error);
-            throw error;
-        }
+        console.warn(
+            'SMS activity logging not supported - Zoho CRM API module lacks activities endpoint',
+        );
+        return;
     }
 
-    /**
-     * Log phone call to Zoho CRM as an activity
-     * @param {Object} activity - Call activity
-     * @returns {Promise<void>}
-     */
     async logCallToActivity(activity) {
-        try {
-            const person = await this.findPersonByExternalId(
-                activity.contactExternalId,
-            );
-            if (!person) {
-                console.warn(
-                    `Person not found for call logging: ${activity.contactExternalId}`,
-                );
-                return;
-            }
-
-            const activityData = {
-                Subject: `Call: ${activity.direction} (${activity.duration}s)`,
-                Description: activity.summary || 'Phone call',
-                Who_Id: person.id,
-                Activity_Type: 'Call',
-                Status: 'Completed',
-                Start_DateTime: activity.timestamp,
-                Duration: activity.duration,
-            };
-
-            await this.zoho.api.activities.create(activityData);
-        } catch (error) {
-            console.error('Failed to log call activity to Zoho:', error);
-            throw error;
-        }
+        console.warn(
+            'Call activity logging not supported - Zoho CRM API module lacks activities endpoint',
+        );
+        return;
     }
 
-    /**
-     * Setup webhooks with Zoho CRM (if supported)
-     * @returns {Promise<void>}
-     */
     async setupWebhooks() {
         console.log(
             'Zoho CRM webhooks not configured - using polling fallback',
         );
     }
 
-    // ============================================================================
-    // OPTIONAL HELPER METHODS
-    // ============================================================================
-
-    /**
-     * Fetch a single person by ID
-     * @param {string} id - Person ID
-     * @returns {Promise<Object>}
-     */
     async fetchPersonById(id) {
         try {
-            const contact = await this.zoho.api.contacts.get(id);
-            return contact.data;
+            const contact = await this.zohoCrm.api.getContact(id);
+            return { ...contact.data, _objectType: 'Contact' };
         } catch (contactError) {
             try {
-                const lead = await this.zoho.api.leads.get(id);
-                return lead.data;
-            } catch (leadError) {
+                const account = await this.zohoCrm.api.getAccount(id);
+                return { ...account.data, _objectType: 'Account' };
+            } catch (accountError) {
                 throw new Error(`Person not found: ${id}`);
             }
         }
     }
 
-    /**
-     * Find person by external ID (helper for activity logging)
-     * @param {string} externalId - External ID
-     * @returns {Promise<Object|null>}
-     */
     async findPersonByExternalId(externalId) {
         try {
-            const contact = await this.zoho.api.contacts.get(externalId);
-            return contact.data;
+            const contact = await this.zohoCrm.api.getContact(externalId);
+            return { ...contact.data, _objectType: 'Contact' };
         } catch (contactError) {
             try {
-                const lead = await this.zoho.api.leads.get(externalId);
-                return lead.data;
-            } catch (leadError) {
+                const account = await this.zohoCrm.api.getAccount(externalId);
+                return { ...account.data, _objectType: 'Account' };
+            } catch (accountError) {
                 return null;
             }
         }
     }
 
-    // ============================================================================
-    // EXISTING METHODS - Backward Compatibility
-    // ============================================================================
-
-    async listLeads({ req, res }) {
-        try {
-            const params = {
-                per_page: req.query.per_page
-                    ? parseInt(req.query.per_page)
-                    : 50,
-                page: req.query.page ? parseInt(req.query.page) : 1,
-                sort_order: req.query.sort_order || 'asc',
-                sort_by: req.query.sort_by || 'Created_Time',
-            };
-
-            const leads = await this.zoho.api.leads.getAll(params);
-            res.json(leads);
-        } catch (error) {
-            console.error('Failed to list Zoho leads:', error);
-            res.status(500).json({
-                error: 'Failed to list leads',
-                details: error.message,
-            });
+    async fetchPersonsByIds(ids) {
+        if (!ids || ids.length === 0) {
+            return [];
         }
+
+        const contacts = [];
+        for (const id of ids) {
+            try {
+                const contact = await this.fetchPersonById(id);
+                contacts.push(contact);
+            } catch (error) {
+                console.error(`Failed to fetch contact ${id}:`, error.message);
+            }
+        }
+        return contacts;
     }
 
     async listContacts({ req, res }) {
@@ -366,34 +283,12 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 sort_by: req.query.sort_by || 'Created_Time',
             };
 
-            const contacts = await this.zoho.api.contacts.getAll(params);
+            const contacts = await this.zohoCrm.api.listContacts(params);
             res.json(contacts);
         } catch (error) {
             console.error('Failed to list Zoho contacts:', error);
             res.status(500).json({
                 error: 'Failed to list contacts',
-                details: error.message,
-            });
-        }
-    }
-
-    async listDeals({ req, res }) {
-        try {
-            const params = {
-                per_page: req.query.per_page
-                    ? parseInt(req.query.per_page)
-                    : 50,
-                page: req.query.page ? parseInt(req.query.page) : 1,
-                sort_order: req.query.sort_order || 'asc',
-                sort_by: req.query.sort_by || 'Created_Time',
-            };
-
-            const deals = await this.zoho.api.deals.getAll(params);
-            res.json(deals);
-        } catch (error) {
-            console.error('Failed to list Zoho deals:', error);
-            res.status(500).json({
-                error: 'Failed to list deals',
                 details: error.message,
             });
         }
@@ -410,69 +305,12 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 sort_by: req.query.sort_by || 'Created_Time',
             };
 
-            const accounts = await this.zoho.api.accounts.getAll(params);
+            const accounts = await this.zohoCrm.api.listAccounts(params);
             res.json(accounts);
         } catch (error) {
             console.error('Failed to list Zoho accounts:', error);
             res.status(500).json({
                 error: 'Failed to list accounts',
-                details: error.message,
-            });
-        }
-    }
-
-    async createRecord({ req, res }) {
-        try {
-            const { module, data } = req.body;
-
-            if (!module || !data) {
-                return res.status(400).json({
-                    error: 'Module and data are required',
-                });
-            }
-
-            const result =
-                await this.zoho.api[module.toLowerCase()].create(data);
-            res.json(result);
-        } catch (error) {
-            console.error('Failed to create Zoho record:', error);
-            res.status(500).json({
-                error: 'Failed to create record',
-                details: error.message,
-            });
-        }
-    }
-
-    async searchData({ req, res }) {
-        try {
-            const { module, criteria } = req.body;
-
-            if (!module || !criteria) {
-                return res.status(400).json({
-                    error: 'Module and criteria are required',
-                });
-            }
-
-            const result =
-                await this.zoho.api[module.toLowerCase()].search(criteria);
-            res.json(result);
-        } catch (error) {
-            console.error('Failed to search Zoho data:', error);
-            res.status(500).json({
-                error: 'Failed to search data',
-                details: error.message,
-            });
-        }
-    }
-
-    async getModules({ req, res }) {
-        try {
-            const modules = await this.zoho.api.modules.getAll();
-            res.json(modules);
-        } catch (error) {
-            console.error('Failed to get Zoho modules:', error);
-            res.status(500).json({
-                error: 'Failed to get modules',
                 details: error.message,
             });
         }
