@@ -281,11 +281,25 @@ class BaseCRMIntegration extends IntegrationBase {
      * Transform CRM person object to Quo contact format
      * @abstract
      * @param {Object} person - CRM person object
-     * @returns {Object} Quo contact format
+     * @returns {Promise<Object>} Quo contact format
      */
-    transformPersonToQuo(person) {
+    async transformPersonToQuo(person) {
         throw new Error(
             'transformPersonToQuo must be implemented by child class',
+        );
+    }
+
+    /**
+     * Transform multiple CRM persons to Quo contacts (batch operation)
+     * Default implementation: calls individual transformPersonToQuo for each
+     * Child classes can override for batch optimizations (e.g., pre-fetch related data)
+     *
+     * @param {Array<Object>} persons - Array of CRM person objects
+     * @returns {Promise<Array<Object>>} Array of Quo contact objects
+     */
+    async transformPersonsToQuo(persons) {
+        return Promise.all(
+            persons.map((p) => this.transformPersonToQuo(p))
         );
     }
 
@@ -748,7 +762,7 @@ class BaseCRMIntegration extends IntegrationBase {
                     }
 
                     // Transform to Quo format
-                    const quoContacts = fullPersons.map((p) => this.transformPersonToQuo(p));
+                    const quoContacts = await this.transformPersonsToQuo(fullPersons);
 
                     // Bulk upsert to Quo
                     const results = await this.bulkUpsertToQuo(quoContacts);
@@ -820,7 +834,7 @@ class BaseCRMIntegration extends IntegrationBase {
             const persons = await this.fetchPersonsByIds(crmPersonIds);
 
             // Transform to Quo format
-            const quoContacts = persons.map((p) => this.transformPersonToQuo(p));
+            const quoContacts = await this.transformPersonsToQuo(persons);
 
             // Bulk upsert to Quo
             const results = await this.bulkUpsertToQuo(quoContacts);

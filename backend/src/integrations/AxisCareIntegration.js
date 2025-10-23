@@ -29,7 +29,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
         },
         routes: [
             {
-                path: '/axiscare/clients',
+                path: '/axisCare/clients',
                 method: 'GET',
                 event: 'LIST_AXISCARE_CLIENTS',
             },
@@ -202,9 +202,9 @@ class AxisCareIntegration extends BaseCRMIntegration {
      * Transform AxisCare person object to Quo contact format
      * Handles Clients, Leads, Caregivers, and Applicants with type-specific field mappings
      * @param {Object} person - AxisCare person object (from API - uses camelCase)
-     * @returns {Object} Quo contact format
+     * @returns {Promise<Object>} Quo contact format
      */
-    transformPersonToQuo(person) {
+    async transformPersonToQuo(person) {
         const objectType = person._objectType || 'Client';
 
         const phoneNumbers = this._extractPhoneNumbers(person, objectType);
@@ -497,7 +497,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
 
     async syncClientsToQuo(args) {
         try {
-            const axiscareClients = await this.axiscare.api.listClients({
+            const axiscareClients = await this.axisCare.api.listClients({
                 limit: args.limit || 50,
                 statuses: args.status,
             });
@@ -509,7 +509,8 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 args.maxClients || 10,
             ) || []) {
                 try {
-                    const quoContactData = this.transformPersonToQuo(client);
+                    const quoContactData =
+                        await this.transformPersonToQuo(client);
 
                     let quoResult = null;
                     if (this.quo?.api) {
@@ -564,7 +565,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
      * @returns {Promise<Object>}
      */
     async fetchPersonById(id) {
-        return await this.axiscare.api.getClient(id);
+        return await this.axisCare.api.getClient(id);
     }
 
     /**
@@ -580,7 +581,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
 
         try {
             // Use bulk API call (much faster than sequential)
-            const response = await this.axiscare.api.listClients({
+            const response = await this.axisCare.api.listClients({
                 clientIds: ids.join(','),
                 limit: ids.length,
             });
@@ -625,7 +626,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 limit: req.query.limit ? parseInt(req.query.limit) : 100,
             };
 
-            const clients = await this.axiscare.api.listClients(params);
+            const clients = await this.axisCare.api.listClients(params);
             res.json(clients);
         } catch (error) {
             console.error('Failed to list AxisCare clients:', error);

@@ -48,6 +48,34 @@ jest.mock('@friggframework/core', () => ({
     Entity: class Entity { },
     UserModel: class UserModel { },
     IntegrationModel: class IntegrationModel { },
+    Requester: class Requester {
+        constructor(params = {}) {
+            this.baseUrl = params.baseUrl || '';
+            this.headers = params.headers || {};
+        }
+    },
+    ApiKeyRequester: class ApiKeyRequester {
+        constructor(params = {}) {
+            this.baseUrl = params.baseUrl || '';
+            this.headers = params.headers || {};
+            this.apiKey = params.apiKey || '';
+        }
+    },
+    OAuth2Requester: class OAuth2Requester {
+        constructor(params = {}) {
+            this.baseUrl = params.baseUrl || '';
+            this.headers = params.headers || {};
+            this.accessToken = params.accessToken || '';
+        }
+    },
+    BasicAuthRequester: class BasicAuthRequester {
+        constructor(params = {}) {
+            this.baseUrl = params.baseUrl || '';
+            this.headers = params.headers || {};
+            this.username = params.username || '';
+            this.password = params.password || '';
+        }
+    },
     createFriggBackend: jest.fn(() => ({
         moduleFactory: {
             getInstanceFromTypeName: jest.fn(),

@@ -183,9 +183,10 @@ class PipedriveIntegration extends BaseCRMIntegration {
     /**
      * Transform Pipedrive person object to Quo contact format
      * @param {Object} person - Pipedrive person object
-     * @returns {Object} Quo contact format
+     * @param {Map<string, Object>|null} orgMap - Optional pre-fetched organization map (id -> org data)
+     * @returns {Promise<Object>} Quo contact format
      */
-    transformPersonToQuo(person) {
+    async transformPersonToQuo(person, orgMap = null) {
         const phoneNumbers = [];
         if (person.phones && person.phones.length > 0) {
             phoneNumbers.push(
@@ -208,7 +209,26 @@ class PipedriveIntegration extends BaseCRMIntegration {
             );
         }
 
-        const company = null;
+        let company = null;
+        if (person.org_id) {
+            if (orgMap && orgMap.has(person.org_id)) {
+                const orgData = orgMap.get(person.org_id);
+                company = orgData?.name || null;
+            } else {
+                try {
+                    const orgResponse =
+                        await this.pipedrive.api.getOrganization(person.org_id);
+                    company = orgResponse.data?.name || null;
+                } catch (error) {
+                    console.warn(
+                        `[PipedriveIntegration] Failed to fetch organization ${person.org_id} for person ${person.id}:`,
+                        error.message,
+                    );
+                    company = null;
+                }
+            }
+        }
+
         const firstName = person.first_name || 'Unknown';
 
         return {
@@ -326,6 +346,77 @@ class PipedriveIntegration extends BaseCRMIntegration {
         } catch (error) {
             console.error('Failed to setup Pipedrive webhooks:', error);
         }
+    }
+
+    /**
+     * Fetch multiple organization records by IDs using a single batch query
+     * @param {string[]|number[]} orgIds - Array of organization IDs
+     * @returns {Promise<Array<Object>>} Array of organization records
+     */
+    async fetchOrganizationsByIds(orgIds) {
+        if (!orgIds || orgIds.length === 0) {
+            return [];
+        }
+
+        console.log(
+            `[PipedriveIntegration] Fetching ${orgIds.length} unique organizations in single batch query`,
+        );
+
+        try {
+            const result = await this.pipedrive.api.listOrganizations({
+                ids: orgIds,
+            });
+
+            const organizations = result.data || [];
+
+            console.log(
+                `[PipedriveIntegration] Successfully fetched ${organizations.length}/${orgIds.length} organizations`,
+            );
+
+            if (organizations.length < orgIds.length) {
+                const returnedIds = new Set(organizations.map((org) => org.id));
+                const missingIds = orgIds.filter((id) => !returnedIds.has(id));
+                console.warn(
+                    `[PipedriveIntegration] ${missingIds.length} organizations not found:`,
+                    missingIds,
+                );
+            }
+
+            return organizations;
+        } catch (error) {
+            console.error(
+                `[PipedriveIntegration] Failed to fetch organizations in batch:`,
+                error.message,
+            );
+            return [];
+        }
+    }
+
+    /**
+     * Batch transform Pipedrive persons to Quo contacts
+     * Optimized: pre-fetches all unique organizations to avoid N+1 queries
+     *
+     * @param {Array<Object>} persons - Array of Pipedrive person records
+     * @returns {Promise<Array<Object>>} Array of Quo contact objects
+     */
+    async transformPersonsToQuo(persons) {
+        if (!persons || persons.length === 0) {
+            return [];
+        }
+
+        const orgIds = [
+            ...new Set(persons.map((p) => p.org_id).filter(Boolean)),
+        ];
+
+        let orgMap = new Map();
+        if (orgIds.length > 0) {
+            const organizations = await this.fetchOrganizationsByIds(orgIds);
+            orgMap = new Map(organizations.map((org) => [org.id, org]));
+        }
+
+        return Promise.all(
+            persons.map((p) => this.transformPersonToQuo(p, orgMap)),
+        );
     }
 
     // ============================================================================

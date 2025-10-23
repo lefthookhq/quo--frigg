@@ -32,9 +32,13 @@ class Api extends ApiKeyRequester {
         super(params);
 
         this.siteNumber = params.siteNumber;
-        this.baseUrl = `https://${this.siteNumber}.axiscare.com`;
+        // Build baseUrl dynamically using siteNumber
+        if (this.siteNumber) {
+            this.baseUrl = `https://${this.siteNumber}.axiscare.com`;
+        }
 
         this.API_KEY_NAME = 'Authorization';
+        this.API_KEY_VALUE = `Bearer ${params.access_token}`;
 
         // Get API key from params
         if (params.apiKey) {

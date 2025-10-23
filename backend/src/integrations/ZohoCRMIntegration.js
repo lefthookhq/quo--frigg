@@ -143,7 +143,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         }
     }
 
-    transformPersonToQuo(person) {
+    async transformPersonToQuo(person) {
         const objectType = person._objectType || 'Contact';
 
         const phoneNumbers = this._extractPhoneNumbers(person, objectType);
@@ -204,7 +204,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         if (objectType === 'Account') {
             return person.Parent_Account?.name || null;
         }
-        return person.Account_Name?.name || person.Company || null;
+        return person.Account_Name?.name || null;
     }
 
     async logSMSToActivity(activity) {

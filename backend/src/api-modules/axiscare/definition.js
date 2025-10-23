@@ -127,7 +127,6 @@ const Definition = {
         },
         setAuthParams: async (api, params) => {
             // For API key authentication, set the key on the API instance
-            // params IS the data object, so access apiKey directly
             const apiKey = params.apiKey || params.access_token;
             const siteNumber = params.siteNumber;
 
@@ -152,6 +151,7 @@ const Definition = {
                 );
             }
 
+            //todo: do we really need these methods?
             api.setApiKey(apiKey);
             api.setSiteNumber(siteNumber);
 

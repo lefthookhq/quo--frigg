@@ -177,9 +177,10 @@ class AttioIntegration extends BaseCRMIntegration {
     /**
      * Transform Attio person object to Quo contact format
      * @param {Object} person - Attio person record
-     * @returns {Object} Quo contact format
+     * @param {Map<string, Object>|null} companyMap - Optional pre-fetched company map (id -> company data)
+     * @returns {Promise<Object>} Quo contact format
      */
-    transformPersonToQuo(person) {
+    async transformPersonToQuo(person, companyMap = null) {
         // Attio uses a flexible attribute-based structure
         const attributes = person.values || {};
 
@@ -225,7 +226,35 @@ class AttioIntegration extends BaseCRMIntegration {
             }
         }
 
+        // Extract company reference and fetch company name
         let company = null;
+        const companyAttr = this.getActiveValue(attributes.company);
+
+        if (companyAttr && companyAttr.target_record_id) {
+            // Dual-mode: use pre-fetched companyMap if provided, else fetch individually
+            if (companyMap && companyMap.has(companyAttr.target_record_id)) {
+                // Batch mode: lookup in pre-fetched map
+                const companyData = companyMap.get(companyAttr.target_record_id);
+                company = companyData?.values?.name?.[0]?.value || null;
+            } else {
+                // Individual mode: fetch company on-demand (backward compatibility or fallback)
+                try {
+                    const companyRecord = await this.attio.api.getRecord(
+                        'companies',
+                        companyAttr.target_record_id,
+                    );
+                    company =
+                        companyRecord.data?.values?.name?.[0]?.value || null;
+                } catch (error) {
+                    console.warn(
+                        `[AttioIntegration] Failed to fetch company ${companyAttr.target_record_id} for person ${person.id.record_id}:`,
+                        error.message,
+                    );
+                    company = null;
+                }
+            }
+        }
+
         return {
             externalId: person.id.record_id,
             source: 'attio',
@@ -259,6 +288,103 @@ class AttioIntegration extends BaseCRMIntegration {
 
         // Return active value or fallback to first item
         return activeValue || attributeArray[0];
+    }
+
+    /**
+     * Fetch multiple company records by IDs using a single batch query
+     * @param {string[]} companyIds - Array of company record IDs
+     * @returns {Promise<Array<Object>>} Array of company records
+     */
+    async fetchCompaniesByIds(companyIds) {
+        if (!companyIds || companyIds.length === 0) {
+            return [];
+        }
+
+        console.log(
+            `[AttioIntegration] Fetching ${companyIds.length} unique companies in single batch query`,
+        );
+
+        try {
+            // Use Attio's query endpoint with $in filter to fetch all companies at once
+            const result = await this.attio.api.queryRecords('companies', {
+                filter: {
+                    record_id: {
+                        $in: companyIds,
+                    },
+                },
+            });
+
+            const companies = result.data || [];
+
+            console.log(
+                `[AttioIntegration] Successfully fetched ${companies.length}/${companyIds.length} companies`,
+            );
+
+            // Log missing companies (requested but not returned)
+            if (companies.length < companyIds.length) {
+                const returnedIds = new Set(
+                    companies.map((c) => c.id.record_id),
+                );
+                const missingIds = companyIds.filter(
+                    (id) => !returnedIds.has(id),
+                );
+                console.warn(
+                    `[AttioIntegration] ${missingIds.length} companies not found:`,
+                    missingIds,
+                );
+            }
+
+            return companies;
+        } catch (error) {
+            console.error(
+                `[AttioIntegration] Failed to fetch companies in batch:`,
+                error.message,
+            );
+            // Return empty array on error - individual transforms will fall back to individual fetch
+            return [];
+        }
+    }
+
+    /**
+     * Batch transform Attio persons to Quo contacts
+     * Optimized: pre-fetches all unique companies to avoid N+1 queries
+     *
+     * @param {Array<Object>} persons - Array of Attio person records
+     * @returns {Promise<Array<Object>>} Array of Quo contact objects
+     */
+    async transformPersonsToQuo(persons) {
+        if (!persons || persons.length === 0) {
+            return [];
+        }
+
+        // Step 1: Collect unique company IDs from all persons
+        const companyIds = [
+            ...new Set(
+                persons
+                    .map((p) => {
+                        const attributes = p.values || {};
+                        const companyAttr = this.getActiveValue(
+                            attributes.company,
+                        );
+                        return companyAttr?.target_record_id;
+                    })
+                    .filter(Boolean),
+            ),
+        ];
+
+        // Step 2: Batch fetch all unique companies (if any)
+        let companyMap = new Map();
+        if (companyIds.length > 0) {
+            const companies = await this.fetchCompaniesByIds(companyIds);
+            companyMap = new Map(
+                companies.map((c) => [c.id.record_id, c]),
+            );
+        }
+
+        // Step 3: Transform all persons with pre-fetched company data
+        return Promise.all(
+            persons.map((p) => this.transformPersonToQuo(p, companyMap)),
+        );
     }
 
     /**
