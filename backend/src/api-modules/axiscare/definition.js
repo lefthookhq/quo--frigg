@@ -16,11 +16,15 @@ const Definition = {
                     jsonSchema: {
                         title: 'AxisCare API Authorization',
                         type: 'object',
-                        required: ['apiKey'],
+                        required: ['apiKey', 'siteNumber'],
                         properties: {
                             apiKey: {
                                 type: 'string',
                                 title: 'API Key',
+                            },
+                            siteNumber: {
+                                type: 'string',
+                                title: 'Site Number',
                             },
                         },
                     },
@@ -30,6 +34,11 @@ const Definition = {
                             'ui:help': 'Your AxisCare API key',
                             'ui:placeholder': 'Enter your API key...',
                         },
+                        siteNumber: {
+                            'ui:help':
+                                'Your AxisCare site number (e.g., agency123)',
+                            'ui:placeholder': 'Enter your site number...',
+                        },
                     },
                 },
             };
@@ -38,12 +47,20 @@ const Definition = {
             // For AxisCare API, use API key authentication
             const apiKey =
                 get(params.data, 'apiKey') || get(params.data, 'access_token');
+            const siteNumber = get(params.data, 'siteNumber');
+
             if (!apiKey) {
                 throw new Error(
                     'API key is required for AxisCare authentication',
                 );
             }
-            return { access_token: apiKey };
+            if (!siteNumber) {
+                throw new Error(
+                    'Site number is required for AxisCare authentication',
+                );
+            }
+
+            return { access_token: apiKey, siteNumber };
         },
         getEntityDetails: async (
             api,
@@ -75,7 +92,7 @@ const Definition = {
             }
         },
         apiPropertiesToPersist: {
-            credential: ['access_token'],
+            credential: ['access_token', 'siteNumber'],
             entity: [],
         },
         getCredentialDetails: async (api, userId) => {
@@ -112,25 +129,40 @@ const Definition = {
             // For API key authentication, set the key on the API instance
             // params IS the data object, so access apiKey directly
             const apiKey = params.apiKey || params.access_token;
+            const siteNumber = params.siteNumber;
+
             console.log(
                 '[AxisCare setAuthParams] Received params:',
                 JSON.stringify(params, null, 2),
             );
             console.log('[AxisCare setAuthParams] Using apiKey:', apiKey);
+            console.log(
+                '[AxisCare setAuthParams] Using siteNumber:',
+                siteNumber,
+            );
+
             if (!apiKey) {
                 throw new Error(
                     'API key is required for AxisCare authentication',
                 );
             }
+            if (!siteNumber) {
+                throw new Error(
+                    'Site number is required for AxisCare authentication',
+                );
+            }
+
             api.setApiKey(apiKey);
-            console.log('[AxisCare setAuthParams] API key set on API instance');
-            return { access_token: apiKey };
+            api.setSiteNumber(siteNumber);
+
+            console.log(
+                '[AxisCare setAuthParams] API key and site number set on API instance',
+            );
+
+            return { access_token: apiKey, siteNumber };
         },
     },
-    env: {
-        apiKey: process.env.AXISCARE_API_KEY,
-        baseUrl: process.env.AXISCARE_BASE_URL,
-    },
+    env: {},
 };
 
 module.exports = { Definition };

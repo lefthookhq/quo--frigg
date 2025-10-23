@@ -30,7 +30,10 @@ class Api extends ApiKeyRequester {
 
     constructor(params = {}) {
         super(params);
-        this.baseUrl = params.baseUrl || 'https://static.axiscare.com/api';
+
+        this.siteNumber = params.siteNumber;
+        this.baseUrl = `https://${this.siteNumber}.axiscare.com`;
+
         this.API_KEY_NAME = 'Authorization';
 
         // Get API key from params
@@ -46,6 +49,19 @@ class Api extends ApiKeyRequester {
      */
     setApiKey(apiKey) {
         this.API_KEY_VALUE = `Bearer ${apiKey}`;
+    }
+
+    /**
+     * Sets the site number and updates the base URL
+     * @param {string} siteNumber - The AxisCare site number (e.g., 'agency123')
+     */
+    setSiteNumber(siteNumber) {
+        if (!siteNumber) {
+            throw new Error('Site number is required for AxisCare API');
+        }
+
+        this.siteNumber = siteNumber;
+        this.baseUrl = `https://${siteNumber}.axiscare.com`;
     }
 
     // ==================== CLIENT ENDPOINTS ====================
@@ -71,7 +87,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: `${this.baseUrl}/api/clients`,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
             query: params,
@@ -97,7 +113,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: `${this.baseUrl}/api/clients`,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
             body: clientData,
@@ -116,7 +132,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: `${this.baseUrl}/api/clients/${clientId}`,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
             query: params,
@@ -134,7 +150,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: `${this.baseUrl}/api/clients/${clientId}`,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
             body: clientData,
@@ -151,7 +167,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: `${this.baseUrl}/api/clients/${clientId}/responsibleParties`,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
         };
@@ -168,7 +184,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: `${this.baseUrl}/api/clients/${clientId}/responsibleParties/${listNumber}`,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
         };
@@ -194,7 +210,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: `${this.baseUrl}/api/clients/${clientId}/responsibleParties/${listNumber}`,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
             body: data,
@@ -220,7 +236,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: `${this.baseUrl}/api/leads`,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
             query: params,
@@ -246,7 +262,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: `${this.baseUrl}/api/leads`,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
             body: leadData,
@@ -263,7 +279,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: `${this.baseUrl}/api/leads/${leadId}`,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
         };
@@ -280,7 +296,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: `${this.baseUrl}/api/leads/${leadId}`,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
             body: leadData,
@@ -297,7 +313,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: `${this.baseUrl}/api/leads/${leadId}/responsibleParties`,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
         };
@@ -314,7 +330,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: `${this.baseUrl}/api/leads/${leadId}/responsibleParties/${listNumber}`,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
         };
@@ -333,7 +349,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: `${this.baseUrl}/api/leads/${leadId}/responsibleParties/${listNumber}`,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
             body: data,
@@ -363,7 +379,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: `${this.baseUrl}/api/caregivers`,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
             query: params,
@@ -388,7 +404,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: `${this.baseUrl}/api/caregivers`,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
             body: caregiverData,
@@ -407,7 +423,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: `${this.baseUrl}/api/caregivers/${caregiverId}`,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
             query: params,
@@ -425,7 +441,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: `${this.baseUrl}/api/caregivers/${caregiverId}`,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
             body: caregiverData,
@@ -448,7 +464,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: `${this.baseUrl}/api/applicants`,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
             query: params,
@@ -472,7 +488,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: `${this.baseUrl}/api/applicants`,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
             body: applicantData,
@@ -491,7 +507,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: `${this.baseUrl}/api/applicants/${applicantId}`,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
             query: params,
@@ -517,7 +533,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: `${this.baseUrl}/api/visits`,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
             query: params,
@@ -547,7 +563,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: `${this.baseUrl}/api/visits`,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
             body: visitData,
@@ -572,7 +588,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: `${this.baseUrl}/api/visits/${visitId}`,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
             body: visitData,
@@ -591,7 +607,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: `${this.baseUrl}/api/visits/${visitId}`,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
             query: params,
@@ -615,7 +631,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: `${this.baseUrl}/api/call-logs`,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
             query: params,
@@ -639,7 +655,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: `${this.baseUrl}/api/call-logs`,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
             body: callLogData,
@@ -656,7 +672,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: `${this.baseUrl}/api/call-logs/${callLogId}`,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
         };
@@ -682,7 +698,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: `${this.baseUrl}/api/call-logs/${callLogId}`,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
             body: callLogData,
@@ -709,7 +725,7 @@ class Api extends ApiKeyRequester {
         const options = {
             url: fullUrl,
             headers: {
-                'X-AxisCare-Api-Version': '2023-10-01',
+                'X-AxisCare-Api-Version': Api.API_KEY_VERSION,
                 Accept: 'application/json',
             },
         };
