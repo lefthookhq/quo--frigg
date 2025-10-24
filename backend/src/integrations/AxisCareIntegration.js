@@ -1,4 +1,5 @@
 const { BaseCRMIntegration } = require('../base/BaseCRMIntegration');
+const { createFriggCommands } = require('@friggframework/core');
 const axisCare = require('../api-modules/axiscare');
 const quo = require('../api-modules/quo');
 
@@ -14,7 +15,9 @@ class AxisCareIntegration extends BaseCRMIntegration {
         version: '1.0.0',
         supportedVersions: ['1.0.0'],
         hasUserConfig: true,
-
+        webhooks: {
+            enabled: true,
+        },
         display: {
             label: 'AxisCare',
             description:
@@ -53,8 +56,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
             reverseChronological: true,
             initialBatchSize: 50,
             ongoingBatchSize: 25,
-            supportsWebhooks: false, // AxisCare has limited webhook support
-            pollIntervalMinutes: 60,
+            supportsWebhooks: true, // ✅ Webhook-only integration
         },
         queueConfig: {
             maxWorkers: 10,
@@ -67,6 +69,11 @@ class AxisCareIntegration extends BaseCRMIntegration {
 
     constructor(params) {
         super(params);
+
+        // Initialize Frigg commands for database operations (command pattern)
+        this.commands = createFriggCommands({
+            integrationClass: AxisCareIntegration,
+        });
 
         this.events = {
             ...this.events,
@@ -83,6 +90,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
             },
         };
     }
+
 
     /**
      * Fetch a page of persons from AxisCare (Clients, Leads, Caregivers, or Applicants)
@@ -394,39 +402,390 @@ class AxisCareIntegration extends BaseCRMIntegration {
 
     /**
      * Setup webhooks with AxisCare
-     * @returns {Promise<void>}
+     * Called during onCreate lifecycle (BaseCRMIntegration line 378-386)
+     * Registers webhook with AxisCare API and stores webhook ID in config
+     *
+     * NOTE: AxisCare requires manual webhook configuration via support.
+     * This method returns instructions for manual setup.
+     *
+     * @returns {Promise<Object>} Setup result with instructions
      */
     async setupWebhooks() {
-        // AxisCare has limited webhook support, use polling fallback
-        console.log(
-            'AxisCare webhooks not configured - using polling fallback',
-        );
+        try {
+            // 1. Check if webhook already registered
+            if (this.config?.axiscareWebhookId) {
+                console.log(`[AxisCare] Webhook already registered: ${this.config.axiscareWebhookId}`);
+                return {
+                    status: 'already_configured',
+                    webhookId: this.config.axiscareWebhookId,
+                    webhookUrl: this.config.axiscareWebhookUrl,
+                };
+            }
+
+            // 2. Construct webhook URL for this integration instance
+            const webhookUrl = `${process.env.BASE_URL}/api/axisCare-integration/webhooks/${this.id}`;
+
+            console.log(`[AxisCare] Webhook endpoint available at: ${webhookUrl}`);
+
+            // 3. Return manual setup instructions
+            // AxisCare requires contacting support to enable webhooks
+            return {
+                status: 'manual_setup_required',
+                message: 'AxisCare webhooks must be configured manually via AxisCare support',
+                instructions: [
+                    '1. Contact AxisCare support to enable webhook functionality',
+                    '2. Provide your webhook endpoint URL (below)',
+                    '3. You will receive an x-webhook-id identifier from AxisCare',
+                    '4. Configure these events: client.created, client.updated, caregiver.created, caregiver.updated, lead.created, lead.updated, applicant.created, applicant.updated',
+                    '5. After setup, update integration config with the webhook ID',
+                ],
+                webhookEndpoint: webhookUrl,
+                supportedEvents: [
+                    'client.created',
+                    'client.updated',
+                    'caregiver.created',
+                    'caregiver.updated',
+                    'lead.created',
+                    'lead.updated',
+                    'applicant.created',
+                    'applicant.updated',
+                ],
+                configUpdateInstructions: {
+                    message: 'After receiving webhook ID from AxisCare, update config with:',
+                    requiredFields: {
+                        axiscareWebhookId: '<webhook-id-from-axiscare>',
+                        axiscareWebhookUrl: webhookUrl,
+                        webhookCreatedAt: '<iso-timestamp>',
+                    },
+                },
+            };
+
+            // COMMENTED OUT: Programmatic registration code for when AxisCare adds API support
+            /*
+            // 3. Register webhook with AxisCare API
+            const webhookResponse = await this.axisCare.api.createWebhook({
+                url: webhookUrl,
+                events: [
+                    'client.created',
+                    'client.updated',
+                    'caregiver.created',
+                    'caregiver.updated',
+                    'lead.created',
+                    'lead.updated',
+                    'applicant.created',
+                    'applicant.updated',
+                ],
+                active: true,
+            });
+
+            // 4. Store webhook ID using command pattern
+            const updatedConfig = {
+                ...this.config,
+                axiscareWebhookId: webhookResponse.id,
+                axiscareWebhookUrl: webhookUrl,
+                webhookCreatedAt: new Date().toISOString(),
+            };
+
+            await this.commands.updateIntegrationConfig({
+                integrationId: this.id,
+                config: updatedConfig
+            });
+
+            // 5. Update local config reference
+            this.config = updatedConfig;
+
+            console.log(`[AxisCare] ✓ Webhook registered with ID: ${webhookResponse.id}`);
+
+            return {
+                status: 'configured',
+                webhookId: webhookResponse.id,
+                webhookUrl: webhookUrl,
+            };
+            */
+
+        } catch (error) {
+            console.error('[AxisCare] Failed to setup webhooks:', error);
+
+            // Webhook setup is required - log error
+            await this.updateIntegrationMessages.execute(
+                this.id,
+                'errors',
+                'Webhook Setup Failed',
+                `Could not setup webhook with AxisCare: ${error.message}. Please contact AxisCare support to manually configure webhooks.`,
+                Date.now()
+            );
+
+            return {
+                status: 'failed',
+                error: error.message,
+                message: 'Webhook setup required - contact AxisCare support for manual configuration',
+            };
+        }
+    }
+
+    /**
+     * Process webhook events from AxisCare
+     * Called by queue worker with full database access and hydrated integration
+     * Automatically invoked by Frigg's webhook infrastructure
+     *
+     * @param {Object} params
+     * @param {Object} params.data - Webhook data from queue
+     * @param {Object} params.data.body - AxisCare webhook payload
+     * @param {Object} params.data.headers - HTTP headers
+     * @param {string} params.data.integrationId - Integration ID
+     * @returns {Promise<Object>} Processing result
+     */
+    async onWebhook({ data }) {
+        const { body, headers, integrationId } = data;
+
+        console.log(`[AxisCare Webhook] Processing event:`, {
+            event: body.event,
+            entityId: body.data?.id,
+            timestamp: body.timestamp,
+        });
+
+        try {
+            // Validate webhook source (AxisCare specific)
+            const userAgent = headers['user-agent'];
+            if (userAgent !== 'AWS-Webhook-Service') {
+                console.warn('[AxisCare Webhook] Invalid user-agent:', userAgent);
+                throw new Error(`Invalid webhook source: ${userAgent}`);
+            }
+
+            // Validate webhook ID (required header per AxisCare docs)
+            const webhookId = headers['x-webhook-id'];
+            if (!webhookId) {
+                console.error('[AxisCare Webhook] Missing required x-webhook-id header');
+                throw new Error('Missing required x-webhook-id header');
+            }
+
+            // Auto-store webhook ID on first webhook (eliminates manual config step)
+            if (!this.config?.axiscareWebhookId) {
+                console.log(`[AxisCare Webhook] Auto-storing webhook ID from first webhook: ${webhookId}`);
+
+                const updatedConfig = {
+                    ...this.config,
+                    axiscareWebhookId: webhookId,
+                    axiscareWebhookUrl: `${process.env.BASE_URL}/api/axisCare-integration/webhooks/${this.id}`,
+                    webhookCreatedAt: new Date().toISOString(),
+                };
+
+                await this.commands.updateIntegrationConfig({
+                    integrationId: this.id,
+                    config: updatedConfig
+                });
+
+                // Update local reference
+                this.config = updatedConfig;
+
+                console.log(`[AxisCare Webhook] ✓ Webhook ID ${webhookId} stored in config`);
+            } else if (webhookId !== this.config.axiscareWebhookId) {
+                // Reject webhooks with mismatched webhook ID
+                console.warn('[AxisCare Webhook] Webhook ID mismatch:', {
+                    expected: this.config.axiscareWebhookId,
+                    received: webhookId,
+                });
+                throw new Error('Webhook ID mismatch');
+            }
+
+            // Parse event type and entity data
+            const eventType = body.event; // e.g., "client.updated"
+            const entityData = body.data; // { entity, action, id }
+
+            // Route based on entity type
+            const { entity, action, id } = entityData;
+
+            switch (entity.toLowerCase()) {
+                case 'client':
+                    await this._handlePersonWebhook({ entity: 'Client', action, id });
+                    break;
+
+                case 'caregiver':
+                    await this._handlePersonWebhook({ entity: 'Caregiver', action, id });
+                    break;
+
+                case 'lead':
+                    await this._handlePersonWebhook({ entity: 'Lead', action, id });
+                    break;
+
+                case 'applicant':
+                    await this._handlePersonWebhook({ entity: 'Applicant', action, id });
+                    break;
+
+                default:
+                    console.log(`[AxisCare Webhook] Unhandled entity type: ${entity}`);
+                    return {
+                        success: true,
+                        skipped: true,
+                        reason: `Entity type '${entity}' not configured for sync`,
+                    };
+            }
+
+            console.log(`[AxisCare Webhook] ✓ Successfully processed ${eventType}`);
+
+            return {
+                success: true,
+                event: eventType,
+                entityType: entity,
+                entityId: id,
+                action: action,
+                processedAt: new Date().toISOString(),
+            };
+
+        } catch (error) {
+            console.error('[AxisCare Webhook] Processing error:', error);
+
+            // Log error to integration messages
+            await this.updateIntegrationMessages.execute(
+                this.id,
+                'errors',
+                'Webhook Processing Error',
+                `Failed to process ${body.event}: ${error.message}`,
+                Date.now()
+            );
+
+            // Re-throw for SQS retry and DLQ
+            throw error;
+        }
+    }
+
+    /**
+     * Handle person entity webhook (Client, Caregiver, Lead, Applicant)
+     * Fetches full entity data, transforms to Quo format, and syncs
+     *
+     * @private
+     * @param {Object} params
+     * @param {string} params.entity - Entity type (Client, Lead, Caregiver, Applicant)
+     * @param {string} params.action - created or updated
+     * @param {string} params.id - Entity ID from AxisCare
+     * @returns {Promise<void>}
+     */
+    async _handlePersonWebhook({ entity, action, id }) {
+        console.log(`[AxisCare Webhook] Handling ${entity} ${action}: ${id}`);
+
+        try {
+            // Fetch full entity data from AxisCare using existing API methods
+            let person;
+
+            switch (entity) {
+                case 'Client':
+                    person = await this.axisCare.api.getClient(id);
+                    break;
+                case 'Caregiver':
+                    person = await this.axisCare.api.getCaregiver(id);
+                    break;
+                case 'Lead':
+                    person = await this.axisCare.api.getLead(id);
+                    break;
+                case 'Applicant':
+                    person = await this.axisCare.api.getApplicant(id);
+                    break;
+                default:
+                    throw new Error(`Unknown entity type: ${entity}`);
+            }
+
+            if (!person) {
+                console.warn(`[AxisCare Webhook] ${entity} ${id} not found in AxisCare`);
+                return;
+            }
+
+            // Tag with object type for transformation (existing pattern)
+            person._objectType = entity;
+
+            // Transform to Quo format using existing method
+            const quoContact = await this.transformPersonToQuo(person);
+
+            // Sync to Quo using existing API
+            if (!this.quo?.api) {
+                throw new Error('Quo API not available');
+            }
+
+            await this.quo.api.createContact(quoContact);
+
+            // Update mapping for idempotency tracking
+            await this.upsertMapping(id, {
+                externalId: id,
+                entityType: entity,
+                lastSyncedAt: new Date().toISOString(),
+                syncMethod: 'webhook',
+                action: action,
+            });
+
+            console.log(`[AxisCare Webhook] ✓ Synced ${entity} ${id} to Quo`);
+
+        } catch (error) {
+            console.error(`[AxisCare Webhook] Failed to sync ${entity} ${id}:`, error.message);
+            throw error; // Re-throw for retry logic
+        }
+    }
+
+    /**
+     * Called when integration is deleted
+     * Clean up webhook registration with AxisCare
+     *
+     * @param {Object} params - Deletion parameters
+     * @returns {Promise<void>}
+     */
+    async onDelete(params) {
+        try {
+            // Check if webhook ID exists in config
+            const webhookId = this.config?.axiscareWebhookId;
+
+            if (webhookId) {
+                console.log(`[AxisCare] Deleting webhook: ${webhookId}`);
+
+                // Unregister webhook from AxisCare (if programmatic API available)
+                // NOTE: If AxisCare adds programmatic webhook API, uncomment:
+                /*
+                try {
+                    await this.axisCare.api.deleteWebhook(webhookId);
+                    console.log(`[AxisCare] ✓ Webhook ${webhookId} deleted from AxisCare`);
+                } catch (error) {
+                    console.error(`[AxisCare] Failed to delete webhook from AxisCare:`, error);
+                    // Continue with local cleanup
+                }
+                */
+
+                // Clear webhook config using command pattern
+                const updatedConfig = { ...this.config };
+                delete updatedConfig.axiscareWebhookId;
+                delete updatedConfig.axiscareWebhookUrl;
+                delete updatedConfig.webhookCreatedAt;
+
+                await this.commands.updateIntegrationConfig({
+                    integrationId: this.id,
+                    config: updatedConfig
+                });
+
+                console.log(`[AxisCare] ✓ Webhook config cleared`);
+            } else {
+                console.log('[AxisCare] No webhook to delete');
+            }
+        } catch (error) {
+            console.error('[AxisCare] Failed to delete webhook:', error);
+            // Non-fatal - integration is being deleted anyway
+        }
+
+        // Call parent class cleanup
+        await super.onDelete(params);
     }
 
     async getConfigOptions() {
         return {
-            syncInterval: {
-                type: 'number',
-                title: 'Sync Interval (minutes)',
-                description: 'How often to sync data between AxisCare and Quo',
-                default: 60,
-                minimum: 5,
-                maximum: 1440,
-            },
             maxClientsPerSync: {
                 type: 'number',
-                title: 'Max Clients per Sync',
+                title: 'Max Clients per Manual Sync',
                 description:
-                    'Maximum number of clients to sync in one operation',
+                    'Maximum number of clients to sync when using manual sync action',
                 default: 50,
                 minimum: 1,
                 maximum: 1000,
             },
             maxAppointmentsPerSync: {
                 type: 'number',
-                title: 'Max Appointments per Sync',
+                title: 'Max Appointments per Manual Sync',
                 description:
-                    'Maximum number of appointments to sync in one operation',
+                    'Maximum number of appointments to sync when using manual sync action',
                 default: 100,
                 minimum: 1,
                 maximum: 1000,
