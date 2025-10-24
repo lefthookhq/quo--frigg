@@ -34,6 +34,7 @@ describe('PipedriveIntegration (Refactored)', () => {
         // Create mock APIs
         mockPipedriveApi = {
             api: {
+                listPersons: jest.fn(), // Used by fetchPersonPage
                 persons: {
                     getAll: jest.fn(),
                     get: jest.fn(),
@@ -104,70 +105,71 @@ describe('PipedriveIntegration (Refactored)', () => {
                             id: 1,
                             first_name: 'John',
                             last_name: 'Doe',
-                            email: [{ value: 'john@example.com', primary: true, label: 'work' }],
-                            phone: [{ value: '555-1234', primary: true, label: 'work' }],
+                            emails: [{ value: 'john@example.com', primary: true, label: 'work' }],
+                            phones: [{ value: '555-1234', primary: true, label: 'work' }],
                         },
                         {
                             id: 2,
                             first_name: 'Jane',
                             last_name: 'Smith',
-                            email: [{ value: 'jane@example.com', primary: true, label: 'work' }],
+                            emails: [{ value: 'jane@example.com', primary: true, label: 'work' }],
                         },
                     ],
                     additional_data: {
-                        pagination: {
-                            total: 2,
-                            more_items_in_collection: false,
-                        },
+                        next_cursor: null, // No more pages
                     },
                 };
 
-                mockPipedriveApi.api.persons.getAll.mockResolvedValue(mockResponse);
+                mockPipedriveApi.api.listPersons.mockResolvedValue(mockResponse);
 
                 const result = await integration.fetchPersonPage({
                     objectType: 'Person',
-                    page: 0,
+                    cursor: null,
                     limit: 10,
                     sortDesc: true,
                 });
 
                 expect(result).toEqual({
                     data: mockResponse.data,
-                    total: 2,
+                    cursor: null,
                     hasMore: false,
                 });
 
-                expect(mockPipedriveApi.api.persons.getAll).toHaveBeenCalledWith({
-                    start: 0, // Page 0 * limit 10
+                expect(mockPipedriveApi.api.listPersons).toHaveBeenCalledWith({
                     limit: 10,
-                    sort: 'update_time DESC',
+                    sort_by: 'update_time',
+                    sort_direction: 'desc',
                 });
             });
 
-            it('should handle pagination with offset', async () => {
+            it('should handle pagination with cursor', async () => {
                 const mockResponse = {
                     data: [],
                     additional_data: {
-                        pagination: {
-                            total: 250,
-                            more_items_in_collection: true,
-                        },
+                        next_cursor: 'next_page_token_123',
                     },
                 };
 
-                mockPipedriveApi.api.persons.getAll.mockResolvedValue(mockResponse);
+                mockPipedriveApi.api.listPersons.mockResolvedValue(mockResponse);
 
-                await integration.fetchPersonPage({
+                const result = await integration.fetchPersonPage({
                     objectType: 'Person',
-                    page: 2,
+                    cursor: 'current_page_token',
                     limit: 50,
                     sortDesc: false,
                 });
 
-                expect(mockPipedriveApi.api.persons.getAll).toHaveBeenCalledWith({
-                    start: 100, // Page 2 * limit 50
+                expect(result).toEqual({
+                    data: [],
+                    cursor: 'next_page_token_123',
+                    hasMore: true,
+                });
+
+                expect(mockPipedriveApi.api.listPersons).toHaveBeenCalledWith({
+                    cursor: 'current_page_token',
                     limit: 50,
-                    sort: 'update_time ASC',
+                    sort_by: 'update_time',
+                    sort_direction: 'asc',
                 });
             });
 
@@ -175,21 +177,21 @@ describe('PipedriveIntegration (Refactored)', () => {
                 const mockDate = new Date('2025-01-01T00:00:00Z');
                 const mockResponse = {
                     data: [],
-                    additional_data: { pagination: { total: 0, more_items_in_collection: false } },
+                    additional_data: { next_cursor: null },
                 };
 
-                mockPipedriveApi.api.persons.getAll.mockResolvedValue(mockResponse);
+                mockPipedriveApi.api.listPersons.mockResolvedValue(mockResponse);
 
                 await integration.fetchPersonPage({
                     objectType: 'Person',
-                    page: 0,
+                    cursor: null,
                     limit: 10,
                     modifiedSince: mockDate,
                 });
 
-                expect(mockPipedriveApi.api.persons.getAll).toHaveBeenCalledWith(
+                expect(mockPipedriveApi.api.listPersons).toHaveBeenCalledWith(
                     expect.objectContaining({
-                        since: '2025-01-01',
+                        updated_since: '2025-01-01T00:00:00.000Z',
                     })
                 );
             });
@@ -201,26 +203,15 @@ describe('PipedriveIntegration (Refactored)', () => {
                     id: 123,
                     first_name: 'John',
                     last_name: 'Doe',
-                    email: [
+                    emails: [
                         { value: 'john@example.com', primary: true, label: 'work' },
                         { value: 'john.doe@personal.com', primary: false, label: 'home' },
                     ],
-                    phone: [
+                    phones: [
                         { value: '555-1234', primary: true, label: 'work' },
                         { value: '555-5678', primary: false, label: 'mobile' },
                     ],
-                    org_name: 'Acme Corp',
-                    label: 3, // Hot lead
-                    open_deals_count: 2,
-                    closed_deals_count: 5,
-                    won_deals_count: 4,
-                    lost_deals_count: 1,
-                    next_activity_date: '2025-01-15',
-                    last_activity_date: '2025-01-01',
-                    update_time: '2025-01-10 12:00:00',
-                    add_time: '2024-01-01 10:00:00',
-                    visible_to: '3',
-                    owner_id: { id: 456, name: 'Sales Rep' },
+                    org_id: { name: 'Acme Corp' },
                 };
 
                 const result = await integration.transformPersonToQuo(pipedrivePerson);
@@ -241,45 +232,22 @@ describe('PipedriveIntegration (Refactored)', () => {
                             { name: 'home', value: 'john.doe@personal.com', primary: false },
                         ],
                     },
-                    customFields: {
-                        crmId: 123,
-                        crmType: 'pipedrive',
-                        label: 3,
-                        openDealsCount: 2,
-                        closedDealsCount: 5,
-                        wonDealsCount: 4,
-                        lostDealsCount: 1,
-                        nextActivityDate: '2025-01-15',
-                        lastActivityDate: '2025-01-01',
-                        updateTime: '2025-01-10 12:00:00',
-                        addTime: '2024-01-01 10:00:00',
-                        visibleTo: '3',
-                        ownerId: 456,
-                        ownerName: 'Sales Rep',
-                    },
+                    customFields: [],
                 });
             });
 
-            it('should fetch organization name if org_id is provided', async () => {
+            it('should handle person without org_id', async () => {
                 const pipedrivePerson = {
                     id: 123,
                     first_name: 'Jane',
                     last_name: 'Smith',
-                    org_id: { value: 789 },
-                    email: [],
-                    phone: [],
+                    emails: [],
+                    phones: [],
                 };
-
-                const mockOrg = {
-                    data: { id: 789, name: 'Smith Industries' },
-                };
-
-                mockPipedriveApi.api.organizations.get.mockResolvedValue(mockOrg);
 
                 const result = await integration.transformPersonToQuo(pipedrivePerson);
 
-                expect(result.defaultFields.company).toBe('Smith Industries');
-                expect(mockPipedriveApi.api.organizations.get).toHaveBeenCalledWith(789);
+                expect(result.defaultFields.company).toBe(null);
             });
 
             it('should handle minimal person data', async () => {

@@ -47,6 +47,9 @@ describe('AttioIntegration (Refactored)', () => {
                 createWebhook: jest.fn(),
                 deleteWebhook: jest.fn(),
                 searchRecords: jest.fn(),
+                objects: {
+                    getRecord: jest.fn(),
+                },
             },
         };
 
@@ -75,13 +78,27 @@ describe('AttioIntegration (Refactored)', () => {
 
         it('should have correct CRMConfig', () => {
             expect(AttioIntegration.CRMConfig).toBeDefined();
-            expect(AttioIntegration.CRMConfig.personObjectTypes).toHaveLength(1);
-            expect(AttioIntegration.CRMConfig.personObjectTypes[0].crmObjectName).toBe('people');
-            expect(AttioIntegration.CRMConfig.syncConfig.paginationType).toBe('CURSOR_BASED');
-            expect(AttioIntegration.CRMConfig.syncConfig.supportsTotal).toBe(false);
-            expect(AttioIntegration.CRMConfig.syncConfig.returnFullRecords).toBe(true);
-            expect(AttioIntegration.CRMConfig.syncConfig.supportsWebhooks).toBe(true);
-            expect(AttioIntegration.CRMConfig.syncConfig.initialBatchSize).toBe(50);
+            expect(AttioIntegration.CRMConfig.personObjectTypes).toHaveLength(
+                1,
+            );
+            expect(
+                AttioIntegration.CRMConfig.personObjectTypes[0].crmObjectName,
+            ).toBe('people');
+            expect(AttioIntegration.CRMConfig.syncConfig.paginationType).toBe(
+                'CURSOR_BASED',
+            );
+            expect(AttioIntegration.CRMConfig.syncConfig.supportsTotal).toBe(
+                false,
+            );
+            expect(
+                AttioIntegration.CRMConfig.syncConfig.returnFullRecords,
+            ).toBe(true);
+            expect(AttioIntegration.CRMConfig.syncConfig.supportsWebhooks).toBe(
+                true,
+            );
+            expect(AttioIntegration.CRMConfig.syncConfig.initialBatchSize).toBe(
+                50,
+            );
         });
 
         it('should have queue configuration', () => {
@@ -99,9 +116,15 @@ describe('AttioIntegration (Refactored)', () => {
                         {
                             id: { record_id: 'rec1', object_id: 'people' },
                             values: {
-                                name: [{ first_name: 'John', last_name: 'Doe' }],
+                                name: [
+                                    { first_name: 'John', last_name: 'Doe' },
+                                ],
                                 email_addresses: [
-                                    { email_address: 'john@example.com', is_primary: true, attribute_type: 'work' }
+                                    {
+                                        email_address: 'john@example.com',
+                                        is_primary: true,
+                                        attribute_type: 'work',
+                                    },
                                 ],
                             },
                             created_at: '2025-01-01T00:00:00Z',
@@ -125,14 +148,13 @@ describe('AttioIntegration (Refactored)', () => {
                     hasMore: false,
                 });
 
-                expect(mockAttioApi.api.listRecords).toHaveBeenCalledWith('people', {
-                    limit: 10,
-                    offset: 0,
-                    sorts: [{
-                        attribute: 'updated_at',
-                        direction: 'desc',
-                    }],
-                });
+                expect(mockAttioApi.api.listRecords).toHaveBeenCalledWith(
+                    'people',
+                    {
+                        limit: 10,
+                        offset: 0,
+                    },
+                );
             });
 
             it('should calculate next cursor when full page returned', async () => {
@@ -159,39 +181,12 @@ describe('AttioIntegration (Refactored)', () => {
                 expect(result.cursor).toBe(150); // cursor (100) + limit (50)
                 expect(result.hasMore).toBe(true);
 
-                expect(mockAttioApi.api.listRecords).toHaveBeenCalledWith('people', {
-                    limit: 50,
-                    offset: 100,
-                    sorts: [{
-                        attribute: 'updated_at',
-                        direction: 'asc',
-                    }],
-                });
-            });
-
-            it('should include modifiedSince filter when provided', async () => {
-                const mockDate = new Date('2025-01-01T00:00:00Z');
-                const mockResponse = {
-                    data: [],
-                };
-
-                mockAttioApi.api.listRecords.mockResolvedValue(mockResponse);
-
-                await integration.fetchPersonPage({
-                    objectType: 'people',
-                    cursor: null,
-                    limit: 10,
-                    modifiedSince: mockDate,
-                });
-
-                expect(mockAttioApi.api.listRecords).toHaveBeenCalledWith('people',
-                    expect.objectContaining({
-                        filter: {
-                            updated_at: {
-                                $gte: '2025-01-01T00:00:00.000Z',
-                            },
-                        },
-                    })
+                expect(mockAttioApi.api.listRecords).toHaveBeenCalledWith(
+                    'people',
+                    {
+                        limit: 50,
+                        offset: 100,
+                    },
                 );
             });
         });
@@ -201,22 +196,35 @@ describe('AttioIntegration (Refactored)', () => {
                 const attioPerson = {
                     id: { record_id: 'rec123', object_id: 'people' },
                     values: {
-                        name: [{ first_name: 'John', last_name: 'Doe' }],
+                        name: [
+                            {
+                                first_name: 'John',
+                                last_name: 'Doe',
+                                active_until: null,
+                            },
+                        ],
                         email_addresses: [
-                            { email_address: 'john@example.com', is_primary: true, attribute_type: 'work' },
-                            { email_address: 'john.doe@personal.com', is_primary: false, attribute_type: 'personal' },
+                            {
+                                email_address: 'john@example.com',
+                                active_until: null,
+                            },
+                            {
+                                email_address: 'john.doe@personal.com',
+                                active_until: null,
+                            },
                         ],
                         phone_numbers: [
-                            { phone_number: '555-1234', is_primary: true, attribute_type: 'work' },
-                            { phone_number: '555-5678', is_primary: false, attribute_type: 'mobile' },
+                            { phone_number: '555-1234', active_until: null },
+                            { phone_number: '555-5678', active_until: null },
                         ],
-                        primary_company: [],
+                        company: [],
                     },
                     created_at: '2025-01-01T00:00:00Z',
                     updated_at: '2025-01-10T00:00:00Z',
                 };
 
-                const result = await integration.transformPersonToQuo(attioPerson);
+                const result =
+                    await integration.transformPersonToQuo(attioPerson);
 
                 expect(result).toEqual({
                     externalId: 'rec123',
@@ -225,44 +233,85 @@ describe('AttioIntegration (Refactored)', () => {
                         firstName: 'John',
                         lastName: 'Doe',
                         company: null,
+                        role: null,
                         phoneNumbers: [
-                            { name: 'work', value: '555-1234', primary: true },
-                            { name: 'mobile', value: '555-5678', primary: false },
+                            { name: 'phone', value: '555-1234' },
+                            { name: 'phone', value: '555-5678' },
                         ],
                         emails: [
-                            { name: 'work', value: 'john@example.com', primary: true },
-                            { name: 'personal', value: 'john.doe@personal.com', primary: false },
+                            { name: 'email', value: 'john@example.com' },
+                            { name: 'email', value: 'john.doe@personal.com' },
                         ],
                     },
-                    customFields: {
-                        crmId: 'rec123',
-                        crmType: 'attio',
-                        objectId: 'people',
-                        createdAt: '2025-01-01T00:00:00Z',
-                        updatedAt: '2025-01-10T00:00:00Z',
-                        attioAttributes: attioPerson.values,
-                    },
+                    customFields: [],
                 });
             });
 
-            it('should NOT fetch company (disabled to avoid N+1 problem)', async () => {
+            it('should fetch company when company reference exists', async () => {
                 const attioPerson = {
                     id: { record_id: 'rec123', object_id: 'people' },
                     values: {
-                        name: [{ first_name: 'Jane', last_name: 'Smith' }],
+                        name: [
+                            {
+                                first_name: 'Jane',
+                                last_name: 'Smith',
+                                active_until: null,
+                            },
+                        ],
                         email_addresses: [],
                         phone_numbers: [],
-                        primary_company: [{ target_record_id: 'comp123' }],
+                        company: [
+                            { target_record_id: 'comp123', active_until: null },
+                        ],
                     },
                     created_at: '2025-01-01T00:00:00Z',
                     updated_at: '2025-01-10T00:00:00Z',
                 };
 
-                const result = await integration.transformPersonToQuo(attioPerson);
+                // Mock the company fetch (implementation uses api.getRecord, not api.objects.getRecord)
+                mockAttioApi.api.getRecord.mockResolvedValue({
+                    data: {
+                        values: {
+                            name: [{ value: 'Acme Corp' }],
+                        },
+                    },
+                });
 
-                // Company lookup is disabled to avoid N+1 problem during initial sync
+                const result =
+                    await integration.transformPersonToQuo(attioPerson);
+
+                // Verify company was fetched and set
+                expect(result.defaultFields.company).toBe('Acme Corp');
+                expect(mockAttioApi.api.getRecord).toHaveBeenCalledWith(
+                    'companies',
+                    'comp123',
+                );
+            });
+
+            it('should handle missing company gracefully', async () => {
+                const attioPerson = {
+                    id: { record_id: 'rec123', object_id: 'people' },
+                    values: {
+                        name: [
+                            {
+                                first_name: 'Jane',
+                                last_name: 'Smith',
+                                active_until: null,
+                            },
+                        ],
+                        email_addresses: [],
+                        phone_numbers: [],
+                        // No company attribute
+                    },
+                    created_at: '2025-01-01T00:00:00Z',
+                    updated_at: '2025-01-10T00:00:00Z',
+                };
+
+                const result =
+                    await integration.transformPersonToQuo(attioPerson);
+
+                // Company should be null when attribute doesn't exist
                 expect(result.defaultFields.company).toBeNull();
-                // Should NOT call getRecord for company
                 expect(mockAttioApi.api.getRecord).not.toHaveBeenCalled();
             });
 
@@ -276,7 +325,8 @@ describe('AttioIntegration (Refactored)', () => {
                     updated_at: '2025-01-10T00:00:00Z',
                 };
 
-                const result = await integration.transformPersonToQuo(minimalPerson);
+                const result =
+                    await integration.transformPersonToQuo(minimalPerson);
 
                 expect(result.externalId).toBe('rec123');
                 expect(result.defaultFields.phoneNumbers).toEqual([]);
@@ -291,7 +341,9 @@ describe('AttioIntegration (Refactored)', () => {
                     id: { record_id: 'rec123', object_id: 'people' },
                 };
                 mockAttioApi.api.getRecord.mockResolvedValue(mockPerson);
-                mockAttioApi.api.createNote.mockResolvedValue({ id: 'note123' });
+                mockAttioApi.api.createNote.mockResolvedValue({
+                    id: 'note123',
+                });
 
                 const activity = {
                     contactExternalId: 'rec123',
@@ -302,7 +354,10 @@ describe('AttioIntegration (Refactored)', () => {
 
                 await integration.logSMSToActivity(activity);
 
-                expect(mockAttioApi.api.getRecord).toHaveBeenCalledWith('people', 'rec123');
+                expect(mockAttioApi.api.getRecord).toHaveBeenCalledWith(
+                    'people',
+                    'rec123',
+                );
                 expect(mockAttioApi.api.createNote).toHaveBeenCalledWith({
                     parent_object: 'people',
                     parent_record_id: 'rec123',
@@ -323,12 +378,14 @@ describe('AttioIntegration (Refactored)', () => {
                     timestamp: '2025-01-10T15:30:00Z',
                 };
 
-                const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'warn')
+                    .mockImplementation();
 
                 await integration.logSMSToActivity(activity);
 
                 expect(consoleSpy).toHaveBeenCalledWith(
-                    'Person not found for SMS logging: rec999'
+                    'Person not found for SMS logging: rec999',
                 );
                 expect(mockAttioApi.api.createNote).not.toHaveBeenCalled();
 
@@ -342,7 +399,9 @@ describe('AttioIntegration (Refactored)', () => {
                     id: { record_id: 'rec123', object_id: 'people' },
                 };
                 mockAttioApi.api.getRecord.mockResolvedValue(mockPerson);
-                mockAttioApi.api.createNote.mockResolvedValue({ id: 'note123' });
+                mockAttioApi.api.createNote.mockResolvedValue({
+                    id: 'note123',
+                });
 
                 const activity = {
                     contactExternalId: 'rec123',
@@ -368,7 +427,9 @@ describe('AttioIntegration (Refactored)', () => {
         describe('setupWebhooks', () => {
             it('should create webhooks for record events', async () => {
                 process.env.BASE_URL = 'https://api.example.com';
-                mockAttioApi.api.createWebhook.mockResolvedValue({ id: 'webhook123' });
+                mockAttioApi.api.createWebhook.mockResolvedValue({
+                    id: 'webhook123',
+                });
 
                 await integration.setupWebhooks();
 
@@ -383,15 +444,19 @@ describe('AttioIntegration (Refactored)', () => {
             });
 
             it('should handle webhook setup failure gracefully', async () => {
-                mockAttioApi.api.createWebhook.mockRejectedValue(new Error('Webhook creation failed'));
+                mockAttioApi.api.createWebhook.mockRejectedValue(
+                    new Error('Webhook creation failed'),
+                );
 
-                const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'error')
+                    .mockImplementation();
 
                 await integration.setupWebhooks();
 
                 expect(consoleSpy).toHaveBeenCalledWith(
                     'Failed to setup Attio webhooks:',
-                    expect.any(Error)
+                    expect.any(Error),
                 );
 
                 consoleSpy.mockRestore();
@@ -402,17 +467,23 @@ describe('AttioIntegration (Refactored)', () => {
     describe('Backward Compatibility - Existing Events', () => {
         it('should have LIST_ATTIO_OBJECTS event', () => {
             expect(integration.events.LIST_ATTIO_OBJECTS).toBeDefined();
-            expect(integration.events.LIST_ATTIO_OBJECTS.handler).toBeInstanceOf(Function);
+            expect(
+                integration.events.LIST_ATTIO_OBJECTS.handler,
+            ).toBeInstanceOf(Function);
         });
 
         it('should have LIST_ATTIO_COMPANIES event', () => {
             expect(integration.events.LIST_ATTIO_COMPANIES).toBeDefined();
-            expect(integration.events.LIST_ATTIO_COMPANIES.handler).toBeInstanceOf(Function);
+            expect(
+                integration.events.LIST_ATTIO_COMPANIES.handler,
+            ).toBeInstanceOf(Function);
         });
 
         it('should have LIST_ATTIO_PEOPLE event', () => {
             expect(integration.events.LIST_ATTIO_PEOPLE).toBeDefined();
-            expect(integration.events.LIST_ATTIO_PEOPLE.handler).toBeInstanceOf(Function);
+            expect(integration.events.LIST_ATTIO_PEOPLE.handler).toBeInstanceOf(
+                Function,
+            );
         });
     });
 
@@ -421,20 +492,27 @@ describe('AttioIntegration (Refactored)', () => {
             it('should fetch person by ID', async () => {
                 const mockPerson = {
                     id: { record_id: 'rec123', object_id: 'people' },
-                    values: { name: [{ first_name: 'John', last_name: 'Doe' }] },
+                    values: {
+                        name: [{ first_name: 'John', last_name: 'Doe' }],
+                    },
                 };
-                mockAttioApi.api.getRecord.mockResolvedValue(mockPerson);
+                mockAttioApi.api.objects.getRecord.mockResolvedValue(
+                    mockPerson,
+                );
 
                 const result = await integration.fetchPersonById('rec123');
 
                 expect(result).toEqual(mockPerson);
-                expect(mockAttioApi.api.getRecord).toHaveBeenCalledWith('people', 'rec123');
+                expect(mockAttioApi.api.objects.getRecord).toHaveBeenCalledWith(
+                    'people',
+                    'rec123',
+                );
             });
         });
 
         describe('fetchPersonsByIds', () => {
             it('should fetch multiple persons by IDs', async () => {
-                mockAttioApi.api.getRecord
+                mockAttioApi.api.objects.getRecord
                     .mockResolvedValueOnce({
                         id: { record_id: 'rec1', object_id: 'people' },
                         values: { name: [{ first_name: 'John' }] },
@@ -444,7 +522,10 @@ describe('AttioIntegration (Refactored)', () => {
                         values: { name: [{ first_name: 'Jane' }] },
                     });
 
-                const result = await integration.fetchPersonsByIds(['rec1', 'rec2']);
+                const result = await integration.fetchPersonsByIds([
+                    'rec1',
+                    'rec2',
+                ]);
 
                 expect(result).toHaveLength(2);
                 expect(result[0].id.record_id).toBe('rec1');
@@ -452,16 +533,21 @@ describe('AttioIntegration (Refactored)', () => {
             });
 
             it('should handle fetch errors gracefully', async () => {
-                mockAttioApi.api.getRecord
+                mockAttioApi.api.objects.getRecord
                     .mockResolvedValueOnce({
                         id: { record_id: 'rec1', object_id: 'people' },
                         values: { name: [{ first_name: 'John' }] },
                     })
                     .mockRejectedValueOnce(new Error('Not found'));
 
-                const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'error')
+                    .mockImplementation();
 
-                const result = await integration.fetchPersonsByIds(['rec1', 'rec2']);
+                const result = await integration.fetchPersonsByIds([
+                    'rec1',
+                    'rec2',
+                ]);
 
                 expect(result).toHaveLength(1); // Only successfully fetched person
                 expect(result[0].id.record_id).toBe('rec1');

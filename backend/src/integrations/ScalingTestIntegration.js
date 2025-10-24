@@ -178,9 +178,9 @@ class ScalingTestIntegration extends BaseCRMIntegration {
     /**
      * Transform synthetic contact to Quo format
      * @param {Object} contact - Synthetic contact
-     * @returns {Object} Quo contact format matching OpenAPI spec
+     * @returns {Promise<Object>} Quo contact format matching OpenAPI spec
      */
-    transformPersonToQuo(contact) {
+    async transformPersonToQuo(contact) {
         const quoContact = {
             externalId: String(contact.id),
             source: 'scalingtest',

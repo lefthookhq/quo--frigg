@@ -1,5 +1,5 @@
 const ScalingTestIntegration = require('./src/integrations/ScalingTestIntegration');
-// const ZohoCRMIntegration = require('./src/integrations/ZohoCRMIntegration');
+const ZohoCRMIntegration = require('./src/integrations/ZohoCRMIntegration');
 const PipedriveIntegration = require('./src/integrations/PipedriveIntegration');
 const AttioIntegration = require('./src/integrations/AttioIntegration');
 const AxisCareIntegration = require('./src/integrations/AxisCareIntegration');
@@ -9,7 +9,7 @@ const appDefinition = {
     name: 'quo-integrations',
     integrations: [
         ScalingTestIntegration,
-        // ZohoCRMIntegration,
+        ZohoCRMIntegration,
         PipedriveIntegration,
         AttioIntegration,
         AxisCareIntegration,

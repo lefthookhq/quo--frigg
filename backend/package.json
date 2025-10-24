@@ -28,11 +28,12 @@
         "frigg:db:setup": "frigg db:setup"
     },
     "dependencies": {
-        "@friggframework/api-module-attio": "^1.1.0-next.0",
+        "@friggframework/api-module-attio": "^1.1.0-next.1",
         "@friggframework/api-module-frigg-scale-test": "^0.2.0-next.3",
-        "@friggframework/api-module-pipedrive": "^2.0.1-canary.56.462008b.0",
-        "@friggframework/core": "^2.0.0--canary.461.9f988ca.0",
-        "@friggframework/devtools": "^2.0.0--canary.461.9f988ca.0",
+        "@friggframework/api-module-pipedrive": "^2.1.0-next.0",
+        "@friggframework/api-module-zoho-crm": "^1.0.3-canary.57.49ae4d9.0",
+        "@friggframework/core": "2.0.0--canary.461.9f988ca.0",
+        "@friggframework/devtools": "2.0.0--canary.461.9f988ca.0",
         "axios": "^1.6.0",
         "body-parser": "^1.20.3",
         "cors": "^2.8.5",
@@ -40,6 +41,10 @@
         "express-async-handler": "^1.2.0",
         "node-cache": "^5.1.2",
         "serverless-http": "^2.7.0"
+    },
+    "overrides": {
+        "@friggframework/core": "2.0.0--canary.461.9f988ca.0",
+        "@friggframework/devtools": "2.0.0--canary.461.9f988ca.0"
     },
     "devDependencies": {
         "@faker-js/faker": "^8.4.1",
