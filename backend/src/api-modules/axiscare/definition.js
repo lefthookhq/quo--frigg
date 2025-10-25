@@ -97,10 +97,15 @@ const Definition = {
         },
         getCredentialDetails: async (api, userId) => {
             try {
-                const userDetails = await api.getCurrentUser();
+                const credentialTest = await api.listClients();
+
+                if (credentialTest && credentialTest.errors.length > 0) {
+                    throw new Error('Invalid AxisCare credentials');
+                }
+
                 return {
                     identifiers: {
-                        externalId: userDetails.id || 'axiscare-user',
+                        externalId: 'axiscare-user',
                         user: userId,
                     },
                     details: {},

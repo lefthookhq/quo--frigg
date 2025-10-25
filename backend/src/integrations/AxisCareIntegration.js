@@ -91,7 +91,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
         };
     }
 
-
     /**
      * Fetch a page of persons from AxisCare (Clients, Leads, Caregivers, or Applicants)
      * @param {Object} params
@@ -218,7 +217,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
         const phoneNumbers = this._extractPhoneNumbers(person, objectType);
         const emails = this._extractEmails(person);
         const firstName = this._extractFirstName(person, objectType);
-        const customFields = this._buildCustomFields(person, objectType);
 
         return {
             externalId: `${person.id}_${Date.now()}`,
@@ -231,7 +229,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 emails,
                 role: objectType,
             },
-            customFields,
+            customFields: [],
         };
     }
 
@@ -334,73 +332,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
     }
 
     /**
-     * Build customFields array with type-specific logic
-     * @private
-     * @param {Object} person - AxisCare person object
-     * @param {string} objectType - Person type (Client, Lead, Caregiver, Applicant)
-     * @returns {Array<{key: string, value: string}>} Custom fields array
-     */
-    _buildCustomFields(person, objectType) {
-        const customFields = [];
-
-        const addField = (key, value) => {
-            if (value !== null && value !== undefined && value !== '') {
-                customFields.push({
-                    key,
-                    value:
-                        typeof value === 'object'
-                            ? JSON.stringify(value)
-                            : String(value),
-                });
-            }
-        };
-
-        addField('crmId', person.id);
-        addField('crmType', 'axiscare');
-        addField('objectType', objectType); // Track which type this is
-        addField('status', person.status?.label || person.status);
-        addField('dateOfBirth', person.dateOfBirth);
-        addField('gender', person.gender);
-        addField('goesBy', person.goesBy);
-        addField('priorityNote', person.priorityNote);
-
-        // Addresses (all types have these)
-        if (person.residentialAddress) {
-            addField('residentialAddress', person.residentialAddress);
-        }
-        if (person.billingAddress) {
-            addField('billingAddress', person.billingAddress);
-        }
-
-        // Classes (Client and Caregiver only)
-        if (
-            (objectType === 'Client' || objectType === 'Caregiver') &&
-            person.classes &&
-            person.classes.length > 0
-        ) {
-            addField('classes', person.classes);
-        }
-
-        // Other Client/Caregiver specific fields
-        if (objectType !== 'Lead' && objectType !== 'Applicant') {
-            addField('medicaidNumber', person.medicaidNumber);
-            addField('region', person.region);
-            addField('administrators', person.administrators);
-            addField('preferredCaregiver', person.preferredCaregiver);
-            addField('referredBy', person.referredBy);
-        }
-
-        // Date fields
-        addField('createdDate', person.createdDate);
-        addField('assessmentDate', person.assessmentDate);
-        addField('conversionDate', person.conversionDate);
-        addField('startDate', person.startDate);
-        addField('effectiveEndDate', person.effectiveEndDate);
-
-        return customFields;
-    }
-
-    /**
      * Setup webhooks with AxisCare
      * Called during onCreate lifecycle (BaseCRMIntegration line 378-386)
      * Registers webhook with AxisCare API and stores webhook ID in config
@@ -414,7 +345,9 @@ class AxisCareIntegration extends BaseCRMIntegration {
         try {
             // 1. Check if webhook already registered
             if (this.config?.axiscareWebhookId) {
-                console.log(`[AxisCare] Webhook already registered: ${this.config.axiscareWebhookId}`);
+                console.log(
+                    `[AxisCare] Webhook already registered: ${this.config.axiscareWebhookId}`,
+                );
                 return {
                     status: 'already_configured',
                     webhookId: this.config.axiscareWebhookId,
@@ -425,13 +358,16 @@ class AxisCareIntegration extends BaseCRMIntegration {
             // 2. Construct webhook URL for this integration instance
             const webhookUrl = `${process.env.BASE_URL}/api/axisCare-integration/webhooks/${this.id}`;
 
-            console.log(`[AxisCare] Webhook endpoint available at: ${webhookUrl}`);
+            console.log(
+                `[AxisCare] Webhook endpoint available at: ${webhookUrl}`,
+            );
 
             // 3. Return manual setup instructions
             // AxisCare requires contacting support to enable webhooks
             return {
                 status: 'manual_setup_required',
-                message: 'AxisCare webhooks must be configured manually via AxisCare support',
+                message:
+                    'AxisCare webhooks must be configured manually via AxisCare support',
                 instructions: [
                     '1. Contact AxisCare support to enable webhook functionality',
                     '2. Provide your webhook endpoint URL (below)',
@@ -451,7 +387,8 @@ class AxisCareIntegration extends BaseCRMIntegration {
                     'applicant.updated',
                 ],
                 configUpdateInstructions: {
-                    message: 'After receiving webhook ID from AxisCare, update config with:',
+                    message:
+                        'After receiving webhook ID from AxisCare, update config with:',
                     requiredFields: {
                         axiscareWebhookId: '<webhook-id-from-axiscare>',
                         axiscareWebhookUrl: webhookUrl,
@@ -502,7 +439,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 webhookUrl: webhookUrl,
             };
             */
-
         } catch (error) {
             console.error('[AxisCare] Failed to setup webhooks:', error);
 
@@ -512,13 +448,14 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 'errors',
                 'Webhook Setup Failed',
                 `Could not setup webhook with AxisCare: ${error.message}. Please contact AxisCare support to manually configure webhooks.`,
-                Date.now()
+                Date.now(),
             );
 
             return {
                 status: 'failed',
                 error: error.message,
-                message: 'Webhook setup required - contact AxisCare support for manual configuration',
+                message:
+                    'Webhook setup required - contact AxisCare support for manual configuration',
             };
         }
     }
@@ -548,20 +485,27 @@ class AxisCareIntegration extends BaseCRMIntegration {
             // Validate webhook source (AxisCare specific)
             const userAgent = headers['user-agent'];
             if (userAgent !== 'AWS-Webhook-Service') {
-                console.warn('[AxisCare Webhook] Invalid user-agent:', userAgent);
+                console.warn(
+                    '[AxisCare Webhook] Invalid user-agent:',
+                    userAgent,
+                );
                 throw new Error(`Invalid webhook source: ${userAgent}`);
             }
 
             // Validate webhook ID (required header per AxisCare docs)
             const webhookId = headers['x-webhook-id'];
             if (!webhookId) {
-                console.error('[AxisCare Webhook] Missing required x-webhook-id header');
+                console.error(
+                    '[AxisCare Webhook] Missing required x-webhook-id header',
+                );
                 throw new Error('Missing required x-webhook-id header');
             }
 
             // Auto-store webhook ID on first webhook (eliminates manual config step)
             if (!this.config?.axiscareWebhookId) {
-                console.log(`[AxisCare Webhook] Auto-storing webhook ID from first webhook: ${webhookId}`);
+                console.log(
+                    `[AxisCare Webhook] Auto-storing webhook ID from first webhook: ${webhookId}`,
+                );
 
                 const updatedConfig = {
                     ...this.config,
@@ -572,13 +516,15 @@ class AxisCareIntegration extends BaseCRMIntegration {
 
                 await this.commands.updateIntegrationConfig({
                     integrationId: this.id,
-                    config: updatedConfig
+                    config: updatedConfig,
                 });
 
                 // Update local reference
                 this.config = updatedConfig;
 
-                console.log(`[AxisCare Webhook] ✓ Webhook ID ${webhookId} stored in config`);
+                console.log(
+                    `[AxisCare Webhook] ✓ Webhook ID ${webhookId} stored in config`,
+                );
             } else if (webhookId !== this.config.axiscareWebhookId) {
                 // Reject webhooks with mismatched webhook ID
                 console.warn('[AxisCare Webhook] Webhook ID mismatch:', {
@@ -597,23 +543,41 @@ class AxisCareIntegration extends BaseCRMIntegration {
 
             switch (entity.toLowerCase()) {
                 case 'client':
-                    await this._handlePersonWebhook({ entity: 'Client', action, id });
+                    await this._handlePersonWebhook({
+                        entity: 'Client',
+                        action,
+                        id,
+                    });
                     break;
 
                 case 'caregiver':
-                    await this._handlePersonWebhook({ entity: 'Caregiver', action, id });
+                    await this._handlePersonWebhook({
+                        entity: 'Caregiver',
+                        action,
+                        id,
+                    });
                     break;
 
                 case 'lead':
-                    await this._handlePersonWebhook({ entity: 'Lead', action, id });
+                    await this._handlePersonWebhook({
+                        entity: 'Lead',
+                        action,
+                        id,
+                    });
                     break;
 
                 case 'applicant':
-                    await this._handlePersonWebhook({ entity: 'Applicant', action, id });
+                    await this._handlePersonWebhook({
+                        entity: 'Applicant',
+                        action,
+                        id,
+                    });
                     break;
 
                 default:
-                    console.log(`[AxisCare Webhook] Unhandled entity type: ${entity}`);
+                    console.log(
+                        `[AxisCare Webhook] Unhandled entity type: ${entity}`,
+                    );
                     return {
                         success: true,
                         skipped: true,
@@ -621,7 +585,9 @@ class AxisCareIntegration extends BaseCRMIntegration {
                     };
             }
 
-            console.log(`[AxisCare Webhook] ✓ Successfully processed ${eventType}`);
+            console.log(
+                `[AxisCare Webhook] ✓ Successfully processed ${eventType}`,
+            );
 
             return {
                 success: true,
@@ -631,7 +597,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 action: action,
                 processedAt: new Date().toISOString(),
             };
-
         } catch (error) {
             console.error('[AxisCare Webhook] Processing error:', error);
 
@@ -641,7 +606,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 'errors',
                 'Webhook Processing Error',
                 `Failed to process ${body.event}: ${error.message}`,
-                Date.now()
+                Date.now(),
             );
 
             // Re-throw for SQS retry and DLQ
@@ -685,7 +650,9 @@ class AxisCareIntegration extends BaseCRMIntegration {
             }
 
             if (!person) {
-                console.warn(`[AxisCare Webhook] ${entity} ${id} not found in AxisCare`);
+                console.warn(
+                    `[AxisCare Webhook] ${entity} ${id} not found in AxisCare`,
+                );
                 return;
             }
 
@@ -712,9 +679,11 @@ class AxisCareIntegration extends BaseCRMIntegration {
             });
 
             console.log(`[AxisCare Webhook] ✓ Synced ${entity} ${id} to Quo`);
-
         } catch (error) {
-            console.error(`[AxisCare Webhook] Failed to sync ${entity} ${id}:`, error.message);
+            console.error(
+                `[AxisCare Webhook] Failed to sync ${entity} ${id}:`,
+                error.message,
+            );
             throw error; // Re-throw for retry logic
         }
     }
@@ -754,7 +723,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
 
                 await this.commands.updateIntegrationConfig({
                     integrationId: this.id,
-                    config: updatedConfig
+                    config: updatedConfig,
                 });
 
                 console.log(`[AxisCare] ✓ Webhook config cleared`);
