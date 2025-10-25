@@ -1,6 +1,7 @@
 const { BaseCRMIntegration } = require('../base/BaseCRMIntegration');
 const pipedrive = require('@friggframework/api-module-pipedrive');
 const quo = require('../api-modules/quo');
+const { createFriggCommands } = require('@friggframework/core');
 
 /**
  * PipedriveIntegration - Refactored to extend BaseCRMIntegration
@@ -65,8 +66,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
             reverseChronological: true,
             initialBatchSize: 100,
             ongoingBatchSize: 50,
-            supportsWebhooks: true,
-            pollIntervalMinutes: 30,
+            supportsWebhooks: true,  // ✅ Webhook support implemented (programmatic registration)
         },
         queueConfig: {
             maxWorkers: 20,
@@ -79,6 +79,11 @@ class PipedriveIntegration extends BaseCRMIntegration {
 
     constructor(params) {
         super(params);
+
+        // Initialize Frigg commands for database operations
+        this.commands = createFriggCommands({
+            integrationClass: PipedriveIntegration,
+        });
 
         this.events = {
             ...this.events,
@@ -316,35 +321,446 @@ class PipedriveIntegration extends BaseCRMIntegration {
 
     /**
      * Setup webhooks with Pipedrive
-     * @returns {Promise<void>}
+     * Called during onCreate lifecycle (BaseCRMIntegration)
+     * Programmatically registers multiple webhooks with Pipedrive API
+     * Stores webhook IDs in config for later cleanup
+     * @returns {Promise<Object>} Setup result
      */
     async setupWebhooks() {
         try {
-            const webhookUrl = `${process.env.BASE_URL}/integrations/${this.id}/webhook`;
+            // 1. Check if webhooks already registered
+            if (
+                this.config?.pipedriveWebhookIds &&
+                this.config.pipedriveWebhookIds.length > 0
+            ) {
+                console.log(
+                    `[Pipedrive] Webhooks already registered:`,
+                    this.config.pipedriveWebhookIds,
+                );
+                return {
+                    status: 'already_configured',
+                    webhookIds: this.config.pipedriveWebhookIds,
+                    webhookUrl: this.config.pipedriveWebhookUrl,
+                };
+            }
 
-            await this.pipedrive.api.webhooks.create({
-                subscription_url: webhookUrl,
-                event_action: 'added',
-                event_object: 'person',
+            // 2. Construct webhook URL for this integration instance
+            const webhookUrl = `${process.env.BASE_URL}/api/pipedrive-integration/webhooks/${this.id}`;
+
+            console.log(`[Pipedrive] Registering webhooks at: ${webhookUrl}`);
+
+            // 3. Define webhook subscriptions (one webhook per event combination)
+            const subscriptions = [
+                {
+                    event_action: 'added',
+                    event_object: 'person',
+                    name: 'Person Added',
+                },
+                {
+                    event_action: 'updated',
+                    event_object: 'person',
+                    name: 'Person Updated',
+                },
+                {
+                    event_action: 'deleted',
+                    event_object: 'person',
+                    name: 'Person Deleted',
+                },
+                {
+                    event_action: 'merged',
+                    event_object: 'person',
+                    name: 'Person Merged',
+                },
+            ];
+
+            // 4. Register each webhook with Pipedrive API
+            const webhookIds = [];
+            const createdWebhooks = [];
+
+            for (const sub of subscriptions) {
+                try {
+                    const webhookResponse =
+                        await this.pipedrive.api.createWebhook({
+                            subscription_url: webhookUrl,
+                            event_action: sub.event_action,
+                            event_object: sub.event_object,
+                            name: `Quo - ${sub.name}`,
+                            version: '2.0',
+                            // Optional: Add HTTP Basic Auth for additional security
+                            // http_auth_user: process.env.PIPEDRIVE_WEBHOOK_USER,
+                            // http_auth_password: process.env.PIPEDRIVE_WEBHOOK_PASSWORD,
+                        });
+
+                    if (webhookResponse?.data?.id) {
+                        webhookIds.push(webhookResponse.data.id);
+                        createdWebhooks.push({
+                            id: webhookResponse.data.id,
+                            event: `${sub.event_action}.${sub.event_object}`,
+                            name: sub.name,
+                        });
+                        console.log(
+                            `[Pipedrive] ✓ Created webhook ${webhookResponse.data.id}: ${sub.event_action}.${sub.event_object}`,
+                        );
+                    } else {
+                        console.warn(
+                            `[Pipedrive] No webhook ID returned for ${sub.event_action}.${sub.event_object}`,
+                        );
+                    }
+                } catch (error) {
+                    console.error(
+                        `[Pipedrive] Failed to create webhook for ${sub.event_action}.${sub.event_object}:`,
+                        error.message,
+                    );
+                    // Continue with other webhooks even if one fails
+                }
+            }
+
+            if (webhookIds.length === 0) {
+                throw new Error('Failed to create any webhooks');
+            }
+
+            // 5. Store webhook IDs using command pattern
+            const updatedConfig = {
+                ...this.config,
+                pipedriveWebhookIds: webhookIds,
+                pipedriveWebhookUrl: webhookUrl,
+                pipedriveWebhooks: createdWebhooks,
+                webhookCreatedAt: new Date().toISOString(),
+            };
+
+            await this.commands.updateIntegrationConfig({
+                integrationId: this.id,
+                config: updatedConfig,
             });
 
-            await this.pipedrive.api.webhooks.create({
-                subscription_url: webhookUrl,
-                event_action: 'updated',
-                event_object: 'person',
-            });
-
-            await this.pipedrive.api.webhooks.create({
-                subscription_url: webhookUrl,
-                event_action: 'deleted',
-                event_object: 'person',
-            });
+            // 6. Update local config reference
+            this.config = updatedConfig;
 
             console.log(
-                `Pipedrive webhooks created for integration ${this.id}`,
+                `[Pipedrive] ✓ Registered ${webhookIds.length} webhooks successfully`,
             );
+
+            return {
+                status: 'configured',
+                webhookIds: webhookIds,
+                webhookUrl: webhookUrl,
+                webhooks: createdWebhooks,
+            };
         } catch (error) {
-            console.error('Failed to setup Pipedrive webhooks:', error);
+            console.error('[Pipedrive] Failed to setup webhooks:', error);
+
+            // Fatal error - webhooks are required
+            await this.updateIntegrationMessages.execute(
+                this.id,
+                'errors',
+                'Webhook Setup Failed',
+                `Could not register webhooks with Pipedrive: ${error.message}. Webhooks are required for this integration. Check API credentials and BASE_URL configuration.`,
+                Date.now(),
+            );
+
+            // Re-throw to prevent integration creation
+            throw error;
+        }
+    }
+
+    /**
+     * Process webhook events from Pipedrive
+     * Called by queue worker with full database access and hydrated integration
+     * Automatically invoked by Frigg's webhook infrastructure
+     *
+     * @param {Object} params
+     * @param {Object} params.data - Webhook data from queue
+     * @param {Object} params.data.body - Pipedrive webhook payload (v2.0)
+     * @param {Object} params.data.headers - HTTP headers
+     * @param {string} params.data.integrationId - Integration ID
+     * @returns {Promise<Object>} Processing result
+     */
+    async onWebhook({ data }) {
+        const { body, headers, integrationId } = data;
+
+        console.log(`[Pipedrive Webhook] Processing event:`, {
+            event: body.event,
+            action: body.meta?.action,
+            object: body.meta?.object,
+            objectId: body.meta?.id,
+            timestamp: body.meta?.timestamp,
+        });
+
+        try {
+            // 1. Extract event details from Pipedrive webhook payload (v2.0)
+            const { meta, current, previous, event } = body;
+
+            if (!meta || !event) {
+                throw new Error('Invalid webhook payload: missing meta or event');
+            }
+
+            // 2. Parse event type (e.g., "updated.person" -> action: updated, object: person)
+            const [action, object] = event.split('.');
+
+            // 3. Route based on object type
+            switch (object) {
+                case 'person':
+                    await this._handlePersonWebhook({ action, data: current, previous, meta });
+                    break;
+
+                case 'organization':
+                    await this._handleOrganizationWebhook({ action, data: current, previous, meta });
+                    break;
+
+                case 'deal':
+                    await this._handleDealWebhook({ action, data: current, previous, meta });
+                    break;
+
+                case 'activity':
+                    await this._handleActivityWebhook({ action, data: current, previous, meta });
+                    break;
+
+                default:
+                    console.log(`[Pipedrive Webhook] Unhandled object type: ${object}`);
+                    return {
+                        success: true,
+                        skipped: true,
+                        reason: `Object type '${object}' not configured for sync`,
+                    };
+            }
+
+            console.log(`[Pipedrive Webhook] ✓ Successfully processed ${event}`);
+
+            return {
+                success: true,
+                event: event,
+                action: action,
+                object: object,
+                objectId: meta.id,
+                processedAt: new Date().toISOString(),
+            };
+
+        } catch (error) {
+            console.error('[Pipedrive Webhook] Processing error:', error);
+
+            // Log error to integration messages
+            await this.updateIntegrationMessages.execute(
+                this.id,
+                'errors',
+                'Webhook Processing Error',
+                `Failed to process ${body.event}: ${error.message}`,
+                Date.now()
+            );
+
+            // Re-throw for SQS retry and DLQ
+            throw error;
+        }
+    }
+
+    /**
+     * Handle person webhook events (added, updated, deleted, merged)
+     * Fetches full person data and syncs to Quo
+     *
+     * @private
+     * @param {Object} params
+     * @param {string} params.action - Event action: added, updated, deleted, merged
+     * @param {Object} params.data - Current person data from webhook
+     * @param {Object} params.previous - Previous person data (for updates)
+     * @param {Object} params.meta - Webhook metadata (ids, timestamp, etc.)
+     * @returns {Promise<void>}
+     */
+    async _handlePersonWebhook({ action, data, previous, meta }) {
+        console.log(`[Pipedrive Webhook] Handling person ${action}:`, meta.id);
+
+        try {
+            // Handle deletion separately
+            if (action === 'deleted') {
+                await this._handlePersonDeleted(meta.id, data);
+                return;
+            }
+
+            // Handle merge separately
+            if (action === 'merged') {
+                await this._handlePersonMerged(data, previous, meta);
+                return;
+            }
+
+            // For added/updated: Fetch full person data to ensure we have all fields
+            // (webhook payload may be incomplete)
+            let person;
+            try {
+                const response = await this.pipedrive.api.getPerson(meta.id);
+                person = response.data;
+            } catch (error) {
+                console.warn(`[Pipedrive Webhook] Could not fetch person ${meta.id}, using webhook data:`, error.message);
+                person = data;
+            }
+
+            if (!person) {
+                console.warn(`[Pipedrive Webhook] Person ${meta.id} not found`);
+                return;
+            }
+
+            // Transform to Quo format using existing method
+            const quoContact = await this.transformPersonToQuo(person);
+
+            // Sync to Quo using existing API
+            if (!this.quo?.api) {
+                throw new Error('Quo API not available');
+            }
+
+            await this.quo.api.createContact(quoContact);
+
+            // Update mapping for idempotency tracking
+            await this.upsertMapping(String(meta.id), {
+                externalId: String(meta.id),
+                entityType: 'Person',
+                lastSyncedAt: new Date().toISOString(),
+                syncMethod: 'webhook',
+                action: action,
+            });
+
+            console.log(`[Pipedrive Webhook] ✓ Synced person ${meta.id} to Quo`);
+
+        } catch (error) {
+            console.error(`[Pipedrive Webhook] Failed to sync person ${meta.id}:`, error.message);
+            throw error;
+        }
+    }
+
+    /**
+     * Handle person deleted event
+     * @private
+     */
+    async _handlePersonDeleted(personId, data) {
+        console.log(`[Pipedrive Webhook] Handling person deletion:`, personId);
+
+        try {
+            // Strategy: Remove mapping (stop syncing)
+            // Alternative: Soft delete in Quo or mark as inactive
+            await this.deleteMapping(String(personId));
+
+            console.log(`[Pipedrive Webhook] ✓ Removed mapping for person ${personId}`);
+        } catch (error) {
+            console.error(`[Pipedrive Webhook] Failed to handle person deletion ${personId}:`, error.message);
+            throw error;
+        }
+    }
+
+    /**
+     * Handle person merged event
+     * When two persons are merged, sync the winner and remove the loser
+     * @private
+     */
+    async _handlePersonMerged(current, previous, meta) {
+        console.log(`[Pipedrive Webhook] Handling person merge:`, meta.id);
+
+        try {
+            // In Pipedrive, merged records have the winner's ID in current.id
+            // and may include merge information in meta or current
+
+            // 1. Fetch the winner person (current)
+            const winnerResponse = await this.pipedrive.api.getPerson(meta.id);
+            const winner = winnerResponse.data;
+
+            if (winner) {
+                // 2. Transform and sync winner to Quo
+                const quoContact = await this.transformPersonToQuo(winner);
+                await this.quo.api.createContact(quoContact);
+
+                // 3. Update mapping for winner
+                await this.upsertMapping(String(meta.id), {
+                    externalId: String(meta.id),
+                    entityType: 'Person',
+                    lastSyncedAt: new Date().toISOString(),
+                    syncMethod: 'webhook',
+                    action: 'merged',
+                });
+            }
+
+            // 4. TODO: Identify and remove mapping for loser person
+            // Pipedrive may not provide the loser's ID in the webhook
+            // Consider tracking merge events separately or querying Pipedrive API
+
+            console.log(`[Pipedrive Webhook] ✓ Handled person merge for ${meta.id}`);
+        } catch (error) {
+            console.error(`[Pipedrive Webhook] Failed to handle person merge ${meta.id}:`, error.message);
+            throw error;
+        }
+    }
+
+    /**
+     * Handle organization webhook events (added, updated, deleted, merged)
+     * @private
+     */
+    async _handleOrganizationWebhook({ action, data, previous, meta }) {
+        console.log(`[Pipedrive Webhook] Handling organization ${action}:`, meta.id);
+
+        try {
+            if (action === 'deleted') {
+                await this.deleteMapping(`org_${meta.id}`);
+                console.log(`[Pipedrive Webhook] ✓ Removed mapping for organization ${meta.id}`);
+                return;
+            }
+
+            // For added/updated/merged: Fetch full organization data
+            let organization;
+            try {
+                const response = await this.pipedrive.api.getOrganization(meta.id);
+                organization = response.data;
+            } catch (error) {
+                console.warn(`[Pipedrive Webhook] Could not fetch organization ${meta.id}, using webhook data:`, error.message);
+                organization = data;
+            }
+
+            if (!organization) {
+                console.warn(`[Pipedrive Webhook] Organization ${meta.id} not found`);
+                return;
+            }
+
+            // TODO: Implement organization sync to Quo
+            // For now, just update mapping
+            await this.upsertMapping(`org_${meta.id}`, {
+                externalId: String(meta.id),
+                entityType: 'Organization',
+                lastSyncedAt: new Date().toISOString(),
+                syncMethod: 'webhook',
+                action: action,
+            });
+
+            console.log(`[Pipedrive Webhook] ✓ Organization ${meta.id} processed (sync not yet implemented)`);
+        } catch (error) {
+            console.error(`[Pipedrive Webhook] Failed to process organization ${meta.id}:`, error.message);
+            throw error;
+        }
+    }
+
+    /**
+     * Handle deal webhook events (added, updated, deleted, merged)
+     * @private
+     */
+    async _handleDealWebhook({ action, data, previous, meta }) {
+        console.log(`[Pipedrive Webhook] Handling deal ${action}:`, meta.id);
+
+        try {
+            // TODO: Implement deal sync logic
+            // For now, just log the event
+            console.log('[Pipedrive Webhook] Deal sync not yet implemented');
+        } catch (error) {
+            console.error(`[Pipedrive Webhook] Failed to process deal ${meta.id}:`, error.message);
+            throw error;
+        }
+    }
+
+    /**
+     * Handle activity webhook events (added, updated, deleted)
+     * @private
+     */
+    async _handleActivityWebhook({ action, data, previous, meta }) {
+        console.log(`[Pipedrive Webhook] Handling activity ${action}:`, meta.id);
+
+        try {
+            // TODO: Implement activity sync logic
+            // For now, just log the event
+            console.log('[Pipedrive Webhook] Activity sync not yet implemented');
+        } catch (error) {
+            console.error(`[Pipedrive Webhook] Failed to process activity ${meta.id}:`, error.message);
+            throw error;
         }
     }
 
@@ -602,6 +1018,63 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 details: error.message,
             });
         }
+    }
+
+    /**
+     * Called when integration is deleted
+     * Clean up webhook registrations with Pipedrive
+     *
+     * @param {Object} params - Deletion parameters
+     * @returns {Promise<void>}
+     */
+    async onDelete(params) {
+        try {
+            const webhookIds = this.config?.pipedriveWebhookIds || [];
+
+            if (webhookIds.length > 0) {
+                console.log(
+                    `[Pipedrive] Deleting ${webhookIds.length} webhooks`,
+                );
+
+                // Delete each webhook from Pipedrive
+                for (const webhookId of webhookIds) {
+                    try {
+                        await this.pipedrive.api.deleteWebhook(webhookId);
+                        console.log(
+                            `[Pipedrive] ✓ Deleted webhook ${webhookId}`,
+                        );
+                    } catch (error) {
+                        console.error(
+                            `[Pipedrive] Failed to delete webhook ${webhookId}:`,
+                            error.message,
+                        );
+                        // Continue with other webhooks
+                    }
+                }
+
+                // Clear webhook config using command pattern
+                const updatedConfig = { ...this.config };
+                delete updatedConfig.pipedriveWebhookIds;
+                delete updatedConfig.pipedriveWebhookUrl;
+                delete updatedConfig.pipedriveWebhooks;
+                delete updatedConfig.webhookCreatedAt;
+
+                await this.commands.updateIntegrationConfig({
+                    integrationId: this.id,
+                    config: updatedConfig,
+                });
+
+                console.log(`[Pipedrive] ✓ Webhook config cleared`);
+            } else {
+                console.log('[Pipedrive] No webhooks to delete');
+            }
+        } catch (error) {
+            console.error('[Pipedrive] Failed to delete webhooks:', error);
+            // Non-fatal - integration is being deleted anyway
+        }
+
+        // Call parent class cleanup
+        await super.onDelete(params);
     }
 }
 

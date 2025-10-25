@@ -39,11 +39,10 @@ class Api extends ApiKeyRequester {
 
         this.API_KEY_NAME = 'Authorization';
         this.API_KEY_VALUE = `Bearer ${params.access_token}`;
-
         // Get API key from params
-        if (params.apiKey) {
-            this.setApiKey(params.apiKey);
-            this.access_token = params.apiKey; // temporary to store the apiKey in the Credential data
+        if (params.access_token) {
+            this.setApiKey(params.access_token);
+            this.access_token = params.access_token; // temporary to store the apiKey in the Credential data
         }
     }
 
@@ -53,6 +52,7 @@ class Api extends ApiKeyRequester {
      */
     setApiKey(apiKey) {
         this.API_KEY_VALUE = `Bearer ${apiKey}`;
+        this.access_token = apiKey;
     }
 
     /**
