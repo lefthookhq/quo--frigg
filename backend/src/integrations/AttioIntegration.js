@@ -176,32 +176,44 @@ class AttioIntegration extends BaseCRMIntegration {
      * @returns {Promise<string>} Object type/slug (e.g., 'people', 'companies')
      */
     async _resolveObjectType(objectId) {
-        // Initialize cache if needed
         if (!this._objectTypeCache) {
             this._objectTypeCache = new Map();
         }
 
-        // Check cache first
         if (this._objectTypeCache.has(objectId)) {
             return this._objectTypeCache.get(objectId);
         }
 
-        // Fetch object metadata from Attio
         try {
-            const object = await this.attio.api.getObject(objectId);
-            const objectType =
-                object.api_slug || object.plural_noun || objectId;
+            const response = await this.attio.api.getObject(objectId);
 
-            // Cache for future use
+            // Attio API wraps responses in a 'data' property
+            const object = response.data;
+
+            if (!object) {
+                console.warn(
+                    `[Attio] No data in getObject response for ${objectId}`,
+                );
+                return objectId;
+            }
+
+            // Use api_slug (e.g., 'people', 'companies') or fallback to lowercase plural_noun
+            const objectType =
+                object.api_slug ||
+                object.plural_noun?.toLowerCase() ||
+                objectId;
+
             this._objectTypeCache.set(objectId, objectType);
 
+            console.log(
+                `[Attio] Resolved object ${objectId} to type: ${objectType}`,
+            );
             return objectType;
         } catch (error) {
             console.error(
                 `[Attio] Failed to resolve object type for ${objectId}:`,
                 error,
             );
-            // Return objectId as fallback
             return objectId;
         }
     }
@@ -234,11 +246,16 @@ class AttioIntegration extends BaseCRMIntegration {
             );
         }
 
-        // Resolve object_id to object_type (e.g., UUID -> 'people')
         const object_type = await this._resolveObjectType(object_id);
 
         try {
-            const record = await this.attio.api.getRecord(object_id, record_id);
+            const response = await this.attio.api.getRecord(
+                object_id,
+                record_id,
+            );
+
+            // Unwrap the data property from Attio API response
+            const record = response?.data;
 
             if (!record) {
                 console.warn(
@@ -250,14 +267,6 @@ class AttioIntegration extends BaseCRMIntegration {
             switch (object_type) {
                 case 'people':
                     await this._syncPersonToQuo(record, 'created');
-                    break;
-
-                case 'companies':
-                    await this._syncCompanyToQuo(record, 'created');
-                    break;
-
-                case 'deals':
-                    await this._syncDealToQuo(record, 'created');
                     break;
 
                 default:
@@ -302,12 +311,16 @@ class AttioIntegration extends BaseCRMIntegration {
 
         const { record_id, object_id } = eventData;
 
-        // Resolve object_id to object_type (e.g., UUID -> 'people')
-        const object_type = await this._resolveObjectType(object_id);
+        const objectType = await this._resolveObjectType(object_id);
 
-        // todo: record is an id -> Check this next
         try {
-            const record = await this.attio.api.getRecord(object_id, record_id);
+            const response = await this.attio.api.getRecord(
+                object_id,
+                record_id,
+            );
+
+            // Unwrap the data property from Attio API response
+            const record = response?.data;
 
             if (!record) {
                 console.warn(
@@ -316,39 +329,30 @@ class AttioIntegration extends BaseCRMIntegration {
                 return;
             }
 
-            switch (object_type) {
+            switch (objectType) {
                 case 'people':
                     await this._syncPersonToQuo(record, 'updated');
                     break;
-
-                case 'companies':
-                    await this._syncCompanyToQuo(record, 'updated');
-                    break;
-
-                case 'deals':
-                    await this._syncDealToQuo(record, 'updated');
-                    break;
-
                 default:
                     console.log(
-                        `[Attio Webhook] Object type '${object_type}' not configured for sync`,
+                        `[Attio Webhook] Object type '${objectType}' not configured for sync`,
                     );
             }
 
             await this.upsertMapping(record_id, {
                 externalId: record_id,
-                entityType: object_type,
+                entityType: objectType,
                 lastSyncedAt: new Date().toISOString(),
                 syncMethod: 'webhook',
                 action: 'updated',
             });
 
             console.log(
-                `[Attio Webhook] ✓ Updated ${object_type} ${record_id} in Quo`,
+                `[Attio Webhook] ✓ Updated ${objectType} ${record_id} in Quo`,
             );
         } catch (error) {
             console.error(
-                `[Attio Webhook] Failed to update ${object_type} ${record_id}:`,
+                `[Attio Webhook] Failed to update ${objectType} ${record_id}:`,
                 error.message,
             );
             throw error;
@@ -371,15 +375,58 @@ class AttioIntegration extends BaseCRMIntegration {
 
         const { record_id, object_id } = eventData;
 
-        // Resolve object_id to object_type (e.g., UUID -> 'people')
-        const object_type = await this._resolveObjectType(object_id);
+        const objectType = await this._resolveObjectType(object_id);
 
         try {
-            await this.deleteMapping(record_id);
+            if (objectType === 'people') {
+                if (!this.quo?.api) {
+                    throw new Error('Quo API not available');
+                }
 
-            console.log(
-                `[Attio Webhook] ✓ Removed mapping for ${object_type} ${record_id}`,
-            );
+                const existingContacts = await this.quo.api.listContacts({
+                    externalIds: [record_id],
+                    maxResults: 10,
+                });
+
+                if (
+                    !existingContacts?.data ||
+                    existingContacts.data.length === 0
+                ) {
+                    console.warn(
+                        `[Attio Webhook] Contact with externalId ${record_id} not found in Quo (may have been already deleted)`,
+                    );
+                    return;
+                }
+
+                const exactMatch = existingContacts.data.find(
+                    (contact) => contact.externalId === record_id,
+                );
+
+                if (!exactMatch) {
+                    console.warn(
+                        `[Attio Webhook] No exact match for externalId ${record_id} in Quo`,
+                    );
+                    return;
+                }
+
+                const quoContactId = exactMatch.id;
+                const deleteResponse =
+                    await this.quo.api.deleteContact(quoContactId);
+
+                if (!deleteResponse || deleteResponse.status !== 204) {
+                    throw new Error(
+                        `Delete contact failed: Expected 204 status, got ${deleteResponse?.status || 'unknown'}`,
+                    );
+                }
+
+                console.log(
+                    `[Attio Webhook] ✓ Contact ${quoContactId} deleted from Quo (externalId: ${record_id})`,
+                );
+            } else {
+                console.log(
+                    `[Attio Webhook] Object type '${objectType}' deletion not yet implemented`,
+                );
+            }
         } catch (error) {
             console.error(
                 `[Attio Webhook] Failed to handle deletion of ${record_id}:`,
@@ -387,42 +434,6 @@ class AttioIntegration extends BaseCRMIntegration {
             );
             throw error;
         }
-    }
-
-    /**
-     * Handle list-entry.created webhook event
-     * Syncs list entry data to Quo
-     *
-     * @private
-     * @param {Object} eventData - Event data from webhook
-     * @returns {Promise<void>}
-     */
-    async _handleListEntryCreated(eventData) {
-        console.log(`[Attio Webhook] Handling list-entry.created:`, eventData);
-
-        console.log('[Attio Webhook] List entry sync not yet implemented');
-    }
-
-    /**
-     * Handle list-entry.updated webhook event
-     *
-     * @private
-     * @param {Object} eventData - Event data from webhook
-     * @returns {Promise<void>}
-     */
-    async _handleListEntryUpdated(eventData) {
-        console.log(`[Attio Webhook] Handling list-entry.updated:`, eventData);
-    }
-
-    /**
-     * Handle list-entry.deleted webhook event
-     *
-     * @private
-     * @param {Object} eventData - Event data from webhook
-     * @returns {Promise<void>}
-     */
-    async _handleListEntryDeleted(eventData) {
-        console.log(`[Attio Webhook] Handling list-entry.deleted:`, eventData);
     }
 
     /**
@@ -542,7 +553,6 @@ class AttioIntegration extends BaseCRMIntegration {
             firstName = 'Unknown';
         }
 
-        // Extract role/job title
         const roleAttr =
             this.getActiveValue(attributes.job_title) ||
             this.getActiveValue(attributes.role);
@@ -552,7 +562,6 @@ class AttioIntegration extends BaseCRMIntegration {
         const emails = [];
         const emailAttrs = attributes.email_addresses || [];
         for (const emailAttr of emailAttrs) {
-            // Only include active emails
             if (emailAttr.active_until === null && emailAttr.email_address) {
                 emails.push({
                     name: 'email',
@@ -565,7 +574,6 @@ class AttioIntegration extends BaseCRMIntegration {
         const phoneNumbers = [];
         const phoneAttrs = attributes.phone_numbers || [];
         for (const phoneAttr of phoneAttrs) {
-            // Only include active phone numbers
             if (phoneAttr.active_until === null && phoneAttr.phone_number) {
                 phoneNumbers.push({
                     name: 'phone',
@@ -574,20 +582,17 @@ class AttioIntegration extends BaseCRMIntegration {
             }
         }
 
-        // Extract company reference and fetch company name
         let company = null;
         const companyAttr = this.getActiveValue(attributes.company);
 
         if (companyAttr && companyAttr.target_record_id) {
             // Dual-mode: use pre-fetched companyMap if provided, else fetch individually
             if (companyMap && companyMap.has(companyAttr.target_record_id)) {
-                // Batch mode: lookup in pre-fetched map
                 const companyData = companyMap.get(
                     companyAttr.target_record_id,
                 );
                 company = companyData?.values?.name?.[0]?.value || null;
             } else {
-                // Individual mode: fetch company on-demand (backward compatibility or fallback)
                 try {
                     const companyRecord = await this.attio.api.getRecord(
                         'companies',
@@ -743,11 +748,11 @@ class AttioIntegration extends BaseCRMIntegration {
     async logSMSToActivity(activity) {
         try {
             // Find the person by external ID
-            const person = await this.attio.api.getRecord(
+            const response = await this.attio.api.getRecord(
                 'people',
                 activity.contactExternalId,
             );
-            if (!person) {
+            if (!response?.data) {
                 console.warn(
                     `Person not found for SMS logging: ${activity.contactExternalId}`,
                 );
@@ -779,11 +784,11 @@ class AttioIntegration extends BaseCRMIntegration {
     async logCallToActivity(activity) {
         try {
             // Find the person by external ID
-            const person = await this.attio.api.getRecord(
+            const response = await this.attio.api.getRecord(
                 'people',
                 activity.contactExternalId,
             );
-            if (!person) {
+            if (!response?.data) {
                 console.warn(
                     `Person not found for call logging: ${activity.contactExternalId}`,
                 );
@@ -815,7 +820,6 @@ class AttioIntegration extends BaseCRMIntegration {
      */
     async setupWebhooks() {
         try {
-            // 1. Check if webhook already registered
             if (this.config?.attioWebhookId) {
                 console.log(
                     `[Attio] Webhook already registered: ${this.config.attioWebhookId}`,
@@ -827,12 +831,10 @@ class AttioIntegration extends BaseCRMIntegration {
                 };
             }
 
-            // 2. Construct webhook URL for this integration instance
             const webhookUrl = `${process.env.BASE_URL}/api/attio-integration/webhooks/${this.id}`;
 
             console.log(`[Attio] Registering webhook at: ${webhookUrl}`);
 
-            // 3. Define webhook subscriptions (events we want to receive)
             const subscriptions = [
                 // Record events (core CRM sync)
                 { event_type: 'record.created', filter: null },
@@ -849,13 +851,12 @@ class AttioIntegration extends BaseCRMIntegration {
                 { event_type: 'note.updated', filter: null },
             ];
 
-            // 4. Register webhook with Attio API
             const webhookResponse = await this.attio.api.createWebhook({
                 target_url: webhookUrl,
                 subscriptions: subscriptions,
             });
 
-            // 5. Extract webhook ID and SECRET (CRITICAL: Secret only shown once!)
+            // CRITICAL: Secret only shown once!
             const webhookId = webhookResponse.data.id.webhook_id;
             const webhookSecret = webhookResponse.data.secret;
 
@@ -865,7 +866,6 @@ class AttioIntegration extends BaseCRMIntegration {
                 );
             }
 
-            // 6. Store webhook ID and SECRET using command pattern
             const updatedConfig = {
                 ...this.config,
                 attioWebhookId: webhookId,
@@ -880,7 +880,6 @@ class AttioIntegration extends BaseCRMIntegration {
                 config: updatedConfig,
             });
 
-            // 7. Update local config reference
             this.config = updatedConfig;
 
             console.log(`[Attio] ✓ Webhook registered with ID: ${webhookId}`);
@@ -924,7 +923,6 @@ class AttioIntegration extends BaseCRMIntegration {
      */
     async onWebhookReceived({ req, res }) {
         try {
-            // Extract signature from headers (adjust header name if needed)
             const signature =
                 req.headers['x-attio-signature'] ||
                 req.headers['attio-signature'] ||
@@ -938,7 +936,6 @@ class AttioIntegration extends BaseCRMIntegration {
             // Note: We can't verify signature here because we don't have DB access
             // Signature verification will happen in onWebhook() with full context
 
-            // Queue to SQS with signature included
             const webhookData = {
                 body: req.body,
                 headers: req.headers,
@@ -947,7 +944,6 @@ class AttioIntegration extends BaseCRMIntegration {
                 receivedAt: new Date().toISOString(),
             };
 
-            // Call parent implementation to queue to SQS
             await super.onWebhookReceived({ req, res, data: webhookData });
         } catch (error) {
             console.error('[Attio Webhook] Receive error:', error);
@@ -970,7 +966,6 @@ class AttioIntegration extends BaseCRMIntegration {
     async onWebhook({ data }) {
         const { body, headers, integrationId } = data;
 
-        // Extract signature from headers
         const signature = headers['x-attio-signature'];
 
         console.log(
@@ -978,7 +973,6 @@ class AttioIntegration extends BaseCRMIntegration {
         );
 
         try {
-            // 1. Verify webhook signature
             const webhookSecret = this.config?.attioWebhookSecret;
 
             if (webhookSecret && signature) {
@@ -1003,7 +997,6 @@ class AttioIntegration extends BaseCRMIntegration {
                 );
             }
 
-            // 2. Validate events array
             if (
                 !body.events ||
                 !Array.isArray(body.events) ||
@@ -1014,7 +1007,6 @@ class AttioIntegration extends BaseCRMIntegration {
                 );
             }
 
-            // 3. Process each event in the array
             const results = [];
             for (const event of body.events) {
                 const eventType = event.event_type;
@@ -1039,14 +1031,12 @@ class AttioIntegration extends BaseCRMIntegration {
                 }
 
                 try {
-                    // Prepare event data for handlers (merge id fields with event)
                     const eventData = {
                         ...eventId,
                         actor: event.actor,
                         event_type: eventType,
                     };
 
-                    // 4. Route based on event type
                     switch (eventType) {
                         // Record events
                         case 'record.created':
@@ -1059,19 +1049,6 @@ class AttioIntegration extends BaseCRMIntegration {
 
                         case 'record.deleted':
                             await this._handleRecordDeleted(eventData);
-                            break;
-
-                        // List entry events
-                        case 'list-entry.created':
-                            await this._handleListEntryCreated(eventData);
-                            break;
-
-                        case 'list-entry.updated':
-                            await this._handleListEntryUpdated(eventData);
-                            break;
-
-                        case 'list-entry.deleted':
-                            await this._handleListEntryDeleted(eventData);
                             break;
 
                         // Note events
@@ -1198,7 +1175,6 @@ class AttioIntegration extends BaseCRMIntegration {
         );
 
         try {
-            // Use existing comprehensive transformPersonToQuo method
             const quoContact = await this.transformPersonToQuo(attioRecord);
 
             if (!this.quo?.api) {
@@ -1206,12 +1182,64 @@ class AttioIntegration extends BaseCRMIntegration {
             }
 
             if (action === 'created') {
-                await this.quo.api.createContact(quoContact);
+                const createResponse =
+                    await this.quo.api.createContact(quoContact);
+
+                if (!createResponse?.data) {
+                    throw new Error(
+                        `Create contact failed: Invalid response from Quo API`,
+                    );
+                }
+
+                console.log(
+                    `[Attio] ✓ Contact ${createResponse.data.id} created in Quo (externalId: ${quoContact.externalId})`,
+                );
             } else {
-                await this.quo.api.updateContact(quoContact);
+                const existingContacts = await this.quo.api.listContacts({
+                    externalIds: [quoContact.externalId],
+                    maxResults: 10,
+                });
+
+                if (
+                    !existingContacts?.data ||
+                    existingContacts.data.length === 0
+                ) {
+                    throw new Error(
+                        `Contact with externalId ${quoContact.externalId} not found in Quo`,
+                    );
+                }
+
+                const exactMatch = existingContacts.data.find(
+                    (contact) => contact.externalId === quoContact.externalId,
+                );
+
+                if (!exactMatch) {
+                    throw new Error(
+                        `No exact match for externalId ${quoContact.externalId} in Quo (found ${existingContacts.data.length} results)`,
+                    );
+                }
+
+                const quoContactId = exactMatch.id;
+                const { externalId, ...contactData } = quoContact;
+                const updateResponse = await this.quo.api.updateContact(
+                    quoContactId,
+                    contactData,
+                );
+
+                if (!updateResponse?.data) {
+                    throw new Error(
+                        `Update contact failed: Invalid response from Quo API`,
+                    );
+                }
+
+                console.log(
+                    `[Attio] ✓ Contact ${quoContactId} updated in Quo (externalId: ${externalId})`,
+                );
             }
 
-            console.log(`[Attio] ✓ Person ${attioRecord.id} synced to Quo`);
+            console.log(
+                `[Attio] ✓ Person ${attioRecord.id.record_id} synced to Quo`,
+            );
         } catch (error) {
             console.error(
                 `[Attio] Failed to sync person ${attioRecord.id}:`,
@@ -1219,88 +1247,6 @@ class AttioIntegration extends BaseCRMIntegration {
             );
             throw error;
         }
-    }
-
-    /**
-     * Sync Attio company record to Quo
-     *
-     * @private
-     * @param {Object} attioRecord - Attio company record
-     * @param {string} action - created or updated
-     * @returns {Promise<void>}
-     */
-    async _syncCompanyToQuo(attioRecord, action) {
-        console.log(
-            `[Attio] Syncing company to Quo (${action}):`,
-            attioRecord.id,
-        );
-
-        try {
-            const quoCompany = this._transformCompanyToQuo(attioRecord);
-
-            if (!this.quo?.api) {
-                throw new Error('Quo API not available');
-            }
-
-            if (action === 'created') {
-                await this.quo.api.createCompany(quoCompany);
-            } else {
-                await this.quo.api.updateCompany(quoCompany);
-            }
-
-            console.log(`[Attio] ✓ Company ${attioRecord.id} synced to Quo`);
-        } catch (error) {
-            console.error(
-                `[Attio] Failed to sync company ${attioRecord.id}:`,
-                error.message,
-            );
-            throw error;
-        }
-    }
-
-    /**
-     * Transform Attio company record to Quo company format
-     *
-     * @private
-     * @param {Object} attioRecord - Attio company record
-     * @returns {Object} Quo company object
-     */
-    _transformCompanyToQuo(attioRecord) {
-        // Attio uses a flexible attribute-based structure
-        const attributes = attioRecord.values || {};
-
-        const getAttributeValue = (slug) => {
-            const attr = attributes[slug];
-            return attr?.[0]?.value || null;
-        };
-
-        const getDomainValue = () => {
-            const domainAttr = attributes.domains;
-            return domainAttr?.[0]?.domain || null;
-        };
-
-        return {
-            name: getAttributeValue('name'),
-            domain: getDomainValue(),
-            industry: getAttributeValue('industry'),
-            description: getAttributeValue('description'),
-            externalId: attioRecord.id?.record_id,
-            source: 'attio',
-            lastModified: attioRecord.updated_at,
-        };
-    }
-
-    /**
-     * Sync Attio deal record to Quo
-     *
-     * @private
-     * @param {Object} attioRecord - Attio deal record
-     * @param {string} action - created or updated
-     * @returns {Promise<void>}
-     */
-    async _syncDealToQuo(attioRecord, action) {
-        console.log(`[Attio] Syncing deal to Quo (${action}):`, attioRecord.id);
-        console.log('[Attio] Deal sync not yet implemented');
     }
 
     // ============================================================================
@@ -1331,10 +1277,8 @@ class AttioIntegration extends BaseCRMIntegration {
                         `[Attio] Failed to delete webhook from Attio:`,
                         error,
                     );
-                    // Continue with local cleanup
                 }
 
-                // Clear webhook config using command pattern
                 const updatedConfig = { ...this.config };
                 delete updatedConfig.attioWebhookId;
                 delete updatedConfig.attioWebhookUrl;
@@ -1353,10 +1297,8 @@ class AttioIntegration extends BaseCRMIntegration {
             }
         } catch (error) {
             console.error('[Attio] Failed to delete webhook:', error);
-            // Non-fatal - integration is being deleted anyway
         }
 
-        // Call parent class cleanup
         await super.onDelete(params);
     }
 
