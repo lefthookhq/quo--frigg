@@ -91,13 +91,17 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
      */
     _verifyWebhookToken({ authHeader, storedToken }) {
         if (!authHeader || !storedToken) {
-            console.warn('[Zoho CRM] Missing authorization header or stored token');
+            console.warn(
+                '[Zoho CRM] Missing authorization header or stored token',
+            );
             return false;
         }
 
         try {
             // Extract token from "Bearer {token}" or "Zoho-oauthtoken {token}" format
-            const tokenMatch = authHeader.match(/(?:Bearer|Zoho-oauthtoken)\s+(.+)/i);
+            const tokenMatch = authHeader.match(
+                /(?:Bearer|Zoho-oauthtoken)\s+(.+)/i,
+            );
 
             if (!tokenMatch) {
                 console.warn('[Zoho CRM] Invalid authorization header format');
@@ -108,7 +112,6 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
 
             // Direct comparison (Zoho webhooks use the bearer token you provide during setup)
             return receivedToken === storedToken;
-
         } catch (error) {
             console.error('[Zoho CRM] Token verification error:', error);
             return false;
@@ -192,8 +195,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         const company = this._extractCompany(person, objectType);
 
         const externalId = String(person.id || person.Id || 'unknown');
-        const source =
-            objectType === 'Account' ? 'zoho-account' : 'zoho-contact';
+        const source = 'zoho';
 
         return {
             externalId,
@@ -270,8 +272,13 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
     async setupWebhooks() {
         try {
             // 1. Check if webhook already registered
-            if (this.config?.zohoWebhookIds && this.config.zohoWebhookIds.length > 0) {
-                console.log(`[Zoho CRM] Webhooks already registered: ${this.config.zohoWebhookIds.map(w => w.id).join(', ')}`);
+            if (
+                this.config?.zohoWebhookIds &&
+                this.config.zohoWebhookIds.length > 0
+            ) {
+                console.log(
+                    `[Zoho CRM] Webhooks already registered: ${this.config.zohoWebhookIds.map((w) => w.id).join(', ')}`,
+                );
                 return {
                     status: 'already_configured',
                     webhookIds: this.config.zohoWebhookIds,
@@ -283,7 +290,9 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             // 2. Construct webhook URL for this integration instance
             // Validate BASE_URL is configured
             if (!process.env.BASE_URL) {
-                throw new Error('BASE_URL environment variable is required for webhook registration');
+                throw new Error(
+                    'BASE_URL environment variable is required for webhook registration',
+                );
             }
 
             const webhookUrl = `${process.env.BASE_URL}/api/zohoCrm-integration/webhooks/${this.id}`;
@@ -297,78 +306,100 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
 
             // 4. Define webhook configuration for each CRM object type
             // Zoho requires separate webhooks per module
-            const webhookConfigs = this.constructor.CRMConfig.personObjectTypes.map(({ crmObjectName }) => ({
-                module: crmObjectName === 'Contact' ? 'Contacts' : 'Accounts',
-                name: `Quo Sync - ${crmObjectName} Changes`,
-                url: webhookUrl,
-                http_method: 'POST',
-                description: `Webhook for ${crmObjectName} create/update events to sync with Quo`,
-                authentication: {
-                    type: 'general',
-                    authorization_type: 'bearer',
-                    authorization_key: bearerToken,
-                },
-                module_params: [
-                    {
-                        name: 'record_id',
-                        value: crmObjectName === 'Contact'
-                            ? '${Contacts.id}'
-                            : '${Accounts.id}',
-                    },
-                    {
-                        name: 'module_name',
-                        value: crmObjectName === 'Contact' ? 'Contacts' : 'Accounts',
-                    },
-                    {
-                        name: 'modified_time',
-                        value: crmObjectName === 'Contact'
-                            ? '${Contacts.Modified_Time}'
-                            : '${Accounts.Modified_Time}',
-                    },
-                    {
-                        name: 'owner_id',
-                        value: crmObjectName === 'Contact'
-                            ? '${Contacts.Owner.id}'
-                            : '${Accounts.Owner.id}',
-                    },
-                ],
-                custom_params: [
-                    {
-                        name: 'source',
-                        value: 'zoho_crm',
-                    },
-                    {
-                        name: 'integration_id',
-                        value: this.id,
-                    },
-                    {
-                        name: 'event_type',
-                        value: 'record_changed',
-                    },
-                ],
-            }));
+            const webhookConfigs =
+                this.constructor.CRMConfig.personObjectTypes.map(
+                    ({ crmObjectName }) => ({
+                        module:
+                            crmObjectName === 'Contact'
+                                ? 'Contacts'
+                                : 'Accounts',
+                        name: `Quo Sync - ${crmObjectName} Changes`,
+                        url: webhookUrl,
+                        http_method: 'POST',
+                        description: `Webhook for ${crmObjectName} create/update events to sync with Quo`,
+                        authentication: {
+                            type: 'general',
+                            authorization_type: 'bearer',
+                            authorization_key: bearerToken,
+                        },
+                        module_params: [
+                            {
+                                name: 'record_id',
+                                value:
+                                    crmObjectName === 'Contact'
+                                        ? '${Contacts.id}'
+                                        : '${Accounts.id}',
+                            },
+                            {
+                                name: 'module_name',
+                                value:
+                                    crmObjectName === 'Contact'
+                                        ? 'Contacts'
+                                        : 'Accounts',
+                            },
+                            {
+                                name: 'modified_time',
+                                value:
+                                    crmObjectName === 'Contact'
+                                        ? '${Contacts.Modified_Time}'
+                                        : '${Accounts.Modified_Time}',
+                            },
+                            {
+                                name: 'owner_id',
+                                value:
+                                    crmObjectName === 'Contact'
+                                        ? '${Contacts.Owner.id}'
+                                        : '${Accounts.Owner.id}',
+                            },
+                        ],
+                        custom_params: [
+                            {
+                                name: 'source',
+                                value: 'zoho_crm',
+                            },
+                            {
+                                name: 'integration_id',
+                                value: this.id,
+                            },
+                            {
+                                name: 'event_type',
+                                value: 'record_changed',
+                            },
+                        ],
+                    }),
+                );
 
             // 5. Register webhooks with Zoho CRM API
             const webhookIds = [];
 
             for (const config of webhookConfigs) {
                 try {
-                    const webhookResponse = await this.zohoCrm.api.createWebhook({
-                        webhooks: [config],
-                    });
+                    const webhookResponse =
+                        await this.zohoCrm.api.createWebhook({
+                            webhooks: [config],
+                        });
 
                     if (webhookResponse.webhooks?.[0]?.status === 'success') {
-                        const webhookId = webhookResponse.webhooks[0].details.id;
+                        const webhookId =
+                            webhookResponse.webhooks[0].details.id;
                         webhookIds.push({
                             id: webhookId,
                             module: config.module,
                         });
-                        console.log(`[Zoho CRM] ✓ Webhook registered for ${config.module}: ${webhookId}`);
+                        console.log(
+                            `[Zoho CRM] ✓ Webhook registered for ${config.module}: ${webhookId}`,
+                        );
                     } else {
-                        console.error(`[Zoho CRM] Failed to create webhook for ${config.module}:`, webhookResponse);
+                        console.error(
+                            `[Zoho CRM] Failed to create webhook for ${config.module}:`,
+                            webhookResponse,
+                        );
                     }
                 } catch (moduleError) {
-                    console.error(`[Zoho CRM] Error creating webhook for ${config.module}:`, moduleError);
+                    console.error(
+                        `[Zoho CRM] Error creating webhook for ${config.module}:`,
+                        moduleError,
+                    );
                     // Continue with other modules
                 }
             }
@@ -384,7 +415,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 zohoWebhookUrl: webhookUrl,
                 zohoWebhookBearerToken: bearerToken, // ENCRYPTED by Frigg's field-level encryption
                 webhookCreatedAt: new Date().toISOString(),
-                webhookModules: webhookIds.map(w => w.module),
+                webhookModules: webhookIds.map((w) => w.module),
             };
 
             await this.commands.updateIntegrationConfig({
@@ -395,16 +426,19 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             // 7. Update local config reference
             this.config = updatedConfig;
 
-            console.log(`[Zoho CRM] ✓ ${webhookIds.length} webhooks registered successfully`);
-            console.log(`[Zoho CRM] ✓ Bearer token stored securely (encrypted at rest)`);
+            console.log(
+                `[Zoho CRM] ✓ ${webhookIds.length} webhooks registered successfully`,
+            );
+            console.log(
+                `[Zoho CRM] ✓ Bearer token stored securely (encrypted at rest)`,
+            );
 
             return {
                 status: 'configured',
                 webhookIds: webhookIds,
                 webhookUrl: webhookUrl,
-                modules: webhookIds.map(w => w.module),
+                modules: webhookIds.map((w) => w.module),
             };
-
         } catch (error) {
             console.error('[Zoho CRM] Failed to setup webhooks:', error);
 
@@ -414,7 +448,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 'errors',
                 'Webhook Setup Failed',
                 `Could not register webhook with Zoho CRM: ${error.message}. Please ensure OAuth scopes include webhook permissions (ZohoCRM.settings.webhooks.CREATE, UPDATE, DELETE, READ).`,
-                Date.now()
+                Date.now(),
             );
 
             // Re-throw to prevent integration from being created without webhooks
@@ -435,10 +469,13 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
     async onWebhookReceived({ req, res }) {
         try {
             // Extract authorization header
-            const authHeader = req.headers.authorization || req.headers.Authorization;
+            const authHeader =
+                req.headers.authorization || req.headers.Authorization;
 
             if (!authHeader) {
-                console.warn('[Zoho CRM Webhook] No authorization header found');
+                console.warn(
+                    '[Zoho CRM Webhook] No authorization header found',
+                );
                 // Still accept webhook (full verification happens in worker)
             }
 
@@ -463,7 +500,6 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
 
             // Call parent implementation to queue to SQS
             await super.onWebhookReceived({ req, res, data: webhookData });
-
         } catch (error) {
             console.error('[Zoho CRM Webhook] Receive error:', error);
             throw error;
@@ -504,13 +540,17 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 });
 
                 if (!isValid) {
-                    console.error('[Zoho CRM Webhook] Invalid bearer token - possible security issue!');
+                    console.error(
+                        '[Zoho CRM Webhook] Invalid bearer token - possible security issue!',
+                    );
                     throw new Error('Webhook bearer token verification failed');
                 }
 
                 console.log('[Zoho CRM Webhook] ✓ Bearer token verified');
             } else {
-                console.warn('[Zoho CRM Webhook] No token or header - skipping verification');
+                console.warn(
+                    '[Zoho CRM Webhook] No token or header - skipping verification',
+                );
             }
 
             // 2. Extract event details from Zoho webhook payload
@@ -519,7 +559,9 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             const eventType = body.event_type || 'record_changed';
 
             if (!moduleName || !recordId) {
-                throw new Error('Webhook payload missing module_name or record_id');
+                throw new Error(
+                    'Webhook payload missing module_name or record_id',
+                );
             }
 
             // 3. Map Zoho module name to internal object type
@@ -529,7 +571,9 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             } else if (moduleName === 'Accounts') {
                 objectType = 'Account';
             } else {
-                console.log(`[Zoho CRM Webhook] Unhandled module: ${moduleName}`);
+                console.log(
+                    `[Zoho CRM Webhook] Unhandled module: ${moduleName}`,
+                );
                 return {
                     success: true,
                     skipped: true,
@@ -544,7 +588,9 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 moduleName: moduleName,
             });
 
-            console.log(`[Zoho CRM Webhook] ✓ Successfully processed ${moduleName} ${recordId}`);
+            console.log(
+                `[Zoho CRM Webhook] ✓ Successfully processed ${moduleName} ${recordId}`,
+            );
 
             return {
                 success: true,
@@ -553,7 +599,6 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 recordId: recordId,
                 processedAt: new Date().toISOString(),
             };
-
         } catch (error) {
             console.error('[Zoho CRM Webhook] Processing error:', error);
 
@@ -563,7 +608,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 'errors',
                 'Webhook Processing Error',
                 `Failed to process ${body.module_name} ${body.record_id}: ${error.message}`,
-                Date.now()
+                Date.now(),
             );
 
             // Re-throw for SQS retry and DLQ
@@ -599,7 +644,9 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 // Handle array response
                 if (Array.isArray(response.data)) {
                     if (response.data.length === 0) {
-                        console.warn(`[Zoho CRM Webhook] Contact ${recordId} not found (empty array)`);
+                        console.warn(
+                            `[Zoho CRM Webhook] Contact ${recordId} not found (empty array)`,
+                        );
                         return;
                     }
                     person = response.data[0];
@@ -616,7 +663,9 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 // Handle array response
                 if (Array.isArray(response.data)) {
                     if (response.data.length === 0) {
-                        console.warn(`[Zoho CRM Webhook] Account ${recordId} not found (empty array)`);
+                        console.warn(
+                            `[Zoho CRM Webhook] Account ${recordId} not found (empty array)`,
+                        );
                         return;
                     }
                     person = response.data[0];
@@ -628,7 +677,9 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             }
 
             if (!person) {
-                console.warn(`[Zoho CRM Webhook] ${objectType} ${recordId} not found in Zoho CRM`);
+                console.warn(
+                    `[Zoho CRM Webhook] ${objectType} ${recordId} not found in Zoho CRM`,
+                );
                 return;
             }
 
@@ -654,10 +705,14 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 moduleName: moduleName,
             });
 
-            console.log(`[Zoho CRM Webhook] ✓ Synced ${objectType} ${recordId} to Quo`);
-
+            console.log(
+                `[Zoho CRM Webhook] ✓ Synced ${objectType} ${recordId} to Quo`,
+            );
         } catch (error) {
-            console.error(`[Zoho CRM Webhook] Failed to sync ${objectType} ${recordId}:`, error.message);
+            console.error(
+                `[Zoho CRM Webhook] Failed to sync ${objectType} ${recordId}:`,
+                error.message,
+            );
             throw error; // Re-throw for retry logic
         }
     }
@@ -763,33 +818,25 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             const webhookIds = this.config?.zohoWebhookIds || [];
 
             if (webhookIds.length > 0) {
-                console.log(`[Zoho CRM] Deleting ${webhookIds.length} webhooks`);
+                console.log(
+                    `[Zoho CRM] Deleting ${webhookIds.length} webhooks`,
+                );
 
                 // Delete each webhook
                 for (const { id, module } of webhookIds) {
                     try {
                         await this.zohoCrm.api.deleteWebhook(id);
-                        console.log(`[Zoho CRM] ✓ Webhook ${id} (${module}) deleted from Zoho CRM`);
+                        console.log(
+                            `[Zoho CRM] ✓ Webhook ${id} (${module}) deleted from Zoho CRM`,
+                        );
                     } catch (error) {
-                        console.error(`[Zoho CRM] Failed to delete webhook ${id}:`, error);
+                        console.error(
+                            `[Zoho CRM] Failed to delete webhook ${id}:`,
+                            error,
+                        );
                         // Continue with other webhooks
                     }
                 }
-
-                // Clear webhook config using command pattern
-                const updatedConfig = { ...this.config };
-                delete updatedConfig.zohoWebhookIds;
-                delete updatedConfig.zohoWebhookUrl;
-                delete updatedConfig.zohoWebhookBearerToken;
-                delete updatedConfig.webhookCreatedAt;
-                delete updatedConfig.webhookModules;
-
-                await this.commands.updateIntegrationConfig({
-                    integrationId: this.id,
-                    config: updatedConfig,
-                });
-
-                console.log(`[Zoho CRM] ✓ Webhook config cleared`);
             } else {
                 console.log('[Zoho CRM] No webhooks to delete');
             }

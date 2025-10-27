@@ -77,6 +77,29 @@ class AttioIntegration extends BaseCRMIntegration {
         },
     };
 
+    /**
+     * Webhook configuration constants
+     * Used for webhook labels and identification in webhook processing
+     */
+    static WEBHOOK_LABELS = {
+        QUO_MESSAGES: 'Attio Integration - Messages',
+        QUO_CALLS: 'Attio Integration - Calls',
+    };
+
+    /**
+     * Webhook event subscriptions
+     * Defines which events each webhook type listens for
+     */
+    static WEBHOOK_EVENTS = {
+        ATTIO: [
+            { event_type: 'record.created', filter: null },
+            { event_type: 'record.updated', filter: null },
+            { event_type: 'record.deleted', filter: null },
+        ],
+        QUO_MESSAGES: ['message.received', 'message.delivered'],
+        QUO_CALLS: ['call.completed'],
+    };
+
     constructor(params) {
         super(params);
 
@@ -165,6 +188,27 @@ class AttioIntegration extends BaseCRMIntegration {
             console.error('[Attio] Signature verification error:', error);
             return false;
         }
+    }
+
+    /**
+     * Generate webhook URL with BASE_URL validation
+     * Centralizes URL construction and ensures BASE_URL is configured
+     *
+     * @private
+     * @param {string} path - Webhook path (e.g., '/webhooks/quo/messages/{id}')
+     * @returns {string} Complete webhook URL
+     * @throws {Error} If BASE_URL environment variable is not configured
+     */
+    _generateWebhookUrl(path) {
+        if (!process.env.BASE_URL) {
+            throw new Error(
+                'BASE_URL environment variable is required for webhook setup. ' +
+                    'Please configure this in your deployment environment before enabling webhooks.',
+            );
+        }
+
+        const integrationName = this.constructor.Definition.name;
+        return `${process.env.BASE_URL}/api/${integrationName}-integration${path}`;
     }
 
     /**
@@ -434,40 +478,6 @@ class AttioIntegration extends BaseCRMIntegration {
             );
             throw error;
         }
-    }
-
-    /**
-     * Handle note.created webhook event
-     * Syncs note to Quo as activity/comment
-     *
-     * @private
-     * @param {Object} eventData - Event data from webhook
-     * @returns {Promise<void>}
-     */
-    async _handleNoteCreated(eventData) {
-        console.log(`[Attio Webhook] Handling note.created:`, eventData);
-    }
-
-    /**
-     * Handle note.updated webhook event
-     *
-     * @private
-     * @param {Object} eventData - Event data from webhook
-     * @returns {Promise<void>}
-     */
-    async _handleNoteUpdated(eventData) {
-        console.log(`[Attio Webhook] Handling note.updated:`, eventData);
-    }
-
-    /**
-     * Handle note.deleted webhook event
-     *
-     * @private
-     * @param {Object} eventData - Event data from webhook
-     * @returns {Promise<void>}
-     */
-    async _handleNoteDeleted(eventData) {
-        console.log(`[Attio Webhook] Handling note.deleted:`, eventData);
     }
 
     // ============================================================================
@@ -813,12 +823,12 @@ class AttioIntegration extends BaseCRMIntegration {
     }
 
     /**
-     * Setup webhooks with Attio
-     * Called during onCreate lifecycle (BaseCRMIntegration)
-     * Programmatically registers webhook with Attio API and stores webhook ID + secret in config
-     * @returns {Promise<Object>} Setup result
+     * Setup Attio webhook
+     * Registers webhook with Attio API and stores webhook ID + secret in config
+     * @private
+     * @returns {Promise<Object>} Setup result with status, webhookId, webhookUrl, etc.
      */
-    async setupWebhooks() {
+    async setupAttioWebhook() {
         try {
             if (this.config?.attioWebhookId) {
                 console.log(
@@ -831,46 +841,39 @@ class AttioIntegration extends BaseCRMIntegration {
                 };
             }
 
-            const webhookUrl = `${process.env.BASE_URL}/api/attio-integration/webhooks/${this.id}`;
+            // Generate webhook URL with BASE_URL validation
+            const webhookUrl = this._generateWebhookUrl(`/webhooks/${this.id}`);
 
             console.log(`[Attio] Registering webhook at: ${webhookUrl}`);
 
-            const subscriptions = [
-                // Record events (core CRM sync)
-                { event_type: 'record.created', filter: null },
-                { event_type: 'record.updated', filter: null },
-                { event_type: 'record.deleted', filter: null },
-
-                // List events (for list-based workflows)
-                { event_type: 'list-entry.created', filter: null },
-                { event_type: 'list-entry.updated', filter: null },
-                { event_type: 'list-entry.deleted', filter: null },
-
-                // Note events (for activity tracking)
-                { event_type: 'note.created', filter: null },
-                { event_type: 'note.updated', filter: null },
-            ];
+            const subscriptions = this.constructor.WEBHOOK_EVENTS.ATTIO;
 
             const webhookResponse = await this.attio.api.createWebhook({
                 target_url: webhookUrl,
                 subscriptions: subscriptions,
             });
 
-            // CRITICAL: Secret only shown once!
-            const webhookId = webhookResponse.data.id.webhook_id;
-            const webhookSecret = webhookResponse.data.secret;
-
-            if (!webhookSecret) {
+            // Validate response structure
+            if (!webhookResponse?.data?.id?.webhook_id) {
                 throw new Error(
-                    'Webhook creation did not return a secret - this is required for signature verification',
+                    'Invalid Attio webhook response: missing webhook ID',
                 );
             }
+
+            if (!webhookResponse.data.secret) {
+                throw new Error(
+                    'Invalid Attio webhook response: missing webhook secret',
+                );
+            }
+
+            const webhookId = webhookResponse.data.id.webhook_id;
+            const webhookSecret = webhookResponse.data.secret;
 
             const updatedConfig = {
                 ...this.config,
                 attioWebhookId: webhookId,
                 attioWebhookUrl: webhookUrl,
-                attioWebhookSecret: webhookSecret, // ENCRYPTED by Frigg's field-level encryption
+                attioWebhookSecret: webhookSecret,
                 webhookCreatedAt: new Date().toISOString(),
                 webhookSubscriptions: subscriptions.map((s) => s.event_type),
             };
@@ -892,13 +895,13 @@ class AttioIntegration extends BaseCRMIntegration {
                 subscriptions: subscriptions.map((s) => s.event_type),
             };
         } catch (error) {
-            console.error('[Attio] Failed to setup webhooks:', error);
+            console.error('[Attio] Failed to setup webhook:', error);
 
-            // Non-fatal - integration will operate in manual-sync mode only
+            // Non-fatal error handling
             await this.updateIntegrationMessages.execute(
                 this.id,
                 'errors',
-                'Webhook Setup Failed',
+                'Attio Webhook Setup Failed',
                 `Could not register webhook with Attio: ${error.message}. Automatic sync disabled. Please check OAuth scopes include 'webhook:read-write' and try again.`,
                 Date.now(),
             );
@@ -908,6 +911,263 @@ class AttioIntegration extends BaseCRMIntegration {
                 error: error.message,
                 note: 'Manual sync still available via API routes',
             };
+        }
+    }
+
+    /**
+     * Setup Quo webhooks (message and call webhooks)
+     * Registers webhooks with Quo API and stores webhook IDs + keys in config
+     * Uses atomic pattern: creates both webhooks before saving config, with rollback on failure
+     * @private
+     * @returns {Promise<Object>} Setup result with status, webhookIds, webhookUrls, etc.
+     */
+    async setupQuoWebhook() {
+        const createdWebhooks = [];
+
+        try {
+            // Check if BOTH already configured
+            if (
+                this.config?.quoMessageWebhookId &&
+                this.config?.quoCallWebhookId
+            ) {
+                console.log(
+                    `[Quo] Webhooks already registered: message=${this.config.quoMessageWebhookId}, call=${this.config.quoCallWebhookId}`,
+                );
+                return {
+                    status: 'already_configured',
+                    messageWebhookId: this.config.quoMessageWebhookId,
+                    callWebhookId: this.config.quoCallWebhookId,
+                    webhookUrl: this.config.quoWebhooksUrl,
+                };
+            }
+
+            // Check for partial configuration (recovery scenario)
+            const hasPartialConfig =
+                this.config?.quoMessageWebhookId ||
+                this.config?.quoCallWebhookId;
+
+            if (hasPartialConfig) {
+                console.warn(
+                    '[Quo] Partial webhook configuration detected - cleaning up before retry',
+                );
+
+                // Clean up any existing webhooks
+                if (this.config?.quoMessageWebhookId) {
+                    try {
+                        await this.quo.api.deleteWebhook(
+                            this.config.quoMessageWebhookId,
+                        );
+                        console.log(
+                            `[Quo] Cleaned up orphaned message webhook: ${this.config.quoMessageWebhookId}`,
+                        );
+                    } catch (cleanupError) {
+                        console.warn(
+                            `[Quo] Could not clean up message webhook (may have been deleted): ${cleanupError.message}`,
+                        );
+                    }
+                }
+
+                if (this.config?.quoCallWebhookId) {
+                    try {
+                        await this.quo.api.deleteWebhook(
+                            this.config.quoCallWebhookId,
+                        );
+                        console.log(
+                            `[Quo] Cleaned up orphaned call webhook: ${this.config.quoCallWebhookId}`,
+                        );
+                    } catch (cleanupError) {
+                        console.warn(
+                            `[Quo] Could not clean up call webhook (may have been deleted): ${cleanupError.message}`,
+                        );
+                    }
+                }
+            }
+
+            const webhookUrl = this._generateWebhookUrl(`/webhooks/${this.id}`);
+
+            console.log(
+                `[Quo] Registering message and call webhooks at: ${webhookUrl}`,
+            );
+
+            const messageWebhookResponse =
+                await this.quo.api.createMessageWebhook({
+                    url: webhookUrl,
+                    events: this.constructor.WEBHOOK_EVENTS.QUO_MESSAGES,
+                    label: this.constructor.WEBHOOK_LABELS.QUO_MESSAGES,
+                    status: 'enabled',
+                });
+
+            if (!messageWebhookResponse?.data?.id) {
+                throw new Error(
+                    'Invalid Quo message webhook response: missing webhook ID',
+                );
+            }
+
+            if (!messageWebhookResponse.data.key) {
+                throw new Error(
+                    'Invalid Quo message webhook response: missing webhook key',
+                );
+            }
+
+            const messageWebhookId = messageWebhookResponse.data.id;
+            const messageWebhookKey = messageWebhookResponse.data.key;
+
+            createdWebhooks.push({
+                type: 'message',
+                id: messageWebhookId,
+            });
+
+            console.log(
+                `[Quo] ✓ Message webhook registered with ID: ${messageWebhookId}`,
+            );
+
+            const callWebhookResponse = await this.quo.api.createCallWebhook({
+                url: webhookUrl,
+                events: this.constructor.WEBHOOK_EVENTS.QUO_CALLS,
+                label: this.constructor.WEBHOOK_LABELS.QUO_CALLS,
+                status: 'enabled',
+            });
+
+            if (!callWebhookResponse?.data?.id) {
+                throw new Error(
+                    'Invalid Quo call webhook response: missing webhook ID',
+                );
+            }
+
+            if (!callWebhookResponse.data.key) {
+                throw new Error(
+                    'Invalid Quo call webhook response: missing webhook key',
+                );
+            }
+
+            const callWebhookId = callWebhookResponse.data.id;
+            const callWebhookKey = callWebhookResponse.data.key;
+
+            createdWebhooks.push({
+                type: 'call',
+                id: callWebhookId,
+            });
+
+            console.log(
+                `[Quo] ✓ Call webhook registered with ID: ${callWebhookId}`,
+            );
+
+            const updatedConfig = {
+                ...this.config,
+                quoMessageWebhookId: messageWebhookId,
+                quoMessageWebhookKey: messageWebhookKey,
+                quoCallWebhookId: callWebhookId,
+                quoCallWebhookKey: callWebhookKey,
+                quoWebhooksUrl: webhookUrl,
+                quoWebhooksCreatedAt: new Date().toISOString(),
+            };
+
+            await this.commands.updateIntegrationConfig({
+                integrationId: this.id,
+                config: updatedConfig,
+            });
+
+            this.config = updatedConfig;
+
+            console.log(`[Quo] ✓ Keys stored securely (encrypted at rest)`);
+
+            return {
+                status: 'configured',
+                messageWebhookId: messageWebhookId,
+                callWebhookId: callWebhookId,
+                webhookUrl: webhookUrl,
+            };
+        } catch (error) {
+            console.error('[Quo] Failed to setup webhooks:', error);
+
+            if (createdWebhooks.length > 0) {
+                console.warn(
+                    `[Quo] Rolling back ${createdWebhooks.length} created webhook(s)`,
+                );
+
+                for (const webhook of createdWebhooks) {
+                    try {
+                        await this.quo.api.deleteWebhook(webhook.id);
+                        console.log(
+                            `[Quo] ✓ Rolled back ${webhook.type} webhook ${webhook.id}`,
+                        );
+                    } catch (rollbackError) {
+                        console.error(
+                            `[Quo] Failed to rollback ${webhook.type} webhook ${webhook.id}:`,
+                            rollbackError.message,
+                        );
+                    }
+                }
+            }
+
+            // Fatal error - both webhooks required
+            await this.updateIntegrationMessages.execute(
+                this.id,
+                'errors',
+                'Quo Webhook Setup Failed',
+                `Could not register webhooks with Quo: ${error.message}. Integration requires both message and call webhooks to function properly.`,
+                Date.now(),
+            );
+
+            return {
+                status: 'failed',
+                error: error.message,
+            };
+        }
+    }
+
+    /**
+     * Setup webhooks with both Attio and Quo
+     * Called during onCreate lifecycle (BaseCRMIntegration)
+     * Orchestrates webhook setup for both services - BOTH required for success
+     * @returns {Promise<Object>} Setup result
+     */
+    async setupWebhooks() {
+        const results = {
+            attio: null,
+            quo: null,
+            overallStatus: 'success',
+        };
+
+        try {
+            // Setup Attio webhook
+            results.attio = await this.setupAttioWebhook();
+
+            // Setup Quo webhooks
+            results.quo = await this.setupQuoWebhook();
+
+            // BOTH required - fail if either fails
+            if (
+                results.attio.status === 'failed' ||
+                results.quo.status === 'failed'
+            ) {
+                results.overallStatus = 'failed';
+                const failedServices = [];
+                if (results.attio.status === 'failed')
+                    failedServices.push('Attio');
+                if (results.quo.status === 'failed') failedServices.push('Quo');
+
+                throw new Error(
+                    `Webhook setup failed for: ${failedServices.join(', ')}. Both Attio and Quo webhooks are required for integration to function.`,
+                );
+            }
+
+            console.log(
+                '[Webhook Setup] ✓ All webhooks configured successfully',
+            );
+            return results;
+        } catch (error) {
+            console.error('[Webhook Setup] Failed:', error);
+
+            await this.updateIntegrationMessages.execute(
+                this.id,
+                'errors',
+                'Webhook Setup Failed',
+                `Failed to setup webhooks: ${error.message}`,
+                Date.now(),
+            );
+
+            throw error; // Re-throw since both are required
         }
     }
 
@@ -1049,19 +1309,6 @@ class AttioIntegration extends BaseCRMIntegration {
 
                         case 'record.deleted':
                             await this._handleRecordDeleted(eventData);
-                            break;
-
-                        // Note events
-                        case 'note.created':
-                            await this._handleNoteCreated(eventData);
-                            break;
-
-                        case 'note.updated':
-                            await this._handleNoteUpdated(eventData);
-                            break;
-
-                        case 'note.deleted':
-                            await this._handleNoteDeleted(eventData);
                             break;
 
                         // Add more event handlers as needed
@@ -1255,48 +1502,154 @@ class AttioIntegration extends BaseCRMIntegration {
 
     /**
      * Called when integration is deleted
-     * Clean up webhook registration with Attio
+     * Clean up webhook registrations with both Attio and Quo
+     * Uses selective cleanup: only clears config for successfully deleted webhooks
      *
      * @param {Object} params - Deletion parameters
      * @returns {Promise<void>}
      */
     async onDelete(params) {
-        try {
-            const webhookId = this.config?.attioWebhookId;
+        const deletionResults = {
+            attio: null,
+            quoMessage: null,
+            quoCall: null,
+        };
 
-            if (webhookId) {
-                console.log(`[Attio] Deleting webhook: ${webhookId}`);
+        try {
+            const attioWebhookId = this.config?.attioWebhookId;
+
+            if (attioWebhookId) {
+                console.log(`[Attio] Deleting webhook: ${attioWebhookId}`);
 
                 try {
-                    await this.attio.api.deleteWebhook(webhookId);
+                    await this.attio.api.deleteWebhook(attioWebhookId);
+                    deletionResults.attio = 'success';
                     console.log(
-                        `[Attio] ✓ Webhook ${webhookId} deleted from Attio`,
+                        `[Attio] ✓ Webhook ${attioWebhookId} deleted from Attio`,
                     );
                 } catch (error) {
+                    deletionResults.attio = 'failed';
                     console.error(
                         `[Attio] Failed to delete webhook from Attio:`,
-                        error,
+                        error.message,
+                    );
+                    console.warn(
+                        `[Attio] Webhook ID ${attioWebhookId} preserved in config for manual cleanup`,
                     );
                 }
+            } else {
+                console.log('[Attio] No webhook to delete');
+            }
 
-                const updatedConfig = { ...this.config };
+            const quoMessageWebhookId = this.config?.quoMessageWebhookId;
+
+            if (quoMessageWebhookId) {
+                console.log(
+                    `[Quo] Deleting message webhook: ${quoMessageWebhookId}`,
+                );
+
+                try {
+                    await this.quo.api.deleteWebhook(quoMessageWebhookId);
+                    deletionResults.quoMessage = 'success';
+                    console.log(
+                        `[Quo] ✓ Message webhook ${quoMessageWebhookId} deleted from Quo`,
+                    );
+                } catch (error) {
+                    deletionResults.quoMessage = 'failed';
+                    console.error(
+                        `[Quo] Failed to delete message webhook from Quo:`,
+                        error.message,
+                    );
+                    console.warn(
+                        `[Quo] Message webhook ID ${quoMessageWebhookId} preserved in config for manual cleanup`,
+                    );
+                }
+            } else {
+                console.log('[Quo] No message webhook to delete');
+            }
+
+            const quoCallWebhookId = this.config?.quoCallWebhookId;
+
+            if (quoCallWebhookId) {
+                console.log(`[Quo] Deleting call webhook: ${quoCallWebhookId}`);
+
+                try {
+                    await this.quo.api.deleteWebhook(quoCallWebhookId);
+                    deletionResults.quoCall = 'success';
+                    console.log(
+                        `[Quo] ✓ Call webhook ${quoCallWebhookId} deleted from Quo`,
+                    );
+                } catch (error) {
+                    deletionResults.quoCall = 'failed';
+                    console.error(
+                        `[Quo] Failed to delete call webhook from Quo:`,
+                        error.message,
+                    );
+                    console.warn(
+                        `[Quo] Call webhook ID ${quoCallWebhookId} preserved in config for manual cleanup`,
+                    );
+                }
+            } else {
+                console.log('[Quo] No call webhook to delete');
+            }
+
+            const updatedConfig = { ...this.config };
+
+            if (deletionResults.attio === 'success') {
                 delete updatedConfig.attioWebhookId;
                 delete updatedConfig.attioWebhookUrl;
                 delete updatedConfig.attioWebhookSecret;
                 delete updatedConfig.webhookCreatedAt;
                 delete updatedConfig.webhookSubscriptions;
+                console.log('[Attio] Config cleared for deleted webhook');
+            }
 
-                await this.commands.updateIntegrationConfig({
-                    integrationId: this.id,
-                    config: updatedConfig,
-                });
+            if (deletionResults.quoMessage === 'success') {
+                delete updatedConfig.quoMessageWebhookId;
+                delete updatedConfig.quoMessageWebhookKey;
+                console.log('[Quo] Message webhook config cleared');
+            }
 
-                console.log(`[Attio] ✓ Webhook config cleared`);
+            if (deletionResults.quoCall === 'success') {
+                delete updatedConfig.quoCallWebhookId;
+                delete updatedConfig.quoCallWebhookKey;
+                console.log('[Quo] Call webhook config cleared');
+            }
+
+            if (
+                deletionResults.quoMessage === 'success' &&
+                deletionResults.quoCall === 'success'
+            ) {
+                delete updatedConfig.quoWebhooksUrl;
+                delete updatedConfig.quoWebhooksCreatedAt;
+            }
+
+            await this.commands.updateIntegrationConfig({
+                integrationId: this.id,
+                config: updatedConfig,
+            });
+
+            const successCount = Object.values(deletionResults).filter(
+                (result) => result === 'success',
+            ).length;
+            const failedCount = Object.values(deletionResults).filter(
+                (result) => result === 'failed',
+            ).length;
+
+            if (failedCount > 0) {
+                console.warn(
+                    `[Webhook Cleanup] Partial cleanup: ${successCount} succeeded, ${failedCount} failed. Failed webhook IDs preserved for manual cleanup.`,
+                );
             } else {
-                console.log('[Attio] No webhook to delete');
+                console.log(
+                    `[Webhook Cleanup] ✓ All webhooks deleted and configs cleared`,
+                );
             }
         } catch (error) {
-            console.error('[Attio] Failed to delete webhook:', error);
+            console.error(
+                '[Webhook Cleanup] Unexpected error during cleanup:',
+                error,
+            );
         }
 
         await super.onDelete(params);

@@ -1051,20 +1051,6 @@ class PipedriveIntegration extends BaseCRMIntegration {
                         // Continue with other webhooks
                     }
                 }
-
-                // Clear webhook config using command pattern
-                const updatedConfig = { ...this.config };
-                delete updatedConfig.pipedriveWebhookIds;
-                delete updatedConfig.pipedriveWebhookUrl;
-                delete updatedConfig.pipedriveWebhooks;
-                delete updatedConfig.webhookCreatedAt;
-
-                await this.commands.updateIntegrationConfig({
-                    integrationId: this.id,
-                    config: updatedConfig,
-                });
-
-                console.log(`[Pipedrive] ✓ Webhook config cleared`);
             } else {
                 console.log('[Pipedrive] No webhooks to delete');
             }

@@ -332,135 +332,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
     }
 
     /**
-     * Setup webhooks with AxisCare
-     * Called during onCreate lifecycle (BaseCRMIntegration line 378-386)
-     * Registers webhook with AxisCare API and stores webhook ID in config
-     *
-     * NOTE: AxisCare requires manual webhook configuration via support.
-     * This method returns instructions for manual setup.
-     *
-     * @returns {Promise<Object>} Setup result with instructions
-     */
-    async setupWebhooks() {
-        try {
-            // 1. Check if webhook already registered
-            if (this.config?.axiscareWebhookId) {
-                console.log(
-                    `[AxisCare] Webhook already registered: ${this.config.axiscareWebhookId}`,
-                );
-                return {
-                    status: 'already_configured',
-                    webhookId: this.config.axiscareWebhookId,
-                    webhookUrl: this.config.axiscareWebhookUrl,
-                };
-            }
-
-            // 2. Construct webhook URL for this integration instance
-            const webhookUrl = `${process.env.BASE_URL}/api/axisCare-integration/webhooks/${this.id}`;
-
-            console.log(
-                `[AxisCare] Webhook endpoint available at: ${webhookUrl}`,
-            );
-
-            // 3. Return manual setup instructions
-            // AxisCare requires contacting support to enable webhooks
-            return {
-                status: 'manual_setup_required',
-                message:
-                    'AxisCare webhooks must be configured manually via AxisCare support',
-                instructions: [
-                    '1. Contact AxisCare support to enable webhook functionality',
-                    '2. Provide your webhook endpoint URL (below)',
-                    '3. You will receive an x-webhook-id identifier from AxisCare',
-                    '4. Configure these events: client.created, client.updated, caregiver.created, caregiver.updated, lead.created, lead.updated, applicant.created, applicant.updated',
-                    '5. After setup, update integration config with the webhook ID',
-                ],
-                webhookEndpoint: webhookUrl,
-                supportedEvents: [
-                    'client.created',
-                    'client.updated',
-                    'caregiver.created',
-                    'caregiver.updated',
-                    'lead.created',
-                    'lead.updated',
-                    'applicant.created',
-                    'applicant.updated',
-                ],
-                configUpdateInstructions: {
-                    message:
-                        'After receiving webhook ID from AxisCare, update config with:',
-                    requiredFields: {
-                        axiscareWebhookId: '<webhook-id-from-axiscare>',
-                        axiscareWebhookUrl: webhookUrl,
-                        webhookCreatedAt: '<iso-timestamp>',
-                    },
-                },
-            };
-
-            // COMMENTED OUT: Programmatic registration code for when AxisCare adds API support
-            /*
-            // 3. Register webhook with AxisCare API
-            const webhookResponse = await this.axisCare.api.createWebhook({
-                url: webhookUrl,
-                events: [
-                    'client.created',
-                    'client.updated',
-                    'caregiver.created',
-                    'caregiver.updated',
-                    'lead.created',
-                    'lead.updated',
-                    'applicant.created',
-                    'applicant.updated',
-                ],
-                active: true,
-            });
-
-            // 4. Store webhook ID using command pattern
-            const updatedConfig = {
-                ...this.config,
-                axiscareWebhookId: webhookResponse.id,
-                axiscareWebhookUrl: webhookUrl,
-                webhookCreatedAt: new Date().toISOString(),
-            };
-
-            await this.commands.updateIntegrationConfig({
-                integrationId: this.id,
-                config: updatedConfig
-            });
-
-            // 5. Update local config reference
-            this.config = updatedConfig;
-
-            console.log(`[AxisCare] ✓ Webhook registered with ID: ${webhookResponse.id}`);
-
-            return {
-                status: 'configured',
-                webhookId: webhookResponse.id,
-                webhookUrl: webhookUrl,
-            };
-            */
-        } catch (error) {
-            console.error('[AxisCare] Failed to setup webhooks:', error);
-
-            // Webhook setup is required - log error
-            await this.updateIntegrationMessages.execute(
-                this.id,
-                'errors',
-                'Webhook Setup Failed',
-                `Could not setup webhook with AxisCare: ${error.message}. Please contact AxisCare support to manually configure webhooks.`,
-                Date.now(),
-            );
-
-            return {
-                status: 'failed',
-                error: error.message,
-                message:
-                    'Webhook setup required - contact AxisCare support for manual configuration',
-            };
-        }
-    }
-
-    /**
      * Process webhook events from AxisCare
      * Called by queue worker with full database access and hydrated integration
      * Automatically invoked by Frigg's webhook infrastructure
@@ -714,19 +585,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
                     // Continue with local cleanup
                 }
                 */
-
-                // Clear webhook config using command pattern
-                const updatedConfig = { ...this.config };
-                delete updatedConfig.axiscareWebhookId;
-                delete updatedConfig.axiscareWebhookUrl;
-                delete updatedConfig.webhookCreatedAt;
-
-                await this.commands.updateIntegrationConfig({
-                    integrationId: this.id,
-                    config: updatedConfig,
-                });
-
-                console.log(`[AxisCare] ✓ Webhook config cleared`);
             } else {
                 console.log('[AxisCare] No webhook to delete');
             }
@@ -740,24 +598,45 @@ class AxisCareIntegration extends BaseCRMIntegration {
     }
 
     async getConfigOptions() {
+        // Construct webhook URL (integration ID and siteNumber guaranteed to exist)
+        const webhookUrl = `${process.env.BASE_URL}/api/axisCare-integration/webhooks/${this.id}`;
+
+        // Build admin panel URL with authenticated siteNumber
+        const adminUrl = `https://${this.axisCare.credential.data.siteNumber}.axiscare.com/?/admin/webhooks`;
+
         return {
-            maxClientsPerSync: {
-                type: 'number',
-                title: 'Max Clients per Manual Sync',
-                description:
-                    'Maximum number of clients to sync when using manual sync action',
-                default: 50,
-                minimum: 1,
-                maximum: 1000,
+            jsonSchema: {
+                type: 'object',
+                properties: {
+                    webhookUrl: {
+                        type: 'string',
+                        title: 'Webhook Endpoint URL',
+                        default: webhookUrl,
+                        readOnly: true,
+                    },
+                },
             },
-            maxAppointmentsPerSync: {
-                type: 'number',
-                title: 'Max Appointments per Manual Sync',
-                description:
-                    'Maximum number of appointments to sync when using manual sync action',
-                default: 100,
-                minimum: 1,
-                maximum: 1000,
+            uiSchema: {
+                type: 'VerticalLayout',
+                elements: [
+                    {
+                        type: 'Control',
+                        scope: '#/properties/webhookUrl',
+                        options: {
+                            help:
+                                `MANUAL SETUP REQUIRED:\n\n` +
+                                `1. Copy the webhook URL above\n` +
+                                `2. Navigate to: ${adminUrl}\n` +
+                                `3. Create a new webhook and paste the URL\n` +
+                                `4. Subscribe to these events:\n` +
+                                `   • client.created, client.updated\n` +
+                                `   • caregiver.created, caregiver.updated\n` +
+                                `   • lead.created, lead.updated\n` +
+                                `   • applicant.created, applicant.updated\n` +
+                                `5. The webhook will auto-activate on first event received`,
+                        },
+                    },
+                ],
             },
         };
     }
