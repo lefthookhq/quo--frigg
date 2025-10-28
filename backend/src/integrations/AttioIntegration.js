@@ -1647,21 +1647,59 @@ class AttioIntegration extends BaseCRMIntegration {
         // Get deeplink from webhook data
         const deepLink = webhookData.data.deepLink || '#';
 
+        // Fetch phone number details to get inbox name and number
+        const phoneNumberDetails = await this.quo.api.getPhoneNumber(
+            callObject.phoneNumberId,
+        );
+        const inboxName = phoneNumberDetails.name || 'Quo Line';
+        const inboxNumber = phoneNumberDetails.phoneNumber || participants[callObject.direction === 'outgoing' ? 0 : 1];
+
+        // Fetch user details to show who handled the call
+        const userDetails = await this.quo.api.getUser(callObject.userId);
+        const userName =
+            userDetails.name ||
+            `${userDetails.firstName || ''} ${userDetails.lastName || ''}`.trim() ||
+            'Quo User';
+
         // Format duration in minutes and seconds
         const minutes = Math.floor(callObject.duration / 60);
         const seconds = callObject.duration % 60;
-        const durationFormatted = minutes > 0
-            ? `${minutes}m ${seconds}s`
-            : `${seconds}s`;
+        const durationFormatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
 
-        // Create markdown-formatted summary
-        const callDirection = callObject.direction === 'outgoing' ? 'Outgoing' : 'Incoming';
-        const formattedSummary = `📞 **${callDirection} Call** - ${callObject.status}
+        // Determine call status description
+        let statusDescription;
+        if (callObject.status === 'completed') {
+            statusDescription = callObject.direction === 'outgoing'
+                ? `Outgoing initiated by ${userName}`
+                : `Incoming answered by ${userName}`;
+        } else if (callObject.status === 'no-answer' || callObject.status === 'missed') {
+            statusDescription = 'Incoming missed';
+        } else {
+            statusDescription = `${callObject.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} ${callObject.status}`;
+        }
 
-**Duration:** ${durationFormatted}
-**Participants:** ${participants.join(' ↔ ')}
+        // Create markdown-formatted summary matching the template format
+        let formattedSummary;
+        if (callObject.direction === 'outgoing') {
+            formattedSummary = `☎️ Call Quo 📱 ${inboxName} (${inboxNumber}) → ${contactPhone}
 
-[View in Quo](${deepLink})`;
+${statusDescription}
+
+[View the call activity in Quo](${deepLink})`;
+        } else {
+            formattedSummary = `☎️ Call ${contactPhone} → Quo 📱 ${inboxName} (${inboxNumber})
+
+${statusDescription}`;
+
+            // Add duration for answered calls
+            if (callObject.status === 'completed' && callObject.duration > 0) {
+                formattedSummary += ` / ▶️ Recording (${durationFormatted})`;
+            }
+
+            formattedSummary += `
+
+[View the call activity in Quo](${deepLink})`;
+        }
 
         // Transform to activity format
         const activityData = {
