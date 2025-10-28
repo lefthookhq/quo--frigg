@@ -84,6 +84,7 @@ class AttioIntegration extends BaseCRMIntegration {
     static WEBHOOK_LABELS = {
         QUO_MESSAGES: 'Attio Integration - Messages',
         QUO_CALLS: 'Attio Integration - Calls',
+        QUO_CALL_SUMMARIES: 'Attio Integration - Call Summaries',
     };
 
     /**
@@ -98,6 +99,7 @@ class AttioIntegration extends BaseCRMIntegration {
         ],
         QUO_MESSAGES: ['message.received', 'message.delivered'],
         QUO_CALLS: ['call.completed'],
+        QUO_CALL_SUMMARIES: ['call.summary.completed'],
     };
 
     constructor(params) {
@@ -188,6 +190,101 @@ class AttioIntegration extends BaseCRMIntegration {
             console.error('[Attio] Signature verification error:', error);
             return false;
         }
+    }
+
+    /**
+     * Verify Quo (OpenPhone) webhook signature
+     * Uses HMAC-SHA256 to verify the webhook payload
+     * Signature format: "hmac;version;timestamp;signature"
+     *
+     * @private
+     * @param {Object} headers - HTTP headers
+     * @param {Object} body - Webhook payload
+     * @param {string} eventType - Event type (e.g., "call.completed")
+     * @returns {Promise<void>}
+     * @throws {Error} If signature is invalid or missing
+     */
+    async _verifyQuoWebhookSignature(headers, body, eventType) {
+        const signatureHeader = headers['openphone-signature'];
+
+        if (!signatureHeader) {
+            throw new Error('Missing Openphone-Signature header');
+        }
+
+        // Parse signature format: hmac;version;timestamp;signature
+        const parts = signatureHeader.split(';');
+        if (parts.length !== 4 || parts[0] !== 'hmac') {
+            throw new Error('Invalid Openphone-Signature format');
+        }
+
+        const [_, version, timestamp, receivedSignature] = parts;
+
+        // Determine which key to use based on event type
+        let webhookKey;
+        if (eventType.startsWith('call.summary')) {
+            webhookKey = this.config?.quoCallSummaryWebhookKey;
+        } else if (eventType.startsWith('call.')) {
+            webhookKey = this.config?.quoCallWebhookKey;
+        } else if (eventType.startsWith('message.')) {
+            webhookKey = this.config?.quoMessageWebhookKey;
+        } else {
+            throw new Error(
+                `Unknown event type for key selection: ${eventType}`,
+            );
+        }
+
+        if (!webhookKey) {
+            throw new Error('Webhook key not found in config');
+        }
+
+        // Try multiple payload formats to find the correct one
+        const crypto = require('crypto');
+
+        const testFormats = [
+            { name: 'timestamp + body (no separator)', payload: timestamp + JSON.stringify(body), keyTransform: 'plain' },
+            { name: 'timestamp + body (no separator, base64 key)', payload: timestamp + JSON.stringify(body), keyTransform: 'base64' },
+            { name: 'timestamp + "." + body (dot separator)', payload: timestamp + '.' + JSON.stringify(body), keyTransform: 'plain' },
+            { name: 'timestamp + "." + body (dot separator, base64 key)', payload: timestamp + '.' + JSON.stringify(body), keyTransform: 'base64' },
+        ];
+
+        let matchFound = false;
+
+        for (const format of testFormats) {
+            const key = format.keyTransform === 'base64'
+                ? Buffer.from(webhookKey, 'base64')
+                : webhookKey;
+
+            const hmac = crypto.createHmac('sha256', key);
+            hmac.update(format.payload);
+            const computedSignature = hmac.digest('base64');
+
+            const matches = computedSignature === receivedSignature;
+
+            if (matches) {
+                matchFound = true;
+                break;
+            }
+        }
+
+        if (!matchFound) {
+            throw new Error('Webhook signature verification failed - no matching format found');
+        }
+
+        console.log('[Quo Webhook] ✓ Signature verified');
+    }
+
+    /**
+     * Normalize phone number for consistent matching
+     * Removes formatting characters while preserving E.164 format
+     *
+     * @private
+     * @param {string} phone - Phone number to normalize
+     * @returns {string} Normalized phone number
+     */
+    _normalizePhoneNumber(phone) {
+        if (!phone) return phone;
+        // Remove spaces, parentheses, dashes, but keep + for international format
+        return phone.replace(/[\s\(\)\-]/g, '');
     }
 
     /**
@@ -774,7 +871,7 @@ class AttioIntegration extends BaseCRMIntegration {
                 parent_object: 'people',
                 parent_record_id: activity.contactExternalId,
                 title: `SMS: ${activity.direction}`,
-                format: 'plaintext',
+                format: 'markdown',
                 content: activity.content,
                 created_at: activity.timestamp,
             };
@@ -810,7 +907,7 @@ class AttioIntegration extends BaseCRMIntegration {
                 parent_object: 'people',
                 parent_record_id: activity.contactExternalId,
                 title: `Call: ${activity.direction} (${activity.duration}s)`,
-                format: 'plaintext',
+                format: 'markdown',
                 content: activity.summary || 'Phone call',
                 created_at: activity.timestamp,
             };
@@ -925,18 +1022,20 @@ class AttioIntegration extends BaseCRMIntegration {
         const createdWebhooks = [];
 
         try {
-            // Check if BOTH already configured
+            // Check if ALL already configured
             if (
                 this.config?.quoMessageWebhookId &&
-                this.config?.quoCallWebhookId
+                this.config?.quoCallWebhookId &&
+                this.config?.quoCallSummaryWebhookId
             ) {
                 console.log(
-                    `[Quo] Webhooks already registered: message=${this.config.quoMessageWebhookId}, call=${this.config.quoCallWebhookId}`,
+                    `[Quo] Webhooks already registered: message=${this.config.quoMessageWebhookId}, call=${this.config.quoCallWebhookId}, callSummary=${this.config.quoCallSummaryWebhookId}`,
                 );
                 return {
                     status: 'already_configured',
                     messageWebhookId: this.config.quoMessageWebhookId,
                     callWebhookId: this.config.quoCallWebhookId,
+                    callSummaryWebhookId: this.config.quoCallSummaryWebhookId,
                     webhookUrl: this.config.quoWebhooksUrl,
                 };
             }
@@ -944,7 +1043,8 @@ class AttioIntegration extends BaseCRMIntegration {
             // Check for partial configuration (recovery scenario)
             const hasPartialConfig =
                 this.config?.quoMessageWebhookId ||
-                this.config?.quoCallWebhookId;
+                this.config?.quoCallWebhookId ||
+                this.config?.quoCallSummaryWebhookId;
 
             if (hasPartialConfig) {
                 console.warn(
@@ -978,6 +1078,21 @@ class AttioIntegration extends BaseCRMIntegration {
                     } catch (cleanupError) {
                         console.warn(
                             `[Quo] Could not clean up call webhook (may have been deleted): ${cleanupError.message}`,
+                        );
+                    }
+                }
+
+                if (this.config?.quoCallSummaryWebhookId) {
+                    try {
+                        await this.quo.api.deleteWebhook(
+                            this.config.quoCallSummaryWebhookId,
+                        );
+                        console.log(
+                            `[Quo] Cleaned up orphaned call-summary webhook: ${this.config.quoCallSummaryWebhookId}`,
+                        );
+                    } catch (cleanupError) {
+                        console.warn(
+                            `[Quo] Could not clean up call-summary webhook (may have been deleted): ${cleanupError.message}`,
                         );
                     }
                 }
@@ -1052,12 +1167,46 @@ class AttioIntegration extends BaseCRMIntegration {
                 `[Quo] ✓ Call webhook registered with ID: ${callWebhookId}`,
             );
 
+            const callSummaryWebhookResponse =
+                await this.quo.api.createCallSummaryWebhook({
+                    url: webhookUrl,
+                    events: this.constructor.WEBHOOK_EVENTS.QUO_CALL_SUMMARIES,
+                    label: this.constructor.WEBHOOK_LABELS.QUO_CALL_SUMMARIES,
+                    status: 'enabled',
+                });
+
+            if (!callSummaryWebhookResponse?.data?.id) {
+                throw new Error(
+                    'Invalid Quo call-summary webhook response: missing webhook ID',
+                );
+            }
+
+            if (!callSummaryWebhookResponse.data.key) {
+                throw new Error(
+                    'Invalid Quo call-summary webhook response: missing webhook key',
+                );
+            }
+
+            const callSummaryWebhookId = callSummaryWebhookResponse.data.id;
+            const callSummaryWebhookKey = callSummaryWebhookResponse.data.key;
+
+            createdWebhooks.push({
+                type: 'callSummary',
+                id: callSummaryWebhookId,
+            });
+
+            console.log(
+                `[Quo] ✓ Call-summary webhook registered with ID: ${callSummaryWebhookId}`,
+            );
+
             const updatedConfig = {
                 ...this.config,
                 quoMessageWebhookId: messageWebhookId,
                 quoMessageWebhookKey: messageWebhookKey,
                 quoCallWebhookId: callWebhookId,
                 quoCallWebhookKey: callWebhookKey,
+                quoCallSummaryWebhookId: callSummaryWebhookId,
+                quoCallSummaryWebhookKey: callSummaryWebhookKey,
                 quoWebhooksUrl: webhookUrl,
                 quoWebhooksCreatedAt: new Date().toISOString(),
             };
@@ -1075,6 +1224,7 @@ class AttioIntegration extends BaseCRMIntegration {
                 status: 'configured',
                 messageWebhookId: messageWebhookId,
                 callWebhookId: callWebhookId,
+                callSummaryWebhookId: callSummaryWebhookId,
                 webhookUrl: webhookUrl,
             };
         } catch (error) {
@@ -1183,14 +1333,25 @@ class AttioIntegration extends BaseCRMIntegration {
      */
     async onWebhookReceived({ req, res }) {
         try {
-            const signature =
+            const attioSignature =
                 req.headers['x-attio-signature'] ||
                 req.headers['attio-signature'] ||
                 req.headers['x-webhook-signature'];
+            const quoSignature = req.headers['openphone-signature'];
 
+            // Determine webhook source based on signature header
+            const source = quoSignature ? 'quo' : 'attio';
+
+            const signature = attioSignature || quoSignature;
+
+            // Early signature validation - reject webhooks without signatures
+            // This prevents queue flooding attacks
             if (!signature) {
-                console.warn('[Attio Webhook] No signature header found');
-                // Still accept webhook (signature verification happens in worker)
+                console.error(
+                    `[${source === 'quo' ? 'Quo' : 'Attio'} Webhook] Missing signature header - rejecting webhook`,
+                );
+                res.status(401).json({ error: 'Signature required' });
+                return;
             }
 
             // Note: We can't verify signature here because we don't have DB access
@@ -1201,29 +1362,54 @@ class AttioIntegration extends BaseCRMIntegration {
                 headers: req.headers,
                 integrationId: req.params.integrationId,
                 signature: signature,
+                source: source,
                 receivedAt: new Date().toISOString(),
             };
 
-            await super.onWebhookReceived({ req, res, data: webhookData });
+            await this.queueWebhook(webhookData);
+
+            res.status(200).json({ received: true });
         } catch (error) {
-            console.error('[Attio Webhook] Receive error:', error);
+            console.error('[Webhook] Receive error:', error);
             throw error;
         }
     }
 
     /**
-     * Process webhook events from Attio
+     * Process webhook events from both Attio and Quo
      * Called by queue worker with full database access and hydrated integration
      * Automatically invoked by Frigg's webhook infrastructure
+     * Routes to appropriate handler based on webhook source
      *
      * @param {Object} params
      * @param {Object} params.data - Webhook data from queue
-     * @param {Object} params.data.body - Attio webhook payload
-     * @param {Object} params.data.headers - HTTP headers (includes x-attio-signature)
+     * @param {Object} params.data.body - Webhook payload
+     * @param {Object} params.data.headers - HTTP headers
+     * @param {string} params.data.source - Webhook source ('attio' or 'quo')
      * @param {string} params.data.integrationId - Integration ID
      * @returns {Promise<Object>} Processing result
      */
     async onWebhook({ data }) {
+        const { source } = data;
+
+        console.log(`[Webhook] Processing ${source} webhook`);
+
+        if (source === 'quo') {
+            return await this._handleQuoWebhook(data);
+        } else {
+            return await this._handleAttioWebhook(data);
+        }
+    }
+
+    /**
+     * Process webhook events from Attio
+     * Called by onWebhook() router
+     *
+     * @private
+     * @param {Object} data - Webhook data from queue
+     * @returns {Promise<Object>} Processing result
+     */
+    async _handleAttioWebhook(data) {
         const { body, headers, integrationId } = data;
 
         const signature = headers['x-attio-signature'];
@@ -1361,12 +1547,375 @@ class AttioIntegration extends BaseCRMIntegration {
             await this.updateIntegrationMessages.execute(
                 this.id,
                 'errors',
-                'Webhook Processing Error',
-                `Failed to process webhook: ${error.message}`,
+                'Attio Webhook Processing Error',
+                `Failed to process Attio webhook: ${error.message}`,
                 Date.now(),
             );
 
             // Re-throw for SQS retry and DLQ
+            throw error;
+        }
+    }
+
+    /**
+     * Process webhook events from Quo (OpenPhone)
+     * Called by onWebhook() router
+     *
+     * @private
+     * @param {Object} data - Webhook data from queue
+     * @returns {Promise<Object>} Processing result
+     */
+    async _handleQuoWebhook(data) {
+        const { body, headers } = data;
+        const eventType = body.type; // "call.completed", "message.received", etc.
+
+        console.log(`[Quo Webhook] Processing event: ${eventType}`);
+
+        try {
+            // Step 1: Verify signature
+            await this._verifyQuoWebhookSignature(headers, body, eventType);
+
+            // Step 2: Route by event type
+            let result;
+            if (eventType === 'call.completed') {
+                result = await this._handleQuoCallEvent(body);
+            } else if (eventType === 'call.summary.completed') {
+                result = await this._handleQuoCallSummaryEvent(body);
+            } else if (
+                eventType === 'message.received' ||
+                eventType === 'message.delivered'
+            ) {
+                result = await this._handleQuoMessageEvent(body);
+            } else {
+                console.warn(`[Quo Webhook] Unknown event type: ${eventType}`);
+                return { success: true, skipped: true, eventType };
+            }
+
+            return {
+                success: true,
+                processedAt: new Date().toISOString(),
+                eventType,
+                result,
+            };
+        } catch (error) {
+            console.error('[Quo Webhook] Processing error:', error);
+
+            await this.updateIntegrationMessages.execute(
+                this.id,
+                'errors',
+                'Quo Webhook Processing Error',
+                `Failed to process ${eventType}: ${error.message}`,
+                Date.now(),
+            );
+
+            throw error; // Re-throw for SQS retry
+        }
+    }
+
+    /**
+     * Handle Quo call.completed webhook event
+     * Finds Attio contact by phone number and logs call activity
+     *
+     * @private
+     * @param {Object} webhookData - Quo webhook payload
+     * @returns {Promise<Object>} Processing result
+     */
+    async _handleQuoCallEvent(webhookData) {
+        const callObject = webhookData.data.object;
+
+        console.log(`[Quo Webhook] Processing call: ${callObject.id}`);
+
+        // Extract participants (phone numbers)
+        const participants = callObject.participants || [];
+
+        if (participants.length < 2) {
+            throw new Error('Call must have at least 2 participants');
+        }
+
+        // Find the contact phone (not the user's phone)
+        // Quo webhook participant indexing:
+        // - Outgoing: [user_phone, contact_phone] → contact is index 1
+        // - Incoming: [contact_phone, user_phone] → contact is index 0
+        const contactPhone =
+            callObject.direction === 'outgoing'
+                ? participants[1]
+                : participants[0];
+
+        // Find Attio contact by phone
+        const attioRecordId = await this._findAttioContactByPhone(contactPhone);
+
+        // Get deeplink from webhook data
+        const deepLink = webhookData.data.deepLink || '#';
+
+        // Format duration in minutes and seconds
+        const minutes = Math.floor(callObject.duration / 60);
+        const seconds = callObject.duration % 60;
+        const durationFormatted = minutes > 0
+            ? `${minutes}m ${seconds}s`
+            : `${seconds}s`;
+
+        // Create markdown-formatted summary
+        const callDirection = callObject.direction === 'outgoing' ? 'Outgoing' : 'Incoming';
+        const formattedSummary = `📞 **${callDirection} Call** - ${callObject.status}
+
+**Duration:** ${durationFormatted}
+**Participants:** ${participants.join(' ↔ ')}
+
+[View in Quo](${deepLink})`;
+
+        // Transform to activity format
+        const activityData = {
+            contactExternalId: attioRecordId,
+            direction:
+                callObject.direction === 'outgoing' ? 'outbound' : 'inbound',
+            timestamp: callObject.createdAt,
+            duration: callObject.duration,
+            summary: formattedSummary,
+        };
+
+        // Log to Attio
+        await this.logCallToActivity(activityData);
+
+        console.log(`[Quo Webhook] ✓ Call logged for contact ${attioRecordId}`);
+
+        return { logged: true, contactId: attioRecordId };
+    }
+
+    /**
+     * Handle Quo message.received and message.delivered webhook events
+     * Finds Attio contact by phone number and logs SMS activity
+     *
+     * @private
+     * @param {Object} webhookData - Quo webhook payload
+     * @returns {Promise<Object>} Processing result
+     */
+    async _handleQuoMessageEvent(webhookData) {
+        const messageObject = webhookData.data.object;
+
+        console.log(`[Quo Webhook] Processing message: ${messageObject.id}`);
+
+        // Determine contact phone based on direction
+        // - Outgoing: we sent to contact (use 'to')
+        // - Incoming: contact sent to us (use 'from')
+        const contactPhone =
+            messageObject.direction === 'outgoing'
+                ? messageObject.to
+                : messageObject.from;
+
+        console.log(
+            `[Quo Webhook] Message direction: ${messageObject.direction}, contact: ${contactPhone}`,
+        );
+
+        // Find Attio contact
+        const attioRecordId = await this._findAttioContactByPhone(contactPhone);
+
+        // Fetch phone number details to get inbox name
+        const phoneNumberDetails = await this.quo.api.getPhoneNumber(
+            messageObject.phoneNumberId,
+        );
+        const inboxName = phoneNumberDetails.name || 'Quo Inbox';
+
+        // Fetch user details to get sender name
+        const userDetails = await this.quo.api.getUser(messageObject.userId);
+        const userName =
+            userDetails.name ||
+            `${userDetails.firstName || ''} ${userDetails.lastName || ''}`.trim() ||
+            'Quo User';
+
+        // Get deeplink from webhook data
+        const deepLink = webhookData.data.deepLink || '#';
+
+        // Format message content with markdown template based on direction
+        let formattedContent;
+        if (messageObject.direction === 'outgoing') {
+            // Outgoing: Quo → Contact
+            formattedContent = `💬 **Message Sent**
+
+**From:** Quo ${inboxName} (${messageObject.from})
+**To:** ${messageObject.to}
+
+**${userName}** sent:
+> ${messageObject.text || '(no text)'}
+
+[View in Quo](${deepLink})`;
+        } else {
+            // Incoming: Contact → Quo
+            formattedContent = `💬 **Message Received**
+
+**From:** ${messageObject.from}
+**To:** Quo ${inboxName} (${messageObject.to})
+
+Received:
+> ${messageObject.text || '(no text)'}
+
+[View in Quo](${deepLink})`;
+        }
+
+        // Transform to activity format
+        const activityData = {
+            contactExternalId: attioRecordId,
+            direction:
+                messageObject.direction === 'outgoing' ? 'outbound' : 'inbound',
+            content: formattedContent,
+            timestamp: messageObject.createdAt,
+        };
+
+        // Log to Attio
+        await this.logSMSToActivity(activityData);
+
+        console.log(
+            `[Quo Webhook] ✓ Message logged for contact ${attioRecordId}`,
+        );
+
+        return { logged: true, contactId: attioRecordId };
+    }
+
+    /**
+     * Handle Quo call.summary.completed webhook event
+     * Stores call summary for later enrichment of call activity logs
+     *
+     * @private
+     * @param {Object} webhookData - Quo webhook payload
+     * @returns {Promise<Object>} Processing result
+     */
+    async _handleQuoCallSummaryEvent(webhookData) {
+        const summaryObject = webhookData.data.object;
+
+        console.log(
+            `[Quo Webhook] Processing call summary for call: ${summaryObject.callId}`,
+        );
+
+        // Extract summary details
+        const callId = summaryObject.callId;
+        const summary = summaryObject.summary || [];
+        const nextSteps = summaryObject.nextSteps || [];
+        const status = summaryObject.status;
+
+        console.log(
+            `[Quo Webhook] Call summary status: ${status}, ${summary.length} summary points, ${nextSteps.length} next steps`,
+        );
+
+        // Note: Call summaries arrive AFTER call.completed events
+        // The call activity has already been logged to Attio
+        // For now, we just acknowledge receipt
+        // Future enhancement: Store summaries and retroactively update call activities
+
+        return {
+            received: true,
+            callId,
+            summaryPoints: summary.length,
+            nextStepsCount: nextSteps.length,
+        };
+    }
+
+    /**
+     * Find Attio contact by phone number
+     * Only returns contacts that were synced from Attio (have externalId mapping)
+     * Uses normalized phone numbers and fallback search strategies
+     *
+     * @private
+     * @param {string} phoneNumber - Phone number to search for
+     * @returns {Promise<string>} Attio record ID
+     * @throws {Error} If contact not found or not synced from Attio
+     */
+    async _findAttioContactByPhone(phoneNumber) {
+        console.log(
+            `[Quo Webhook] Looking up Attio contact by phone: ${phoneNumber}`,
+        );
+
+        // Normalize phone number to handle format variations
+        const normalizedPhone = this._normalizePhoneNumber(phoneNumber);
+        console.log(
+            `[Quo Webhook] Normalized phone: ${phoneNumber} → ${normalizedPhone}`,
+        );
+
+        try {
+            let contacts = [];
+
+            // Strategy 1: Try exact phone_number filter
+            try {
+                const result = await this.attio.api.queryRecords('people', {
+                    filter: {
+                        phone_numbers: normalizedPhone,
+                    },
+                    limit: 10,
+                });
+
+                contacts = result.data || [];
+                if (contacts.length > 0) {
+                    console.log(
+                        `[Quo Webhook] Found ${contacts.length} contact(s) using exact filter`,
+                    );
+                }
+            } catch (filterError) {
+                console.warn(
+                    `[Quo Webhook] Exact filter failed, trying fallback: ${filterError.message}`,
+                );
+            }
+
+            // Strategy 2: If exact filter fails or returns no results, try text search
+            if (contacts.length === 0) {
+                try {
+                    const searchResult = await this.attio.api.searchRecords({
+                        query: normalizedPhone,
+                        objects: ['people'],
+                        request_as: { type: 'workspace' },
+                    });
+
+                    // Extract people records from search results
+                    const peopleResults =
+                        searchResult.data?.filter(
+                            (item) => item.object === 'people',
+                        ) || [];
+
+                    // Map to records array for consistent processing
+                    contacts = peopleResults.map((item) => item.record);
+
+                    if (contacts.length > 0) {
+                        console.log(
+                            `[Quo Webhook] Found ${contacts.length} contact(s) using text search fallback`,
+                        );
+                    }
+                } catch (searchError) {
+                    console.warn(
+                        `[Quo Webhook] Text search fallback also failed: ${searchError.message}`,
+                    );
+                }
+            }
+
+            // No contacts found with either strategy
+            if (contacts.length === 0) {
+                throw new Error(
+                    `No Attio contact found with phone number ${phoneNumber} (normalized: ${normalizedPhone}). ` +
+                        `Contact must exist in Attio to log activities.`,
+                );
+            }
+
+            // Filter to only contacts that were synced FROM Attio to Quo
+            // These will have mappings in our integration
+            for (const contact of contacts) {
+                const recordId = contact.id.record_id;
+
+                // Check if we have a mapping for this Attio record
+                const mapping = await this.getMapping(recordId);
+
+                if (mapping) {
+                    console.log(
+                        `[Quo Webhook] ✓ Found synced contact: ${recordId}`,
+                    );
+                    return recordId;
+                }
+            }
+
+            throw new Error(
+                `Found ${contacts.length} contact(s) with phone ${normalizedPhone} in Attio, ` +
+                    `but none were synced from Attio to Quo. Only synced contacts can receive activity logs.`,
+            );
+        } catch (error) {
+            console.error(
+                `[Quo Webhook] Contact lookup failed:`,
+                error.message,
+            );
             throw error;
         }
     }
@@ -1513,9 +2062,55 @@ class AttioIntegration extends BaseCRMIntegration {
             attio: null,
             quoMessage: null,
             quoCall: null,
+            quoCallSummary: null,
         };
 
         try {
+            // Validate that API modules are loaded before attempting webhook deletion
+            if (!this.attio?.api || !this.quo?.api) {
+                const missingModules = [];
+                if (!this.attio?.api) missingModules.push('attio');
+                if (!this.quo?.api) missingModules.push('quo');
+
+                console.error(
+                    `[Webhook Cleanup] Cannot delete webhooks: Missing API modules: ${missingModules.join(', ')}`
+                );
+                console.error(
+                    '[Webhook Cleanup] This likely means modules were not loaded during the deletion lifecycle.'
+                );
+                console.warn(
+                    '[Webhook Cleanup] Webhook IDs have been preserved in config for manual cleanup:'
+                );
+
+                if (this.config?.attioWebhookId) {
+                    console.warn(
+                        `  - Attio webhook: ${this.config.attioWebhookId}`
+                    );
+                }
+                if (this.config?.quoMessageWebhookId) {
+                    console.warn(
+                        `  - Quo message webhook: ${this.config.quoMessageWebhookId}`
+                    );
+                }
+                if (this.config?.quoCallWebhookId) {
+                    console.warn(
+                        `  - Quo call webhook: ${this.config.quoCallWebhookId}`
+                    );
+                }
+                if (this.config?.quoCallSummaryWebhookId) {
+                    console.warn(
+                        `  - Quo call-summary webhook: ${this.config.quoCallSummaryWebhookId}`
+                    );
+                }
+
+                console.warn(
+                    '[Webhook Cleanup] You will need to manually delete these webhooks from the external services.'
+                );
+
+                await super.onDelete(params);
+                return;
+            }
+
             const attioWebhookId = this.config?.attioWebhookId;
 
             if (attioWebhookId) {
@@ -1593,41 +2188,37 @@ class AttioIntegration extends BaseCRMIntegration {
                 console.log('[Quo] No call webhook to delete');
             }
 
-            const updatedConfig = { ...this.config };
+            const quoCallSummaryWebhookId =
+                this.config?.quoCallSummaryWebhookId;
 
-            if (deletionResults.attio === 'success') {
-                delete updatedConfig.attioWebhookId;
-                delete updatedConfig.attioWebhookUrl;
-                delete updatedConfig.attioWebhookSecret;
-                delete updatedConfig.webhookCreatedAt;
-                delete updatedConfig.webhookSubscriptions;
-                console.log('[Attio] Config cleared for deleted webhook');
+            if (quoCallSummaryWebhookId) {
+                console.log(
+                    `[Quo] Deleting call-summary webhook: ${quoCallSummaryWebhookId}`,
+                );
+
+                try {
+                    await this.quo.api.deleteWebhook(quoCallSummaryWebhookId);
+                    deletionResults.quoCallSummary = 'success';
+                    console.log(
+                        `[Quo] ✓ Call-summary webhook ${quoCallSummaryWebhookId} deleted from Quo`,
+                    );
+                } catch (error) {
+                    deletionResults.quoCallSummary = 'failed';
+                    console.error(
+                        `[Quo] Failed to delete call-summary webhook from Quo:`,
+                        error.message,
+                    );
+                    console.warn(
+                        `[Quo] Call-summary webhook ID ${quoCallSummaryWebhookId} preserved in config for manual cleanup`,
+                    );
+                }
+            } else {
+                console.log('[Quo] No call-summary webhook to delete');
             }
 
-            if (deletionResults.quoMessage === 'success') {
-                delete updatedConfig.quoMessageWebhookId;
-                delete updatedConfig.quoMessageWebhookKey;
-                console.log('[Quo] Message webhook config cleared');
-            }
-
-            if (deletionResults.quoCall === 'success') {
-                delete updatedConfig.quoCallWebhookId;
-                delete updatedConfig.quoCallWebhookKey;
-                console.log('[Quo] Call webhook config cleared');
-            }
-
-            if (
-                deletionResults.quoMessage === 'success' &&
-                deletionResults.quoCall === 'success'
-            ) {
-                delete updatedConfig.quoWebhooksUrl;
-                delete updatedConfig.quoWebhooksCreatedAt;
-            }
-
-            await this.commands.updateIntegrationConfig({
-                integrationId: this.id,
-                config: updatedConfig,
-            });
+            // Note: Config update removed to avoid race condition
+            // Integration is being deleted, so updating config is unnecessary
+            // Webhook IDs are preserved in current config for logging purposes
 
             const successCount = Object.values(deletionResults).filter(
                 (result) => result === 'success',
