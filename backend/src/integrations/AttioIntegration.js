@@ -105,15 +105,13 @@ class AttioIntegration extends BaseCRMIntegration {
     constructor(params) {
         super(params);
 
-        // Initialize Frigg commands
         this.commands = createFriggCommands({
             integrationClass: AttioIntegration,
         });
 
         this.events = {
-            ...this.events, // BaseCRMIntegration events
+            ...this.events,
 
-            // Existing Attio-specific events
             LIST_ATTIO_OBJECTS: {
                 handler: this.listObjects,
             },
@@ -219,7 +217,6 @@ class AttioIntegration extends BaseCRMIntegration {
 
         const [_, version, timestamp, receivedSignature] = parts;
 
-        // Determine which key to use based on event type
         let webhookKey;
         if (eventType.startsWith('call.summary')) {
             webhookKey = this.config?.quoCallSummaryWebhookKey;
@@ -237,7 +234,6 @@ class AttioIntegration extends BaseCRMIntegration {
             throw new Error('Webhook key not found in config');
         }
 
-        // Try multiple payload formats to find the correct one
         const crypto = require('crypto');
 
         const testFormats = [
@@ -395,7 +391,6 @@ class AttioIntegration extends BaseCRMIntegration {
                 record_id,
             );
 
-            // Unwrap the data property from Attio API response
             const record = response?.data;
 
             if (!record) {
@@ -460,7 +455,6 @@ class AttioIntegration extends BaseCRMIntegration {
                 record_id,
             );
 
-            // Unwrap the data property from Attio API response
             const record = response?.data;
 
             if (!record) {
@@ -617,7 +611,6 @@ class AttioIntegration extends BaseCRMIntegration {
             );
             const persons = response.data || [];
 
-            // Calculate next cursor (offset)
             const nextCursor =
                 persons.length === limit ? (cursor || 0) + limit : null;
 
@@ -647,10 +640,8 @@ class AttioIntegration extends BaseCRMIntegration {
      * @returns {Promise<Object>} Quo contact format
      */
     async transformPersonToQuo(person, companyMap = null) {
-        // Attio uses a flexible attribute-based structure
         const attributes = person.values || {};
 
-        // Extract name from attributes - use active value filtering
         const nameAttr = this.getActiveValue(attributes.name);
         let firstName = nameAttr?.first_name || '';
         const lastName = nameAttr?.last_name || '';
@@ -665,7 +656,6 @@ class AttioIntegration extends BaseCRMIntegration {
             this.getActiveValue(attributes.role);
         const role = roleAttr?.value || null;
 
-        // Extract email addresses - filter only active emails
         const emails = [];
         const emailAttrs = attributes.email_addresses || [];
         for (const emailAttr of emailAttrs) {
@@ -677,7 +667,6 @@ class AttioIntegration extends BaseCRMIntegration {
             }
         }
 
-        // Extract phone numbers - filter only active phones
         const phoneNumbers = [];
         const phoneAttrs = attributes.phone_numbers || [];
         for (const phoneAttr of phoneAttrs) {
@@ -748,7 +737,6 @@ class AttioIntegration extends BaseCRMIntegration {
             (attr) => attr.active_until === null,
         );
 
-        // Return active value or fallback to first item
         return activeValue || attributeArray[0];
     }
 
@@ -819,7 +807,6 @@ class AttioIntegration extends BaseCRMIntegration {
             return [];
         }
 
-        // Step 1: Collect unique company IDs from all persons
         const companyIds = [
             ...new Set(
                 persons
@@ -834,14 +821,12 @@ class AttioIntegration extends BaseCRMIntegration {
             ),
         ];
 
-        // Step 2: Batch fetch all unique companies (if any)
         let companyMap = new Map();
         if (companyIds.length > 0) {
             const companies = await this.fetchCompaniesByIds(companyIds);
             companyMap = new Map(companies.map((c) => [c.id.record_id, c]));
         }
 
-        // Step 3: Transform all persons with pre-fetched company data
         return Promise.all(
             persons.map((p) => this.transformPersonToQuo(p, companyMap)),
         );
@@ -854,7 +839,6 @@ class AttioIntegration extends BaseCRMIntegration {
      */
     async logSMSToActivity(activity) {
         try {
-            // Find the person by external ID
             const response = await this.attio.api.getRecord(
                 'people',
                 activity.contactExternalId,
@@ -866,7 +850,6 @@ class AttioIntegration extends BaseCRMIntegration {
                 return;
             }
 
-            // Create note entry in Attio
             const noteData = {
                 parent_object: 'people',
                 parent_record_id: activity.contactExternalId,
@@ -890,7 +873,6 @@ class AttioIntegration extends BaseCRMIntegration {
      */
     async logCallToActivity(activity) {
         try {
-            // Find the person by external ID
             const response = await this.attio.api.getRecord(
                 'people',
                 activity.contactExternalId,
@@ -902,7 +884,6 @@ class AttioIntegration extends BaseCRMIntegration {
                 return;
             }
 
-            // Create note entry in Attio
             const noteData = {
                 parent_object: 'people',
                 parent_record_id: activity.contactExternalId,
@@ -938,7 +919,6 @@ class AttioIntegration extends BaseCRMIntegration {
                 };
             }
 
-            // Generate webhook URL with BASE_URL validation
             const webhookUrl = this._generateWebhookUrl(`/webhooks/${this.id}`);
 
             console.log(`[Attio] Registering webhook at: ${webhookUrl}`);
@@ -950,7 +930,6 @@ class AttioIntegration extends BaseCRMIntegration {
                 subscriptions: subscriptions,
             });
 
-            // Validate response structure
             if (!webhookResponse?.data?.id?.webhook_id) {
                 throw new Error(
                     'Invalid Attio webhook response: missing webhook ID',
@@ -1022,7 +1001,6 @@ class AttioIntegration extends BaseCRMIntegration {
         const createdWebhooks = [];
 
         try {
-            // Check if ALL already configured
             if (
                 this.config?.quoMessageWebhookId &&
                 this.config?.quoCallWebhookId &&
@@ -1051,7 +1029,6 @@ class AttioIntegration extends BaseCRMIntegration {
                     '[Quo] Partial webhook configuration detected - cleaning up before retry',
                 );
 
-                // Clean up any existing webhooks
                 if (this.config?.quoMessageWebhookId) {
                     try {
                         await this.quo.api.deleteWebhook(
@@ -1572,10 +1549,8 @@ class AttioIntegration extends BaseCRMIntegration {
         console.log(`[Quo Webhook] Processing event: ${eventType}`);
 
         try {
-            // Step 1: Verify signature
             await this._verifyQuoWebhookSignature(headers, body, eventType);
 
-            // Step 2: Route by event type
             let result;
             if (eventType === 'call.completed') {
                 result = await this._handleQuoCallEvent(body);
@@ -1625,7 +1600,6 @@ class AttioIntegration extends BaseCRMIntegration {
 
         console.log(`[Quo Webhook] Processing call: ${callObject.id}`);
 
-        // Extract participants (phone numbers)
         const participants = callObject.participants || [];
 
         if (participants.length < 2) {
@@ -1641,32 +1615,26 @@ class AttioIntegration extends BaseCRMIntegration {
                 ? participants[1]
                 : participants[0];
 
-        // Find Attio contact by phone
         const attioRecordId = await this._findAttioContactByPhone(contactPhone);
 
-        // Get deeplink from webhook data
         const deepLink = webhookData.data.deepLink || '#';
 
-        // Fetch phone number details to get inbox name and number
         const phoneNumberDetails = await this.quo.api.getPhoneNumber(
             callObject.phoneNumberId,
         );
         const inboxName = phoneNumberDetails.name || 'Quo Line';
         const inboxNumber = phoneNumberDetails.phoneNumber || participants[callObject.direction === 'outgoing' ? 0 : 1];
 
-        // Fetch user details to show who handled the call
         const userDetails = await this.quo.api.getUser(callObject.userId);
         const userName =
             userDetails.name ||
             `${userDetails.firstName || ''} ${userDetails.lastName || ''}`.trim() ||
             'Quo User';
 
-        // Format duration in minutes and seconds
         const minutes = Math.floor(callObject.duration / 60);
         const seconds = callObject.duration % 60;
         const durationFormatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
 
-        // Determine call status description
         let statusDescription;
         if (callObject.status === 'completed') {
             statusDescription = callObject.direction === 'outgoing'
@@ -1678,7 +1646,6 @@ class AttioIntegration extends BaseCRMIntegration {
             statusDescription = `${callObject.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} ${callObject.status}`;
         }
 
-        // Create markdown-formatted summary matching the template format
         let formattedSummary;
         if (callObject.direction === 'outgoing') {
             formattedSummary = `☎️ Call Quo 📱 ${inboxName} (${inboxNumber}) → ${contactPhone}
@@ -1691,7 +1658,6 @@ ${statusDescription}
 
 ${statusDescription}`;
 
-            // Add duration for answered calls
             if (callObject.status === 'completed' && callObject.duration > 0) {
                 formattedSummary += ` / ▶️ Recording (${durationFormatted})`;
             }
@@ -1701,7 +1667,6 @@ ${statusDescription}`;
 [View the call activity in Quo](${deepLink})`;
         }
 
-        // Transform to activity format
         const activityData = {
             contactExternalId: attioRecordId,
             direction:
@@ -1711,7 +1676,6 @@ ${statusDescription}`;
             summary: formattedSummary,
         };
 
-        // Log to Attio
         await this.logCallToActivity(activityData);
 
         console.log(`[Quo Webhook] ✓ Call logged for contact ${attioRecordId}`);
@@ -1744,26 +1708,21 @@ ${statusDescription}`;
             `[Quo Webhook] Message direction: ${messageObject.direction}, contact: ${contactPhone}`,
         );
 
-        // Find Attio contact
         const attioRecordId = await this._findAttioContactByPhone(contactPhone);
 
-        // Fetch phone number details to get inbox name
         const phoneNumberDetails = await this.quo.api.getPhoneNumber(
             messageObject.phoneNumberId,
         );
         const inboxName = phoneNumberDetails.name || 'Quo Inbox';
 
-        // Fetch user details to get sender name
         const userDetails = await this.quo.api.getUser(messageObject.userId);
         const userName =
             userDetails.name ||
             `${userDetails.firstName || ''} ${userDetails.lastName || ''}`.trim() ||
             'Quo User';
 
-        // Get deeplink from webhook data
         const deepLink = webhookData.data.deepLink || '#';
 
-        // Format message content with markdown template based on direction
         let formattedContent;
         if (messageObject.direction === 'outgoing') {
             // Outgoing: Quo → Contact
@@ -1789,7 +1748,6 @@ Received:
 [View in Quo](${deepLink})`;
         }
 
-        // Transform to activity format
         const activityData = {
             contactExternalId: attioRecordId,
             direction:
@@ -1798,7 +1756,6 @@ Received:
             timestamp: messageObject.createdAt,
         };
 
-        // Log to Attio
         await this.logSMSToActivity(activityData);
 
         console.log(
@@ -1823,7 +1780,6 @@ Received:
             `[Quo Webhook] Processing call summary for call: ${summaryObject.callId}`,
         );
 
-        // Extract summary details
         const callId = summaryObject.callId;
         const summary = summaryObject.summary || [];
         const nextSteps = summaryObject.nextSteps || [];
@@ -1861,7 +1817,6 @@ Received:
             `[Quo Webhook] Looking up Attio contact by phone: ${phoneNumber}`,
         );
 
-        // Normalize phone number to handle format variations
         const normalizedPhone = this._normalizePhoneNumber(phoneNumber);
         console.log(
             `[Quo Webhook] Normalized phone: ${phoneNumber} → ${normalizedPhone}`,
@@ -1900,13 +1855,11 @@ Received:
                         request_as: { type: 'workspace' },
                     });
 
-                    // Extract people records from search results
                     const peopleResults =
                         searchResult.data?.filter(
                             (item) => item.object === 'people',
                         ) || [];
 
-                    // Map to records array for consistent processing
                     contacts = peopleResults.map((item) => item.record);
 
                     if (contacts.length > 0) {
@@ -1921,7 +1874,6 @@ Received:
                 }
             }
 
-            // No contacts found with either strategy
             if (contacts.length === 0) {
                 throw new Error(
                     `No Attio contact found with phone number ${phoneNumber} (normalized: ${normalizedPhone}). ` +
@@ -1934,7 +1886,6 @@ Received:
             for (const contact of contacts) {
                 const recordId = contact.id.record_id;
 
-                // Check if we have a mapping for this Attio record
                 const mapping = await this.getMapping(recordId);
 
                 if (mapping) {
