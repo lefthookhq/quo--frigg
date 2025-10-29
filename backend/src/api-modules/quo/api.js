@@ -347,6 +347,17 @@ class Api extends ApiKeyRequester {
         return this._post(options);
     }
 
+    async createCallSummaryWebhook(data) {
+        const options = {
+            url: this.baseUrl + this.URLs.webhookCallSummaries,
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: data,
+        };
+        return this._post(options);
+    }
+
     async updateWebhook(id, data) {
         const options = {
             url: this.baseUrl + this.URLs.webhookById(id),
