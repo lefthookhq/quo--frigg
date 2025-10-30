@@ -2,13 +2,13 @@ version: '3.7'
 services:
     mongodb_container:
         image: mongo:latest
-        command: ["--replSet", "rs0", "--bind_ip_all"]
+        command: ['--replSet', 'rs0', '--bind_ip_all']
         ports:
             - ${MONGO_PORT:-27017}:27017
         volumes:
             - mongodb_data_container:/data/db
         healthcheck:
-            test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+            test: ['CMD', 'mongosh', '--eval', "db.adminCommand('ping')"]
             interval: 10s
             timeout: 5s
             retries: 5
@@ -21,9 +21,9 @@ services:
                 condition: service_healthy
         volumes:
             - ./mongo-init.sh:/mongo-init.sh:ro
-        entrypoint: ["bash", "/mongo-init.sh"]
-        network_mode: "service:mongodb_container"
-        restart: "no"
+        entrypoint: ['bash', '/mongo-init.sh']
+        network_mode: 'service:mongodb_container'
+        restart: 'no'
     postgres_container:
         image: postgres:16-alpine
         environment:
@@ -35,7 +35,7 @@ services:
         volumes:
             - postgres_data_container:/var/lib/postgresql/data
         healthcheck:
-            test: ["CMD-SHELL", "pg_isready -U postgres"]
+            test: ['CMD-SHELL', 'pg_isready -U postgres']
             interval: 10s
             timeout: 5s
             retries: 5

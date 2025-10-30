@@ -130,13 +130,13 @@ describe('AxisCareIntegration', () => {
             it('should fetch clients page correctly', async () => {
                 const mockResponse = {
                     results: {
-                        clients: [{ id: 1, firstName: 'John', lastName: 'Doe' }],
+                        clients: [
+                            { id: 1, firstName: 'John', lastName: 'Doe' },
+                        ],
                     },
                 };
 
-                mockAxisCareApi.api.listClients.mockResolvedValue(
-                    mockResponse,
-                );
+                mockAxisCareApi.api.listClients.mockResolvedValue(mockResponse);
 
                 const result = await integration.fetchPersonPage({
                     objectType: 'Client',
@@ -178,8 +178,11 @@ describe('AxisCareIntegration', () => {
                 expect(result.customFields).toEqual(
                     expect.arrayContaining([
                         expect.objectContaining({ key: 'crmId', value: '123' }),
-                        expect.objectContaining({ key: 'status', value: 'active' }),
-                    ])
+                        expect.objectContaining({
+                            key: 'status',
+                            value: 'active',
+                        }),
+                    ]),
                 );
             });
         });

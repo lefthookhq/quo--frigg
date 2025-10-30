@@ -1,6 +1,6 @@
 /**
  * QueueManager Service Tests
- * 
+ *
  * Tests queue operations, batching, and fan-out patterns.
  */
 
@@ -22,11 +22,15 @@ describe('QueueManager', () => {
 
     describe('constructor', () => {
         it('should require queuerUtil', () => {
-            expect(() => new QueueManager({ queueUrl: 'test' })).toThrow('queuerUtil is required');
+            expect(() => new QueueManager({ queueUrl: 'test' })).toThrow(
+                'queuerUtil is required',
+            );
         });
 
         it('should require queueUrl', () => {
-            expect(() => new QueueManager({ queuerUtil: {} })).toThrow('queueUrl is required');
+            expect(() => new QueueManager({ queuerUtil: {} })).toThrow(
+                'queueUrl is required',
+            );
         });
 
         it('should initialize with dependencies', () => {
@@ -49,18 +53,20 @@ describe('QueueManager', () => {
             await queueManager.queueFetchPersonPage(params);
 
             expect(mockQueuerUtil.batchSend).toHaveBeenCalledWith(
-                [{
-                    event: 'FETCH_PERSON_PAGE',
-                    data: {
-                        processId: 'process-123',
-                        personObjectType: 'Contact',
-                        page: 5,
-                        limit: 100,
-                        modifiedSince: '2024-01-01T10:00:00.000Z',
-                        sortDesc: true,
+                [
+                    {
+                        event: 'FETCH_PERSON_PAGE',
+                        data: {
+                            processId: 'process-123',
+                            personObjectType: 'Contact',
+                            page: 5,
+                            limit: 100,
+                            modifiedSince: '2024-01-01T10:00:00.000Z',
+                            sortDesc: true,
+                        },
                     },
-                }],
-                'https://sqs.test.com/queue'
+                ],
+                'https://sqs.test.com/queue',
             );
         });
 
@@ -76,18 +82,20 @@ describe('QueueManager', () => {
             await queueManager.queueFetchPersonPage(params);
 
             expect(mockQueuerUtil.batchSend).toHaveBeenCalledWith(
-                [{
-                    event: 'FETCH_PERSON_PAGE',
-                    data: {
-                        processId: 'process-123',
-                        personObjectType: 'Contact',
-                        page: 0,
-                        limit: 50,
-                        modifiedSince: null,
-                        sortDesc: false,
+                [
+                    {
+                        event: 'FETCH_PERSON_PAGE',
+                        data: {
+                            processId: 'process-123',
+                            personObjectType: 'Contact',
+                            page: 0,
+                            limit: 50,
+                            modifiedSince: null,
+                            sortDesc: false,
+                        },
                     },
-                }],
-                'https://sqs.test.com/queue'
+                ],
+                'https://sqs.test.com/queue',
             );
         });
 
@@ -102,18 +110,20 @@ describe('QueueManager', () => {
             await queueManager.queueFetchPersonPage(params);
 
             expect(mockQueuerUtil.batchSend).toHaveBeenCalledWith(
-                [{
-                    event: 'FETCH_PERSON_PAGE',
-                    data: {
-                        processId: 'process-123',
-                        personObjectType: 'Contact',
-                        page: 2,
-                        limit: 75,
-                        modifiedSince: null,
-                        sortDesc: true, // default value
+                [
+                    {
+                        event: 'FETCH_PERSON_PAGE',
+                        data: {
+                            processId: 'process-123',
+                            personObjectType: 'Contact',
+                            page: 2,
+                            limit: 75,
+                            modifiedSince: null,
+                            sortDesc: true, // default value
+                        },
                     },
-                }],
-                'https://sqs.test.com/queue'
+                ],
+                'https://sqs.test.com/queue',
             );
         });
     });
@@ -131,17 +141,19 @@ describe('QueueManager', () => {
             await queueManager.queueProcessPersonBatch(params);
 
             expect(mockQueuerUtil.batchSend).toHaveBeenCalledWith(
-                [{
-                    event: 'PROCESS_PERSON_BATCH',
-                    data: {
-                        processId: 'process-123',
-                        crmPersonIds: ['person-1', 'person-2', 'person-3'],
-                        page: 5,
-                        totalInPage: 3,
-                        isWebhook: false,
+                [
+                    {
+                        event: 'PROCESS_PERSON_BATCH',
+                        data: {
+                            processId: 'process-123',
+                            crmPersonIds: ['person-1', 'person-2', 'person-3'],
+                            page: 5,
+                            totalInPage: 3,
+                            isWebhook: false,
+                        },
                     },
-                }],
-                'https://sqs.test.com/queue'
+                ],
+                'https://sqs.test.com/queue',
             );
         });
 
@@ -155,17 +167,19 @@ describe('QueueManager', () => {
             await queueManager.queueProcessPersonBatch(params);
 
             expect(mockQueuerUtil.batchSend).toHaveBeenCalledWith(
-                [{
-                    event: 'PROCESS_PERSON_BATCH',
-                    data: {
-                        processId: 'process-456',
-                        crmPersonIds: ['person-4'],
-                        page: null,
-                        totalInPage: 1,
-                        isWebhook: true,
+                [
+                    {
+                        event: 'PROCESS_PERSON_BATCH',
+                        data: {
+                            processId: 'process-456',
+                            crmPersonIds: ['person-4'],
+                            page: null,
+                            totalInPage: 1,
+                            isWebhook: true,
+                        },
                     },
-                }],
-                'https://sqs.test.com/queue'
+                ],
+                'https://sqs.test.com/queue',
             );
         });
 
@@ -178,17 +192,19 @@ describe('QueueManager', () => {
             await queueManager.queueProcessPersonBatch(params);
 
             expect(mockQueuerUtil.batchSend).toHaveBeenCalledWith(
-                [{
-                    event: 'PROCESS_PERSON_BATCH',
-                    data: {
-                        processId: 'process-123',
-                        crmPersonIds: ['person-1', 'person-2'],
-                        page: null,
-                        totalInPage: 2,
-                        isWebhook: false,
+                [
+                    {
+                        event: 'PROCESS_PERSON_BATCH',
+                        data: {
+                            processId: 'process-123',
+                            crmPersonIds: ['person-1', 'person-2'],
+                            page: null,
+                            totalInPage: 2,
+                            isWebhook: false,
+                        },
                     },
-                }],
-                'https://sqs.test.com/queue'
+                ],
+                'https://sqs.test.com/queue',
             );
         });
     });
@@ -200,13 +216,15 @@ describe('QueueManager', () => {
             await queueManager.queueCompleteSync(processId);
 
             expect(mockQueuerUtil.batchSend).toHaveBeenCalledWith(
-                [{
-                    event: 'COMPLETE_SYNC',
-                    data: {
-                        processId: 'process-123',
+                [
+                    {
+                        event: 'COMPLETE_SYNC',
+                        data: {
+                            processId: 'process-123',
+                        },
                     },
-                }],
-                'https://sqs.test.com/queue'
+                ],
+                'https://sqs.test.com/queue',
             );
         });
     });
@@ -247,7 +265,7 @@ describe('QueueManager', () => {
                         }),
                     }),
                 ]),
-                'https://sqs.test.com/queue'
+                'https://sqs.test.com/queue',
             );
 
             // Should have 14 messages (pages 1-14)
@@ -260,13 +278,16 @@ describe('QueueManager', () => {
                 processId: 'process-123',
                 personObjectType: 'Contact',
                 totalPages: 1, // Only page 0 exists
-                startPage: 1,  // Start from page 1
+                startPage: 1, // Start from page 1
                 limit: 100,
             };
 
             await queueManager.fanOutPages(params);
 
-            expect(mockQueuerUtil.batchSend).toHaveBeenCalledWith([], 'https://sqs.test.com/queue');
+            expect(mockQueuerUtil.batchSend).toHaveBeenCalledWith(
+                [],
+                'https://sqs.test.com/queue',
+            );
         });
 
         it('should handle default values', async () => {
@@ -298,7 +319,10 @@ describe('QueueManager', () => {
 
             await queueManager.fanOutPages(params);
 
-            expect(mockQueuerUtil.batchSend).toHaveBeenCalledWith([], 'https://sqs.test.com/queue');
+            expect(mockQueuerUtil.batchSend).toHaveBeenCalledWith(
+                [],
+                'https://sqs.test.com/queue',
+            );
         });
     });
 
@@ -358,14 +382,17 @@ describe('QueueManager', () => {
                         },
                     },
                 ],
-                'https://sqs.test.com/queue'
+                'https://sqs.test.com/queue',
             );
         });
 
         it('should handle empty batches array', async () => {
             await queueManager.queueMultipleBatches([]);
 
-            expect(mockQueuerUtil.batchSend).toHaveBeenCalledWith([], 'https://sqs.test.com/queue');
+            expect(mockQueuerUtil.batchSend).toHaveBeenCalledWith(
+                [],
+                'https://sqs.test.com/queue',
+            );
         });
 
         it('should use default values for missing properties', async () => {
@@ -379,17 +406,19 @@ describe('QueueManager', () => {
             await queueManager.queueMultipleBatches(batches);
 
             expect(mockQueuerUtil.batchSend).toHaveBeenCalledWith(
-                [{
-                    event: 'PROCESS_PERSON_BATCH',
-                    data: {
-                        processId: 'process-123',
-                        crmPersonIds: ['person-1'],
-                        page: null,
-                        totalInPage: 1,
-                        isWebhook: false,
+                [
+                    {
+                        event: 'PROCESS_PERSON_BATCH',
+                        data: {
+                            processId: 'process-123',
+                            crmPersonIds: ['person-1'],
+                            page: null,
+                            totalInPage: 1,
+                            isWebhook: false,
+                        },
                     },
-                }],
-                'https://sqs.test.com/queue'
+                ],
+                'https://sqs.test.com/queue',
             );
         });
     });
@@ -406,12 +435,14 @@ describe('QueueManager', () => {
             const queuerError = new Error('SQS send failed');
             mockQueuerUtil.batchSend.mockRejectedValue(queuerError);
 
-            await expect(queueManager.queueFetchPersonPage({
-                processId: 'process-123',
-                personObjectType: 'Contact',
-                page: 0,
-                limit: 100,
-            })).rejects.toThrow('SQS send failed');
+            await expect(
+                queueManager.queueFetchPersonPage({
+                    processId: 'process-123',
+                    personObjectType: 'Contact',
+                    page: 0,
+                    limit: 100,
+                }),
+            ).rejects.toThrow('SQS send failed');
         });
     });
 });

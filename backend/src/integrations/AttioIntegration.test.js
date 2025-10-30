@@ -19,6 +19,10 @@ jest.mock('../base/BaseCRMIntegration', () => {
                     LOG_CALL: { handler: jest.fn() },
                 };
             }
+
+            async onDelete() {
+                // Mock implementation - does nothing
+            }
         },
     };
 });
@@ -340,7 +344,9 @@ describe('AttioIntegration (Refactored)', () => {
                 const mockPerson = {
                     id: { record_id: 'rec123', object_id: 'people' },
                 };
-                mockAttioApi.api.getRecord.mockResolvedValue(mockPerson);
+                mockAttioApi.api.getRecord.mockResolvedValue({
+                    data: mockPerson,
+                });
                 mockAttioApi.api.createNote.mockResolvedValue({
                     id: 'note123',
                 });
@@ -362,7 +368,7 @@ describe('AttioIntegration (Refactored)', () => {
                     parent_object: 'people',
                     parent_record_id: 'rec123',
                     title: 'SMS: outbound',
-                    format: 'plaintext',
+                    format: 'markdown',
                     content: 'Test SMS message',
                     created_at: '2025-01-10T15:30:00Z',
                 });
@@ -398,7 +404,9 @@ describe('AttioIntegration (Refactored)', () => {
                 const mockPerson = {
                     id: { record_id: 'rec123', object_id: 'people' },
                 };
-                mockAttioApi.api.getRecord.mockResolvedValue(mockPerson);
+                mockAttioApi.api.getRecord.mockResolvedValue({
+                    data: mockPerson,
+                });
                 mockAttioApi.api.createNote.mockResolvedValue({
                     id: 'note123',
                 });
@@ -417,7 +425,7 @@ describe('AttioIntegration (Refactored)', () => {
                     parent_object: 'people',
                     parent_record_id: 'rec123',
                     title: 'Call: outbound (300s)',
-                    format: 'plaintext',
+                    format: 'markdown',
                     content: 'Discussed project proposal',
                     created_at: '2025-01-10T15:30:00Z',
                 });
@@ -425,39 +433,1164 @@ describe('AttioIntegration (Refactored)', () => {
         });
 
         describe('setupWebhooks', () => {
-            it('should create webhooks for record events', async () => {
+            beforeEach(() => {
+                // Mock integration dependencies
+                integration.commands = {
+                    updateIntegrationConfig: jest.fn().mockResolvedValue({}),
+                };
+                integration.updateIntegrationMessages = {
+                    execute: jest.fn().mockResolvedValue({}),
+                };
+                integration.config = {}; // Start with empty config
+
+                // Mock Quo API methods
+                mockQuoApi.api.createMessageWebhook = jest.fn();
+                mockQuoApi.api.createCallWebhook = jest.fn();
+                mockQuoApi.api.createCallSummaryWebhook = jest.fn();
+                mockQuoApi.api.deleteWebhook = jest.fn();
+            });
+
+            it('should setup both Attio and Quo webhooks', async () => {
                 process.env.BASE_URL = 'https://api.example.com';
+
+                // Mock Attio webhook response
                 mockAttioApi.api.createWebhook.mockResolvedValue({
-                    id: 'webhook123',
+                    data: {
+                        id: { webhook_id: 'attio-wh-123' },
+                        secret: 'attio-secret-xyz',
+                    },
                 });
 
-                await integration.setupWebhooks();
+                // Mock Quo webhook responses
+                mockQuoApi.api.createMessageWebhook.mockResolvedValue({
+                    data: { id: 'quo-msg-wh-456', key: 'quo-msg-key' },
+                });
+                mockQuoApi.api.createCallWebhook.mockResolvedValue({
+                    data: { id: 'quo-call-wh-789', key: 'quo-call-key' },
+                });
+                mockQuoApi.api.createCallSummaryWebhook.mockResolvedValue({
+                    data: {
+                        id: 'quo-summary-wh-abc',
+                        key: 'quo-summary-key',
+                    },
+                });
 
+                const result = await integration.setupWebhooks();
+
+                // Verify Attio webhook creation
                 expect(mockAttioApi.api.createWebhook).toHaveBeenCalledWith({
-                    target_url: `https://api.example.com/integrations/${integration.id}/webhook`,
+                    target_url: expect.stringContaining('/webhooks/'),
                     subscriptions: [
                         { event_type: 'record.created', filter: null },
                         { event_type: 'record.updated', filter: null },
                         { event_type: 'record.deleted', filter: null },
                     ],
                 });
+
+                // Verify Quo webhook creations
+                expect(
+                    mockQuoApi.api.createMessageWebhook,
+                ).toHaveBeenCalledWith({
+                    url: expect.stringContaining('/webhooks/'),
+                    events: ['message.received', 'message.delivered'],
+                    label: 'Attio Integration - Messages',
+                    status: 'enabled',
+                });
+
+                expect(mockQuoApi.api.createCallWebhook).toHaveBeenCalled();
+                expect(
+                    mockQuoApi.api.createCallSummaryWebhook,
+                ).toHaveBeenCalled();
+
+                // Verify config was updated
+                expect(
+                    integration.commands.updateIntegrationConfig,
+                ).toHaveBeenCalled();
+
+                // Verify result structure
+                expect(result).toEqual({
+                    attio: expect.objectContaining({ status: 'configured' }),
+                    quo: expect.objectContaining({ status: 'configured' }),
+                    overallStatus: 'success',
+                });
             });
 
-            it('should handle webhook setup failure gracefully', async () => {
-                mockAttioApi.api.createWebhook.mockRejectedValue(
+            it('should handle already configured webhooks', async () => {
+                integration.config = {
+                    attioWebhookId: 'existing-attio-wh',
+                    quoMessageWebhookId: 'existing-quo-msg-wh',
+                    quoCallWebhookId: 'existing-quo-call-wh',
+                    quoCallSummaryWebhookId: 'existing-quo-summary-wh',
+                };
+
+                const result = await integration.setupWebhooks();
+
+                expect(mockAttioApi.api.createWebhook).not.toHaveBeenCalled();
+                expect(
+                    mockQuoApi.api.createMessageWebhook,
+                ).not.toHaveBeenCalled();
+                expect(result.attio.status).toBe('already_configured');
+                expect(result.quo.status).toBe('already_configured');
+            });
+
+            it('should rollback Quo webhooks on partial failure', async () => {
+                process.env.BASE_URL = 'https://api.example.com';
+
+                mockAttioApi.api.createWebhook.mockResolvedValue({
+                    data: {
+                        id: { webhook_id: 'attio-wh' },
+                        secret: 'secret',
+                    },
+                });
+
+                // First two succeed, third fails
+                mockQuoApi.api.createMessageWebhook.mockResolvedValue({
+                    data: { id: 'msg-wh', key: 'key1' },
+                });
+                mockQuoApi.api.createCallWebhook.mockResolvedValue({
+                    data: { id: 'call-wh', key: 'key2' },
+                });
+                mockQuoApi.api.createCallSummaryWebhook.mockRejectedValue(
                     new Error('Webhook creation failed'),
+                );
+
+                await expect(integration.setupWebhooks()).rejects.toThrow(
+                    'Webhook setup failed for: Quo',
+                );
+
+                // Verify rollback happened
+                expect(mockQuoApi.api.deleteWebhook).toHaveBeenCalledWith(
+                    'msg-wh',
+                );
+                expect(mockQuoApi.api.deleteWebhook).toHaveBeenCalledWith(
+                    'call-wh',
+                );
+            });
+
+            it('should handle missing BASE_URL', async () => {
+                delete process.env.BASE_URL;
+
+                await expect(integration.setupWebhooks()).rejects.toThrow(
+                    'Webhook setup failed for: Attio, Quo',
+                );
+            });
+
+            it('should log errors and update integration messages on failure', async () => {
+                process.env.BASE_URL = 'https://api.example.com';
+                mockAttioApi.api.createWebhook.mockRejectedValue(
+                    new Error('Network error'),
                 );
 
                 const consoleSpy = jest
                     .spyOn(console, 'error')
                     .mockImplementation();
 
-                await integration.setupWebhooks();
+                await expect(integration.setupWebhooks()).rejects.toThrow(
+                    'Webhook setup failed for: Attio, Quo',
+                );
+
+                expect(consoleSpy).toHaveBeenCalled();
+                expect(
+                    integration.updateIntegrationMessages.execute,
+                ).toHaveBeenCalledWith(
+                    integration.id,
+                    'errors',
+                    'Webhook Setup Failed',
+                    expect.stringContaining('Failed to setup webhooks'),
+                    expect.any(Number),
+                );
+
+                consoleSpy.mockRestore();
+            });
+        });
+    });
+
+    describe('Webhook Setup - Private Methods', () => {
+        beforeEach(() => {
+            integration.commands = {
+                updateIntegrationConfig: jest.fn().mockResolvedValue({}),
+            };
+            integration.updateIntegrationMessages = {
+                execute: jest.fn().mockResolvedValue({}),
+            };
+            integration.config = {};
+            process.env.BASE_URL = 'https://api.example.com';
+        });
+
+        afterEach(() => {
+            delete process.env.BASE_URL;
+        });
+
+        describe('setupAttioWebhook', () => {
+            it('should create Attio webhook with correct subscriptions', async () => {
+                mockAttioApi.api.createWebhook.mockResolvedValue({
+                    data: {
+                        id: { webhook_id: 'wh-123' },
+                        secret: 'secret-xyz',
+                    },
+                });
+
+                const result = await integration.setupAttioWebhook();
+
+                expect(result.status).toBe('configured');
+                expect(result.webhookId).toBe('wh-123');
+                expect(mockAttioApi.api.createWebhook).toHaveBeenCalledWith({
+                    target_url: expect.stringContaining('/webhooks/'),
+                    subscriptions: [
+                        { event_type: 'record.created', filter: null },
+                        { event_type: 'record.updated', filter: null },
+                        { event_type: 'record.deleted', filter: null },
+                    ],
+                });
+                expect(
+                    integration.commands.updateIntegrationConfig,
+                ).toHaveBeenCalled();
+            });
+
+            it('should skip if webhook already configured', async () => {
+                integration.config.attioWebhookId = 'existing-wh-123';
+
+                const result = await integration.setupAttioWebhook();
+
+                expect(result.status).toBe('already_configured');
+                expect(mockAttioApi.api.createWebhook).not.toHaveBeenCalled();
+            });
+
+            it('should handle invalid webhook response', async () => {
+                mockAttioApi.api.createWebhook.mockResolvedValue({
+                    data: {
+                        /* missing id and secret */
+                    },
+                });
+
+                const result = await integration.setupAttioWebhook();
+
+                expect(result.status).toBe('failed');
+                expect(result.error).toContain(
+                    'Invalid Attio webhook response',
+                );
+            });
+        });
+
+        describe('setupQuoWebhook', () => {
+            beforeEach(() => {
+                mockQuoApi.api.createMessageWebhook = jest.fn();
+                mockQuoApi.api.createCallWebhook = jest.fn();
+                mockQuoApi.api.createCallSummaryWebhook = jest.fn();
+                mockQuoApi.api.deleteWebhook = jest.fn().mockResolvedValue({});
+            });
+
+            it('should create all three Quo webhooks atomically', async () => {
+                mockQuoApi.api.createMessageWebhook.mockResolvedValue({
+                    data: { id: 'msg-wh', key: 'msg-key' },
+                });
+                mockQuoApi.api.createCallWebhook.mockResolvedValue({
+                    data: { id: 'call-wh', key: 'call-key' },
+                });
+                mockQuoApi.api.createCallSummaryWebhook.mockResolvedValue({
+                    data: { id: 'summary-wh', key: 'summary-key' },
+                });
+
+                const result = await integration.setupQuoWebhook();
+
+                expect(result.status).toBe('configured');
+                expect(result.messageWebhookId).toBe('msg-wh');
+                expect(result.callWebhookId).toBe('call-wh');
+                expect(result.callSummaryWebhookId).toBe('summary-wh');
+            });
+
+            it('should cleanup partial config before retry', async () => {
+                integration.config = {
+                    quoMessageWebhookId: 'orphaned-msg-wh',
+                };
+
+                mockQuoApi.api.createMessageWebhook.mockResolvedValue({
+                    data: { id: 'new-msg-wh', key: 'key' },
+                });
+                mockQuoApi.api.createCallWebhook.mockResolvedValue({
+                    data: { id: 'new-call-wh', key: 'key' },
+                });
+                mockQuoApi.api.createCallSummaryWebhook.mockResolvedValue({
+                    data: { id: 'new-summary-wh', key: 'key' },
+                });
+
+                await integration.setupQuoWebhook();
+
+                expect(mockQuoApi.api.deleteWebhook).toHaveBeenCalledWith(
+                    'orphaned-msg-wh',
+                );
+            });
+
+            it('should rollback on failure and return error', async () => {
+                mockQuoApi.api.createMessageWebhook.mockResolvedValue({
+                    data: { id: 'msg-wh', key: 'key' },
+                });
+                mockQuoApi.api.createCallWebhook.mockRejectedValue(
+                    new Error('API error'),
+                );
+
+                const result = await integration.setupQuoWebhook();
+
+                expect(result.status).toBe('failed');
+                expect(mockQuoApi.api.deleteWebhook).toHaveBeenCalledWith(
+                    'msg-wh',
+                );
+            });
+        });
+
+        describe('_generateWebhookUrl', () => {
+            it('should throw if BASE_URL not set', () => {
+                delete process.env.BASE_URL;
+
+                expect(() => integration._generateWebhookUrl('/test')).toThrow(
+                    'BASE_URL environment variable is required',
+                );
+            });
+
+            it('should generate correct webhook URL', () => {
+                integration.id = 'int-123';
+
+                const url = integration._generateWebhookUrl('/webhooks/test');
+
+                expect(url).toBe(
+                    'https://api.example.com/api/attio-integration/webhooks/test',
+                );
+            });
+        });
+    });
+
+    describe('Webhook Signature Verification', () => {
+        const crypto = require('crypto');
+
+        describe('_verifyWebhookSignature (Attio)', () => {
+            it('should verify valid HMAC-SHA256 signature', () => {
+                const secret = 'test-secret';
+                const payload = JSON.stringify({ test: 'data' });
+                const hmac = crypto.createHmac('sha256', secret);
+                hmac.update(payload);
+                const signature = hmac.digest('hex');
+
+                const result = integration._verifyWebhookSignature({
+                    signature,
+                    payload,
+                    secret,
+                });
+
+                expect(result).toBe(true);
+            });
+
+            it('should reject invalid signature', () => {
+                const result = integration._verifyWebhookSignature({
+                    signature: 'invalid-signature',
+                    payload: JSON.stringify({ test: 'data' }),
+                    secret: 'test-secret',
+                });
+
+                expect(result).toBe(false);
+            });
+
+            it('should reject if signature missing', () => {
+                const result = integration._verifyWebhookSignature({
+                    signature: null,
+                    payload: JSON.stringify({ test: 'data' }),
+                    secret: 'test-secret',
+                });
+
+                expect(result).toBe(false);
+            });
+
+            it('should reject if secret missing', () => {
+                const result = integration._verifyWebhookSignature({
+                    signature: 'some-signature',
+                    payload: JSON.stringify({ test: 'data' }),
+                    secret: null,
+                });
+
+                expect(result).toBe(false);
+            });
+
+            it('should use timing-safe comparison', () => {
+                const timingSafeSpy = jest.spyOn(crypto, 'timingSafeEqual');
+
+                const secret = 'test-secret';
+                const payload = JSON.stringify({ test: 'data' });
+                const hmac = crypto.createHmac('sha256', secret);
+                hmac.update(payload);
+                const signature = hmac.digest('hex');
+
+                integration._verifyWebhookSignature({
+                    signature,
+                    payload,
+                    secret,
+                });
+
+                expect(timingSafeSpy).toHaveBeenCalled();
+                timingSafeSpy.mockRestore();
+            });
+        });
+
+        describe('_verifyQuoWebhookSignature (OpenPhone)', () => {
+            beforeEach(() => {
+                integration.config = {};
+            });
+
+            it('should parse and verify Quo signature format', async () => {
+                const webhookKey = 'test-key';
+                const timestamp = '1640000000000';
+                const body = { type: 'call.completed', data: {} };
+                const payload = timestamp + JSON.stringify(body);
+
+                const hmac = crypto.createHmac('sha256', webhookKey);
+                hmac.update(payload);
+                const signature = hmac.digest('base64');
+
+                integration.config = { quoCallWebhookKey: webhookKey };
+
+                const headers = {
+                    'openphone-signature': `hmac;v1;${timestamp};${signature}`,
+                };
+
+                await expect(
+                    integration._verifyQuoWebhookSignature(
+                        headers,
+                        body,
+                        'call.completed',
+                    ),
+                ).resolves.not.toThrow();
+            });
+
+            it('should throw on missing signature header', async () => {
+                await expect(
+                    integration._verifyQuoWebhookSignature(
+                        {},
+                        {},
+                        'call.completed',
+                    ),
+                ).rejects.toThrow('Missing Openphone-Signature header');
+            });
+
+            it('should throw on invalid signature format', async () => {
+                const headers = { 'openphone-signature': 'invalid-format' };
+
+                await expect(
+                    integration._verifyQuoWebhookSignature(
+                        headers,
+                        {},
+                        'call.completed',
+                    ),
+                ).rejects.toThrow('Invalid Openphone-Signature format');
+            });
+
+            it('should select correct webhook key by event type', async () => {
+                integration.config = {
+                    quoMessageWebhookKey: 'msg-key',
+                    quoCallWebhookKey: 'call-key',
+                    quoCallSummaryWebhookKey: 'summary-key',
+                };
+
+                const timestamp = '1640000000000';
+                const body = { type: 'message.received' };
+
+                const hmac = crypto.createHmac('sha256', 'msg-key');
+                hmac.update(timestamp + JSON.stringify(body));
+                const signature = hmac.digest('base64');
+
+                const headers = {
+                    'openphone-signature': `hmac;v1;${timestamp};${signature}`,
+                };
+
+                await expect(
+                    integration._verifyQuoWebhookSignature(
+                        headers,
+                        body,
+                        'message.received',
+                    ),
+                ).resolves.not.toThrow();
+            });
+
+            it('should throw if webhook key not found', async () => {
+                integration.config = {};
+                const headers = {
+                    'openphone-signature': 'hmac;v1;123;sig',
+                };
+
+                await expect(
+                    integration._verifyQuoWebhookSignature(
+                        headers,
+                        {},
+                        'call.completed',
+                    ),
+                ).rejects.toThrow('Webhook key not found in config');
+            });
+        });
+    });
+
+    describe('Quo Webhook Event Handlers', () => {
+        beforeEach(() => {
+            integration.config = {
+                quoCallWebhookKey: 'call-key',
+                quoMessageWebhookKey: 'msg-key',
+            };
+            integration._findAttioContactByPhone = jest
+                .fn()
+                .mockResolvedValue('attio-rec-123');
+            mockQuoApi.api.getPhoneNumber = jest.fn().mockResolvedValue({
+                name: 'Main Line',
+                phoneNumber: '+15551234567',
+            });
+            mockQuoApi.api.getUser = jest.fn().mockResolvedValue({
+                name: 'John Agent',
+                firstName: 'John',
+                lastName: 'Agent',
+            });
+        });
+
+        describe('_handleQuoCallEvent', () => {
+            it('should log outgoing call to Attio', async () => {
+                const webhookData = {
+                    type: 'call.completed',
+                    data: {
+                        object: {
+                            id: 'call-123',
+                            direction: 'outgoing',
+                            participants: ['+15551111111', '+15552222222'],
+                            phoneNumberId: 'pn-456',
+                            userId: 'user-789',
+                            duration: 180,
+                            status: 'completed',
+                            createdAt: '2025-01-10T15:30:00Z',
+                        },
+                        deepLink: 'https://quo.app/call/123',
+                    },
+                };
+
+                mockAttioApi.api.getRecord.mockResolvedValue({
+                    data: { id: { record_id: 'attio-rec-123' } },
+                });
+                mockAttioApi.api.createNote.mockResolvedValue({
+                    id: 'note-123',
+                });
+
+                const result =
+                    await integration._handleQuoCallEvent(webhookData);
+
+                expect(
+                    integration._findAttioContactByPhone,
+                ).toHaveBeenCalledWith('+15552222222');
+                expect(mockAttioApi.api.createNote).toHaveBeenCalledWith({
+                    parent_object: 'people',
+                    parent_record_id: 'attio-rec-123',
+                    title: expect.stringContaining('Call:'),
+                    format: 'markdown',
+                    content: expect.stringContaining('☎️'),
+                    created_at: '2025-01-10T15:30:00Z',
+                });
+                expect(result).toEqual({
+                    logged: true,
+                    contactId: 'attio-rec-123',
+                });
+            });
+
+            it('should log incoming call to Attio with recording info', async () => {
+                const webhookData = {
+                    data: {
+                        object: {
+                            direction: 'incoming',
+                            participants: ['+15552222222', '+15551111111'],
+                            phoneNumberId: 'pn-456',
+                            userId: 'user-789',
+                            duration: 240,
+                            status: 'completed',
+                            createdAt: '2025-01-10T16:00:00Z',
+                        },
+                        deepLink: 'https://quo.app/call/456',
+                    },
+                };
+
+                mockAttioApi.api.getRecord.mockResolvedValue({
+                    data: { id: { record_id: 'attio-rec-123' } },
+                });
+                mockAttioApi.api.createNote.mockResolvedValue({
+                    id: 'note-456',
+                });
+
+                const result =
+                    await integration._handleQuoCallEvent(webhookData);
+
+                expect(
+                    integration._findAttioContactByPhone,
+                ).toHaveBeenCalledWith('+15552222222');
+                const noteCall = mockAttioApi.api.createNote.mock.calls[0][0];
+                expect(noteCall.content).toContain('▶️ Recording');
+            });
+
+            it('should throw if less than 2 participants', async () => {
+                const webhookData = {
+                    data: {
+                        object: {
+                            participants: ['+15551111111'],
+                            direction: 'outgoing',
+                        },
+                    },
+                };
+
+                await expect(
+                    integration._handleQuoCallEvent(webhookData),
+                ).rejects.toThrow('Call must have at least 2 participants');
+            });
+        });
+
+        describe('_handleQuoMessageEvent', () => {
+            it('should log outgoing message to Attio', async () => {
+                const webhookData = {
+                    data: {
+                        object: {
+                            id: 'msg-123',
+                            direction: 'outgoing',
+                            from: '+15551111111',
+                            to: '+15552222222',
+                            text: 'Hello, world!',
+                            phoneNumberId: 'pn-456',
+                            userId: 'user-789',
+                            createdAt: '2025-01-10T17:00:00Z',
+                        },
+                        deepLink: 'https://quo.app/msg/123',
+                    },
+                };
+
+                mockAttioApi.api.getRecord.mockResolvedValue({
+                    data: { id: { record_id: 'attio-rec-123' } },
+                });
+                mockAttioApi.api.createNote.mockResolvedValue({
+                    id: 'note-789',
+                });
+
+                const result =
+                    await integration._handleQuoMessageEvent(webhookData);
+
+                expect(
+                    integration._findAttioContactByPhone,
+                ).toHaveBeenCalledWith('+15552222222');
+                expect(mockAttioApi.api.createNote).toHaveBeenCalledWith({
+                    parent_object: 'people',
+                    parent_record_id: 'attio-rec-123',
+                    title: expect.stringContaining('SMS:'),
+                    format: 'markdown',
+                    content: expect.stringContaining('💬'),
+                    created_at: '2025-01-10T17:00:00Z',
+                });
+                expect(result).toEqual({
+                    logged: true,
+                    contactId: 'attio-rec-123',
+                });
+            });
+
+            it('should log incoming message to Attio', async () => {
+                const webhookData = {
+                    data: {
+                        object: {
+                            direction: 'incoming',
+                            from: '+15552222222',
+                            to: '+15551111111',
+                            text: 'Hi there!',
+                            phoneNumberId: 'pn-456',
+                            userId: 'user-789',
+                            createdAt: '2025-01-10T18:00:00Z',
+                        },
+                        deepLink: 'https://quo.app/msg/456',
+                    },
+                };
+
+                mockAttioApi.api.getRecord.mockResolvedValue({
+                    data: { id: { record_id: 'attio-rec-123' } },
+                });
+                mockAttioApi.api.createNote.mockResolvedValue({
+                    id: 'note-abc',
+                });
+
+                const result =
+                    await integration._handleQuoMessageEvent(webhookData);
+
+                expect(
+                    integration._findAttioContactByPhone,
+                ).toHaveBeenCalledWith('+15552222222');
+                const noteCall = mockAttioApi.api.createNote.mock.calls[0][0];
+                expect(noteCall.content).toContain('**Message Received**');
+            });
+        });
+
+        describe('_handleQuoCallSummaryEvent', () => {
+            it('should acknowledge call summary receipt', async () => {
+                const webhookData = {
+                    data: {
+                        object: {
+                            callId: 'call-123',
+                            summary: [
+                                'Discussed pricing',
+                                'Next meeting scheduled',
+                            ],
+                            nextSteps: ['Send proposal', 'Follow up Monday'],
+                            status: 'completed',
+                        },
+                    },
+                };
+
+                const result =
+                    await integration._handleQuoCallSummaryEvent(webhookData);
+
+                expect(result).toEqual({
+                    received: true,
+                    callId: 'call-123',
+                    summaryPoints: 2,
+                    nextStepsCount: 2,
+                });
+            });
+        });
+    });
+
+    describe('Phone Number Utilities', () => {
+        describe('_normalizePhoneNumber', () => {
+            it('should remove formatting characters', () => {
+                expect(
+                    integration._normalizePhoneNumber('(555) 123-4567'),
+                ).toBe('5551234567');
+                expect(integration._normalizePhoneNumber('555 123 4567')).toBe(
+                    '5551234567',
+                );
+                expect(integration._normalizePhoneNumber('555-123-4567')).toBe(
+                    '5551234567',
+                );
+            });
+
+            it('should preserve + for international format', () => {
+                expect(
+                    integration._normalizePhoneNumber('+1 (555) 123-4567'),
+                ).toBe('+15551234567');
+            });
+
+            it('should handle null/undefined', () => {
+                expect(integration._normalizePhoneNumber(null)).toBeNull();
+                expect(
+                    integration._normalizePhoneNumber(undefined),
+                ).toBeUndefined();
+            });
+        });
+
+        describe('_findAttioContactByPhone', () => {
+            beforeEach(() => {
+                integration.getMapping = jest.fn();
+                mockAttioApi.api.queryRecords = jest.fn();
+                mockAttioApi.api.searchRecords = jest.fn();
+            });
+
+            it('should find contact using exact filter', async () => {
+                mockAttioApi.api.queryRecords.mockResolvedValue({
+                    data: [
+                        {
+                            id: { record_id: 'rec-123' },
+                            values: {
+                                phone_numbers: [
+                                    { phone_number: '+15551234567' },
+                                ],
+                            },
+                        },
+                    ],
+                });
+                integration.getMapping.mockResolvedValue({
+                    externalId: 'rec-123',
+                });
+
+                const recordId =
+                    await integration._findAttioContactByPhone(
+                        '+1 (555) 123-4567',
+                    );
+
+                expect(recordId).toBe('rec-123');
+                expect(mockAttioApi.api.queryRecords).toHaveBeenCalledWith(
+                    'people',
+                    {
+                        filter: { phone_numbers: '+15551234567' },
+                        limit: 10,
+                    },
+                );
+            });
+
+            it('should throw if no contact found', async () => {
+                mockAttioApi.api.queryRecords.mockResolvedValue({ data: [] });
+                mockAttioApi.api.searchRecords.mockResolvedValue({ data: [] });
+
+                await expect(
+                    integration._findAttioContactByPhone('+15551111111'),
+                ).rejects.toThrow('No Attio contact found');
+            });
+        });
+    });
+
+    describe('Attio Webhook Event Handlers', () => {
+        beforeEach(() => {
+            integration.config = { attioWebhookSecret: 'test-secret' };
+            integration.updateIntegrationMessages = {
+                execute: jest.fn().mockResolvedValue({}),
+            };
+            integration.upsertMapping = jest.fn().mockResolvedValue({});
+            integration.getMapping = jest.fn().mockResolvedValue(null);
+            integration._resolveObjectType = jest
+                .fn()
+                .mockResolvedValue('people');
+            mockQuoApi.api.listContacts = jest.fn();
+            mockQuoApi.api.createContact = jest.fn();
+            mockQuoApi.api.updateContact = jest.fn();
+            mockQuoApi.api.deleteContact = jest.fn();
+        });
+
+        describe('_handleRecordCreated', () => {
+            it('should fetch record and sync person to Quo', async () => {
+                const eventData = {
+                    record_id: 'rec-123',
+                    object_id: 'obj-people',
+                };
+
+                mockAttioApi.api.getRecord.mockResolvedValue({
+                    data: {
+                        id: { record_id: 'rec-123' },
+                        values: {
+                            name: [
+                                {
+                                    first_name: 'John',
+                                    last_name: 'Doe',
+                                    active_until: null,
+                                },
+                            ],
+                        },
+                    },
+                });
+                mockQuoApi.api.createContact.mockResolvedValue({
+                    data: { id: 'quo-contact-123' },
+                });
+
+                await integration._handleRecordCreated(eventData);
+
+                expect(mockAttioApi.api.getRecord).toHaveBeenCalledWith(
+                    'obj-people',
+                    'rec-123',
+                );
+                expect(mockQuoApi.api.createContact).toHaveBeenCalled();
+                expect(integration.upsertMapping).toHaveBeenCalledWith(
+                    'rec-123',
+                    expect.objectContaining({
+                        action: 'created',
+                        syncMethod: 'webhook',
+                    }),
+                );
+            });
+
+            it('should handle record not found', async () => {
+                const eventData = {
+                    record_id: 'rec-404',
+                    object_id: 'obj-people',
+                };
+                mockAttioApi.api.getRecord.mockResolvedValue({ data: null });
+
+                const consoleSpy = jest
+                    .spyOn(console, 'warn')
+                    .mockImplementation();
+
+                await integration._handleRecordCreated(eventData);
 
                 expect(consoleSpy).toHaveBeenCalledWith(
-                    'Failed to setup Attio webhooks:',
-                    expect.any(Error),
+                    expect.stringContaining('Record rec-404 not found'),
                 );
+                expect(mockQuoApi.api.createContact).not.toHaveBeenCalled();
+
+                consoleSpy.mockRestore();
+            });
+
+            it('should skip non-people object types', async () => {
+                integration._resolveObjectType.mockResolvedValue('companies');
+                const eventData = {
+                    record_id: 'rec-123',
+                    object_id: 'obj-companies',
+                };
+                mockAttioApi.api.getRecord.mockResolvedValue({
+                    data: { id: { record_id: 'rec-123' } },
+                });
+
+                const consoleSpy = jest
+                    .spyOn(console, 'log')
+                    .mockImplementation();
+
+                await integration._handleRecordCreated(eventData);
+
+                expect(consoleSpy).toHaveBeenCalledWith(
+                    expect.stringContaining(
+                        "'companies' not configured for sync",
+                    ),
+                );
+                expect(mockQuoApi.api.createContact).not.toHaveBeenCalled();
+
+                consoleSpy.mockRestore();
+            });
+        });
+
+        describe('_handleRecordUpdated', () => {
+            it('should update existing contact in Quo', async () => {
+                const eventData = {
+                    record_id: 'rec-123',
+                    object_id: 'obj-people',
+                };
+                mockAttioApi.api.getRecord.mockResolvedValue({
+                    data: {
+                        id: { record_id: 'rec-123' },
+                        values: {
+                            name: [
+                                {
+                                    first_name: 'Jane',
+                                    last_name: 'Smith',
+                                    active_until: null,
+                                },
+                            ],
+                        },
+                    },
+                });
+                mockQuoApi.api.listContacts.mockResolvedValue({
+                    data: [{ id: 'quo-123', externalId: 'rec-123' }],
+                });
+                mockQuoApi.api.updateContact.mockResolvedValue({
+                    data: { id: 'quo-123' },
+                });
+
+                await integration._handleRecordUpdated(eventData);
+
+                expect(mockQuoApi.api.updateContact).toHaveBeenCalledWith(
+                    'quo-123',
+                    expect.objectContaining({
+                        defaultFields: expect.any(Object),
+                    }),
+                );
+            });
+
+            it('should throw error if contact not found in Quo', async () => {
+                const eventData = {
+                    record_id: 'rec-123',
+                    object_id: 'obj-people',
+                };
+                mockAttioApi.api.getRecord.mockResolvedValue({
+                    data: {
+                        id: { record_id: 'rec-123' },
+                        values: {
+                            name: [
+                                {
+                                    first_name: 'Jane',
+                                    last_name: 'Doe',
+                                    active_until: null,
+                                },
+                            ],
+                        },
+                    },
+                });
+                mockQuoApi.api.listContacts.mockResolvedValue({ data: [] });
+
+                await expect(
+                    integration._handleRecordUpdated(eventData),
+                ).rejects.toThrow(
+                    'Contact with externalId rec-123 not found in Quo',
+                );
+            });
+        });
+
+        describe('_handleRecordDeleted', () => {
+            it('should delete contact from Quo', async () => {
+                const eventData = {
+                    record_id: 'rec-123',
+                    object_id: 'obj-people',
+                };
+                mockQuoApi.api.listContacts.mockResolvedValue({
+                    data: [{ id: 'quo-123', externalId: 'rec-123' }],
+                });
+                mockQuoApi.api.deleteContact.mockResolvedValue({ status: 204 });
+
+                await integration._handleRecordDeleted(eventData);
+
+                expect(mockQuoApi.api.deleteContact).toHaveBeenCalledWith(
+                    'quo-123',
+                );
+            });
+
+            it('should handle contact not found in Quo', async () => {
+                const eventData = {
+                    record_id: 'rec-404',
+                    object_id: 'obj-people',
+                };
+                mockQuoApi.api.listContacts.mockResolvedValue({ data: [] });
+
+                const consoleSpy = jest
+                    .spyOn(console, 'warn')
+                    .mockImplementation();
+
+                await integration._handleRecordDeleted(eventData);
+
+                expect(mockQuoApi.api.deleteContact).not.toHaveBeenCalled();
+                expect(consoleSpy).toHaveBeenCalledWith(
+                    expect.stringContaining('not found in Quo'),
+                );
+
+                consoleSpy.mockRestore();
+            });
+        });
+
+        describe('_resolveObjectType', () => {
+            beforeEach(() => {
+                // Reset the mock for this describe block
+                integration._resolveObjectType =
+                    AttioIntegration.prototype._resolveObjectType;
+                mockAttioApi.api.getObject = jest.fn();
+            });
+
+            it('should resolve object ID to type and cache result', async () => {
+                mockAttioApi.api.getObject.mockResolvedValue({
+                    data: {
+                        api_slug: 'people',
+                        plural_noun: 'People',
+                    },
+                });
+
+                const type1 = await integration._resolveObjectType('obj-123');
+                const type2 = await integration._resolveObjectType('obj-123');
+
+                expect(type1).toBe('people');
+                expect(type2).toBe('people');
+                expect(mockAttioApi.api.getObject).toHaveBeenCalledTimes(1);
+            });
+
+            it('should fallback to plural_noun if api_slug missing', async () => {
+                mockAttioApi.api.getObject.mockResolvedValue({
+                    data: { plural_noun: 'Companies' },
+                });
+
+                const type = await integration._resolveObjectType('obj-456');
+
+                expect(type).toBe('companies');
+            });
+        });
+    });
+
+    describe('Webhook Processing & Lifecycle', () => {
+        beforeEach(() => {
+            integration.config = {
+                attioWebhookSecret: 'attio-secret',
+                quoCallWebhookKey: 'quo-key',
+            };
+            integration.updateIntegrationMessages = {
+                execute: jest.fn().mockResolvedValue({}),
+            };
+            integration.queueWebhook = jest.fn().mockResolvedValue({});
+        });
+
+        describe('onWebhookReceived', () => {
+            it('should accept Attio webhook with signature', async () => {
+                const req = {
+                    body: { events: [] },
+                    headers: { 'x-attio-signature': 'test-signature' },
+                    params: { integrationId: 'int-123' },
+                };
+                const res = {
+                    status: jest.fn().mockReturnThis(),
+                    json: jest.fn(),
+                };
+
+                await integration.onWebhookReceived({ req, res });
+
+                expect(integration.queueWebhook).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        source: 'attio',
+                        signature: 'test-signature',
+                    }),
+                );
+                expect(res.status).toHaveBeenCalledWith(200);
+            });
+
+            it('should accept Quo webhook with signature', async () => {
+                const req = {
+                    body: { type: 'call.completed' },
+                    headers: { 'openphone-signature': 'hmac;v1;123;sig' },
+                    params: { integrationId: 'int-123' },
+                };
+                const res = {
+                    status: jest.fn().mockReturnThis(),
+                    json: jest.fn(),
+                };
+
+                await integration.onWebhookReceived({ req, res });
+
+                expect(integration.queueWebhook).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        source: 'quo',
+                        signature: 'hmac;v1;123;sig',
+                    }),
+                );
+            });
+
+            it('should reject webhook without signature', async () => {
+                const req = {
+                    body: {},
+                    headers: {},
+                    params: {},
+                };
+                const res = {
+                    status: jest.fn().mockReturnThis(),
+                    json: jest.fn(),
+                };
+
+                await integration.onWebhookReceived({ req, res });
+
+                expect(res.status).toHaveBeenCalledWith(401);
+                expect(integration.queueWebhook).not.toHaveBeenCalled();
+            });
+        });
+
+        describe('onDelete', () => {
+            beforeEach(() => {
+                integration.config = {
+                    attioWebhookId: 'attio-wh-123',
+                    quoMessageWebhookId: 'quo-msg-wh-456',
+                    quoCallWebhookId: 'quo-call-wh-789',
+                    quoCallSummaryWebhookId: 'quo-summary-wh-abc',
+                };
+                mockAttioApi.api.deleteWebhook = jest
+                    .fn()
+                    .mockResolvedValue({});
+                mockQuoApi.api.deleteWebhook = jest.fn().mockResolvedValue({});
+            });
+
+            it('should delete all webhooks on integration deletion', async () => {
+                await integration.onDelete({});
+
+                expect(mockAttioApi.api.deleteWebhook).toHaveBeenCalledWith(
+                    'attio-wh-123',
+                );
+                expect(mockQuoApi.api.deleteWebhook).toHaveBeenCalledWith(
+                    'quo-msg-wh-456',
+                );
+                expect(mockQuoApi.api.deleteWebhook).toHaveBeenCalledWith(
+                    'quo-call-wh-789',
+                );
+                expect(mockQuoApi.api.deleteWebhook).toHaveBeenCalledWith(
+                    'quo-summary-wh-abc',
+                );
+            });
+
+            it('should continue on webhook deletion errors', async () => {
+                mockAttioApi.api.deleteWebhook.mockRejectedValue(
+                    new Error('Not found'),
+                );
+                const consoleSpy = jest
+                    .spyOn(console, 'error')
+                    .mockImplementation();
+
+                await integration.onDelete({});
+
+                expect(consoleSpy).toHaveBeenCalled();
+                expect(mockQuoApi.api.deleteWebhook).toHaveBeenCalled();
 
                 consoleSpy.mockRestore();
             });

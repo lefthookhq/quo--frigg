@@ -237,18 +237,35 @@ class AttioIntegration extends BaseCRMIntegration {
         const crypto = require('crypto');
 
         const testFormats = [
-            { name: 'timestamp + body (no separator)', payload: timestamp + JSON.stringify(body), keyTransform: 'plain' },
-            { name: 'timestamp + body (no separator, base64 key)', payload: timestamp + JSON.stringify(body), keyTransform: 'base64' },
-            { name: 'timestamp + "." + body (dot separator)', payload: timestamp + '.' + JSON.stringify(body), keyTransform: 'plain' },
-            { name: 'timestamp + "." + body (dot separator, base64 key)', payload: timestamp + '.' + JSON.stringify(body), keyTransform: 'base64' },
+            {
+                name: 'timestamp + body (no separator)',
+                payload: timestamp + JSON.stringify(body),
+                keyTransform: 'plain',
+            },
+            {
+                name: 'timestamp + body (no separator, base64 key)',
+                payload: timestamp + JSON.stringify(body),
+                keyTransform: 'base64',
+            },
+            {
+                name: 'timestamp + "." + body (dot separator)',
+                payload: timestamp + '.' + JSON.stringify(body),
+                keyTransform: 'plain',
+            },
+            {
+                name: 'timestamp + "." + body (dot separator, base64 key)',
+                payload: timestamp + '.' + JSON.stringify(body),
+                keyTransform: 'base64',
+            },
         ];
 
         let matchFound = false;
 
         for (const format of testFormats) {
-            const key = format.keyTransform === 'base64'
-                ? Buffer.from(webhookKey, 'base64')
-                : webhookKey;
+            const key =
+                format.keyTransform === 'base64'
+                    ? Buffer.from(webhookKey, 'base64')
+                    : webhookKey;
 
             const hmac = crypto.createHmac('sha256', key);
             hmac.update(format.payload);
@@ -263,7 +280,9 @@ class AttioIntegration extends BaseCRMIntegration {
         }
 
         if (!matchFound) {
-            throw new Error('Webhook signature verification failed - no matching format found');
+            throw new Error(
+                'Webhook signature verification failed - no matching format found',
+            );
         }
 
         console.log('[Quo Webhook] ✓ Signature verified');
@@ -1623,7 +1642,9 @@ class AttioIntegration extends BaseCRMIntegration {
             callObject.phoneNumberId,
         );
         const inboxName = phoneNumberDetails.name || 'Quo Line';
-        const inboxNumber = phoneNumberDetails.phoneNumber || participants[callObject.direction === 'outgoing' ? 0 : 1];
+        const inboxNumber =
+            phoneNumberDetails.phoneNumber ||
+            participants[callObject.direction === 'outgoing' ? 0 : 1];
 
         const userDetails = await this.quo.api.getUser(callObject.userId);
         const userName =
@@ -1637,10 +1658,14 @@ class AttioIntegration extends BaseCRMIntegration {
 
         let statusDescription;
         if (callObject.status === 'completed') {
-            statusDescription = callObject.direction === 'outgoing'
-                ? `Outgoing initiated by ${userName}`
-                : `Incoming answered by ${userName}`;
-        } else if (callObject.status === 'no-answer' || callObject.status === 'missed') {
+            statusDescription =
+                callObject.direction === 'outgoing'
+                    ? `Outgoing initiated by ${userName}`
+                    : `Incoming answered by ${userName}`;
+        } else if (
+            callObject.status === 'no-answer' ||
+            callObject.status === 'missed'
+        ) {
             statusDescription = 'Incoming missed';
         } else {
             statusDescription = `${callObject.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} ${callObject.status}`;
@@ -2062,38 +2087,38 @@ Received:
                 if (!this.quo?.api) missingModules.push('quo');
 
                 console.error(
-                    `[Webhook Cleanup] Cannot delete webhooks: Missing API modules: ${missingModules.join(', ')}`
+                    `[Webhook Cleanup] Cannot delete webhooks: Missing API modules: ${missingModules.join(', ')}`,
                 );
                 console.error(
-                    '[Webhook Cleanup] This likely means modules were not loaded during the deletion lifecycle.'
+                    '[Webhook Cleanup] This likely means modules were not loaded during the deletion lifecycle.',
                 );
                 console.warn(
-                    '[Webhook Cleanup] Webhook IDs have been preserved in config for manual cleanup:'
+                    '[Webhook Cleanup] Webhook IDs have been preserved in config for manual cleanup:',
                 );
 
                 if (this.config?.attioWebhookId) {
                     console.warn(
-                        `  - Attio webhook: ${this.config.attioWebhookId}`
+                        `  - Attio webhook: ${this.config.attioWebhookId}`,
                     );
                 }
                 if (this.config?.quoMessageWebhookId) {
                     console.warn(
-                        `  - Quo message webhook: ${this.config.quoMessageWebhookId}`
+                        `  - Quo message webhook: ${this.config.quoMessageWebhookId}`,
                     );
                 }
                 if (this.config?.quoCallWebhookId) {
                     console.warn(
-                        `  - Quo call webhook: ${this.config.quoCallWebhookId}`
+                        `  - Quo call webhook: ${this.config.quoCallWebhookId}`,
                     );
                 }
                 if (this.config?.quoCallSummaryWebhookId) {
                     console.warn(
-                        `  - Quo call-summary webhook: ${this.config.quoCallSummaryWebhookId}`
+                        `  - Quo call-summary webhook: ${this.config.quoCallSummaryWebhookId}`,
                     );
                 }
 
                 console.warn(
-                    '[Webhook Cleanup] You will need to manually delete these webhooks from the external services.'
+                    '[Webhook Cleanup] You will need to manually delete these webhooks from the external services.',
                 );
 
                 await super.onDelete(params);

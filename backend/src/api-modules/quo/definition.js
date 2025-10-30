@@ -1,6 +1,6 @@
 require('dotenv').config();
 const { Api } = require('./api');
-const { get } = require("@friggframework/core");
+const { get } = require('@friggframework/core');
 const config = require('./defaultConfig.json');
 
 const Definition = {
@@ -21,8 +21,8 @@ const Definition = {
                             apiKey: {
                                 type: 'string',
                                 title: 'API Key',
-                            }
-                        }
+                            },
+                        },
                     },
                     uiSchema: {
                         apiKey: {
@@ -30,15 +30,18 @@ const Definition = {
                             'ui:help': 'Your Quo API key',
                             'ui:placeholder': 'Enter your API key...',
                         },
-                    }
-                }
+                    },
+                },
             };
         },
         getToken: async (api, params) => {
             // For OpenPhone API, use API key authentication
-            const apiKey = get(params.data, 'apiKey') || get(params.data, 'access_token');
+            const apiKey =
+                get(params.data, 'apiKey') || get(params.data, 'access_token');
             if (!apiKey) {
-                throw new Error('API key is required for OpenPhone authentication');
+                throw new Error(
+                    'API key is required for OpenPhone authentication',
+                );
             }
             return { access_token: apiKey };
         },
@@ -46,7 +49,10 @@ const Definition = {
             // For API key authentication, set the key on the API instance
             // params IS the data object, so access apiKey directly
             const apiKey = params.apiKey || params.access_token;
-            console.log('[Quo setAuthParams] Received params:', JSON.stringify(params, null, 2));
+            console.log(
+                '[Quo setAuthParams] Received params:',
+                JSON.stringify(params, null, 2),
+            );
             console.log('[Quo setAuthParams] Using apiKey:', apiKey);
             if (!apiKey) {
                 throw new Error('API key is required for Quo authentication');
@@ -55,7 +61,12 @@ const Definition = {
             console.log('[Quo setAuthParams] API key set on API instance');
             return { access_token: apiKey };
         },
-        getEntityDetails: async (api, callbackParams, tokenResponse, userId) => {
+        getEntityDetails: async (
+            api,
+            callbackParams,
+            tokenResponse,
+            userId,
+        ) => {
             try {
                 // Get the first user as a way to validate the connection
                 const usersResponse = await api.listUsers({ maxResults: 1 });
@@ -64,17 +75,23 @@ const Definition = {
                 return {
                     identifiers: {
                         externalId: firstUser?.id || 'openphone-workspace',
-                        user: userId
+                        user: userId,
                     },
                     details: {
-                        name: firstUser?.name || firstUser?.email || 'OpenPhone Workspace',
-                        email: firstUser?.email
+                        name:
+                            firstUser?.name ||
+                            firstUser?.email ||
+                            'OpenPhone Workspace',
+                        email: firstUser?.email,
                     },
                 };
             } catch (error) {
                 // If we can't get user details, use a generic identifier
                 return {
-                    identifiers: { externalId: 'openphone-workspace', user: userId },
+                    identifiers: {
+                        externalId: 'openphone-workspace',
+                        user: userId,
+                    },
                     details: { name: 'OpenPhone Workspace' },
                 };
             }
@@ -91,14 +108,17 @@ const Definition = {
                 return {
                     identifiers: {
                         externalId: firstUser?.id || 'openphone-workspace',
-                        user: userId
+                        user: userId,
                     },
-                    details: {}
+                    details: {},
                 };
             } catch (error) {
                 return {
-                    identifiers: { externalId: 'openphone-workspace', user: userId },
-                    details: {}
+                    identifiers: {
+                        externalId: 'openphone-workspace',
+                        user: userId,
+                    },
+                    details: {},
                 };
             }
         },
@@ -108,13 +128,15 @@ const Definition = {
                 const response = await api.listUsers({ maxResults: 1 });
                 return response;
             } catch (error) {
-                throw new Error('OpenPhone authentication test failed: ' + error.message);
+                throw new Error(
+                    'OpenPhone authentication test failed: ' + error.message,
+                );
             }
         },
     },
     env: {
         api_key: process.env.OPENPHONE_API_KEY || process.env.QUO_API_KEY,
-    }
+    },
 };
 
 module.exports = { Definition };

@@ -1,15 +1,15 @@
 /**
  * ProcessManager Service
- * 
+ *
  * Encapsulates process state management logic for CRM integrations.
  * Acts as a facade over Frigg Core use cases, providing CRM-specific context.
- * 
+ *
  * Design Philosophy:
  * - Service layer between BaseCRMIntegration and Frigg Core use cases
  * - Handles CRM-specific process initialization and state management
  * - Provides high-level methods that abstract use case complexity
  * - Testable through dependency injection of use cases
- * 
+ *
  * @example
  * const processManager = new ProcessManager({
  *   createProcessUseCase,
@@ -17,7 +17,7 @@
  *   updateProcessMetricsUseCase,
  *   getProcessUseCase
  * });
- * 
+ *
  * const process = await processManager.createSyncProcess({
  *   integrationId: 'int123',
  *   userId: 'user456',
@@ -101,7 +101,9 @@ class ProcessManager {
             startTime: new Date().toISOString(),
             endTime: null,
             estimatedCompletion: null,
-            lastSyncedTimestamp: lastSyncedTimestamp ? lastSyncedTimestamp.toISOString() : null,
+            lastSyncedTimestamp: lastSyncedTimestamp
+                ? lastSyncedTimestamp.toISOString()
+                : null,
             metadata: {},
         };
 
@@ -143,7 +145,11 @@ class ProcessManager {
      * @returns {Promise<Object>} Updated process
      */
     async updateState(processId, state, contextUpdates = {}) {
-        return await this.updateProcessStateUseCase.execute(processId, state, contextUpdates);
+        return await this.updateProcessStateUseCase.execute(
+            processId,
+            state,
+            contextUpdates,
+        );
     }
 
     /**
@@ -157,7 +163,10 @@ class ProcessManager {
      * @returns {Promise<Object>} Updated process
      */
     async updateMetrics(processId, metricsUpdate) {
-        return await this.updateProcessMetricsUseCase.execute(processId, metricsUpdate);
+        return await this.updateProcessMetricsUseCase.execute(
+            processId,
+            metricsUpdate,
+        );
     }
 
     /**
@@ -211,12 +220,19 @@ class ProcessManager {
         };
 
         // Update both context and results
-        const updatedProcess = await this.updateState(processId, process.state, contextUpdates);
+        const updatedProcess = await this.updateState(
+            processId,
+            process.state,
+            contextUpdates,
+        );
 
         // Manually update results since updateState doesn't touch results
-        return await this.updateProcessStateUseCase.processRepository.update(processId, {
-            results: resultsUpdate,
-        });
+        return await this.updateProcessStateUseCase.processRepository.update(
+            processId,
+            {
+                results: resultsUpdate,
+            },
+        );
     }
 
     /**
@@ -270,4 +286,3 @@ class ProcessManager {
 }
 
 module.exports = ProcessManager;
-

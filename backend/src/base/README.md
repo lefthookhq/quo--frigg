@@ -48,21 +48,21 @@ class MyCRMIntegration extends BaseCRMIntegration {
     static CRMConfig = {
         personObjectTypes: [
             { crmObjectName: 'Contact', quoContactType: 'contact' },
-            { crmObjectName: 'Lead', quoContactType: 'contact' }
+            { crmObjectName: 'Lead', quoContactType: 'contact' },
         ],
         syncConfig: {
             reverseChronological: true,
             initialBatchSize: 100,
             ongoingBatchSize: 50,
             supportsWebhooks: true,
-            pollIntervalMinutes: 60
+            pollIntervalMinutes: 60,
         },
         queueConfig: {
             maxWorkers: 25,
-            provisioned: 10
-        }
+            provisioned: 10,
+        },
     };
-    
+
     // ... implement 5 required methods
 }
 ```
@@ -155,7 +155,7 @@ Configure webhooks with the CRM (if supported).
 ```javascript
 async setupWebhooks() {
     const webhookUrl = `${process.env.API_URL}/api/mycrm/webhooks`;
-    
+
     await this.mycrm.api.createWebhook({
         url: webhookUrl,
         events: ['person.created', 'person.updated'],
@@ -213,35 +213,35 @@ Use the test helpers to create mocks:
 const ProcessManager = require('./services/ProcessManager');
 const {
     createMockProcessRepository,
-    buildProcessRecord
+    buildProcessRecord,
 } = require('./__tests__/helpers');
 
 describe('ProcessManager', () => {
     let processManager;
     let mockCreateProcessUseCase;
-    
+
     beforeEach(() => {
         mockCreateProcessUseCase = {
-            execute: jest.fn()
+            execute: jest.fn(),
         };
-        
+
         processManager = new ProcessManager({
             createProcessUseCase: mockCreateProcessUseCase,
             // ... other use cases
         });
     });
-    
+
     it('should create a sync process', async () => {
         const mockProcess = buildProcessRecord();
         mockCreateProcessUseCase.execute.mockResolvedValue(mockProcess);
-        
+
         const result = await processManager.createSyncProcess({
             integrationId: 'int-123',
             userId: 'user-456',
             syncType: 'INITIAL',
-            personObjectType: 'Contact'
+            personObjectType: 'Contact',
         });
-        
+
         expect(mockCreateProcessUseCase.execute).toHaveBeenCalledTimes(1);
         expect(result).toEqual(mockProcess);
     });
@@ -259,27 +259,27 @@ const { createMockProcessManager } = require('../base/__tests__/helpers');
 describe('MyCRMIntegration', () => {
     let integration;
     let mockProcessManager;
-    
+
     beforeEach(() => {
         integration = new MyCRMIntegration({
             id: 'int-123',
-            userId: 'user-456'
+            userId: 'user-456',
         });
-        
+
         // Inject mock ProcessManager
         mockProcessManager = createMockProcessManager();
         integration._processManager = mockProcessManager;
     });
-    
+
     it('should transform person to Quo format', async () => {
         const person = {
             id: 'person-123',
             first_name: 'John',
-            last_name: 'Doe'
+            last_name: 'Doe',
         };
-        
+
         const quoContact = await integration.transformPersonToQuo(person);
-        
+
         expect(quoContact.externalId).toBe('person-123');
         expect(quoContact.defaultFields.firstName).toBe('John');
     });
@@ -296,10 +296,10 @@ describe('MyCRMIntegration', () => {
 4. Handler fetches page, determines total, **fans out all remaining pages** (queues 1-N concurrently)
 5. Each page handler queues `PROCESS_PERSON_BATCH` with person IDs
 6. Batch handlers:
-   - Fetch full person data (`fetchPersonsByIds`)
-   - Transform to Quo format (`transformPersonToQuo`)
-   - Bulk upsert to Quo
-   - Update metrics
+    - Fetch full person data (`fetchPersonsByIds`)
+    - Transform to Quo format (`transformPersonToQuo`)
+    - Bulk upsert to Quo
+    - Update metrics
 7. When all batches complete, `completeSyncHandler()` marks process as COMPLETED
 
 ### Ongoing Sync (Webhooks)
@@ -317,6 +317,7 @@ describe('MyCRMIntegration', () => {
 Manages process lifecycle and state transitions.
 
 **Methods:**
+
 - `createSyncProcess()` - Create new CRM sync process
 - `updateState()` - Update process state
 - `updateMetrics()` - Update aggregate metrics
@@ -327,6 +328,7 @@ Manages process lifecycle and state transitions.
 Manages SQS queue operations.
 
 **Methods:**
+
 - `queueFetchPersonPage()` - Queue page fetch
 - `queueProcessPersonBatch()` - Queue batch processing
 - `fanOutPages()` - Queue all pages at once (key optimization)
@@ -336,6 +338,7 @@ Manages SQS queue operations.
 Orchestrates sync workflows.
 
 **Methods:**
+
 - `startInitialSync()` - Start full sync
 - `startOngoingSync()` - Start delta sync
 - `handleWebhook()` - Handle real-time updates
@@ -388,7 +391,7 @@ Processes are tracked in the `Process` collection (Frigg Core):
 ```javascript
 constructor(params) {
     super(params);
-    
+
     this.events = {
         ...this.events,
         CUSTOM_SYNC_EVENT: {
@@ -437,4 +440,3 @@ queueConfig: {
 ## Support
 
 See the main [CRM Integration Architecture](../../../../docs/CRM_INTEGRATION_ARCHITECTURE.md) document for detailed design decisions and examples.
-

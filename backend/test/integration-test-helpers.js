@@ -2,7 +2,7 @@ const axios = require('axios');
 
 /**
  * Integration Test Helper Functions
- * 
+ *
  * Provides utilities for testing Frigg integrations end-to-end using
  * backend-to-backend authentication with x-frigg headers.
  */
@@ -21,19 +21,25 @@ const DEFAULT_ORG_ID = 'test-org-integration';
  * @param {string} [orgId] - App org ID for x-frigg-appOrgId header
  * @returns {Promise<AxiosResponse>} Axios response
  */
-async function makeAuthenticatedRequest(method, path, data = null, userId = DEFAULT_USER_ID, orgId = null) {
+async function makeAuthenticatedRequest(
+    method,
+    path,
+    data = null,
+    userId = DEFAULT_USER_ID,
+    orgId = null,
+) {
     const headers = {
         'x-api-key': API_KEY,
     };
-    
+
     if (userId) {
         headers['x-frigg-appUserId'] = userId;
     }
-    
+
     if (orgId) {
         headers['x-frigg-appOrgId'] = orgId;
     }
-    
+
     try {
         return await axios({
             method,
@@ -59,15 +65,15 @@ async function getAuthRequirements(entityType, userId = DEFAULT_USER_ID) {
         'GET',
         `/api/authorize?entityType=${entityType}`,
         null,
-        userId
+        userId,
     );
-    
+
     if (res.status !== 200) {
         throw new Error(
-            `Failed to get auth requirements for ${entityType}: ${res.status} - ${JSON.stringify(res.data)}`
+            `Failed to get auth requirements for ${entityType}: ${res.status} - ${JSON.stringify(res.data)}`,
         );
     }
-    
+
     return res.data;
 }
 
@@ -78,20 +84,24 @@ async function getAuthRequirements(entityType, userId = DEFAULT_USER_ID) {
  * @param {string} [userId] - User ID for authentication
  * @returns {Promise<Object>} Created entity details (includes entity.id)
  */
-async function authenticateModule(entityType, credentials, userId = DEFAULT_USER_ID) {
+async function authenticateModule(
+    entityType,
+    credentials,
+    userId = DEFAULT_USER_ID,
+) {
     const res = await makeAuthenticatedRequest(
         'POST',
         '/api/authorize',
         { entityType, data: credentials },
-        userId
+        userId,
     );
-    
+
     if (res.status !== 200) {
         throw new Error(
-            `Failed to authenticate module ${entityType}: ${res.status} - ${JSON.stringify(res.data)}`
+            `Failed to authenticate module ${entityType}: ${res.status} - ${JSON.stringify(res.data)}`,
         );
     }
-    
+
     return res.data;
 }
 
@@ -103,28 +113,33 @@ async function authenticateModule(entityType, credentials, userId = DEFAULT_USER
  * @param {string} [userId] - User ID for authentication
  * @returns {Promise<Object>} Created integration
  */
-async function createIntegration(integrationType, entities, config = {}, userId = DEFAULT_USER_ID) {
+async function createIntegration(
+    integrationType,
+    entities,
+    config = {},
+    userId = DEFAULT_USER_ID,
+) {
     const integrationConfig = {
         type: integrationType,
         ...config,
     };
-    
+
     const res = await makeAuthenticatedRequest(
         'POST',
         '/api/integrations',
-        { 
+        {
             config: integrationConfig,
             entities,
         },
-        userId
+        userId,
     );
-    
+
     if (res.status !== 201) {
         throw new Error(
-            `Failed to create integration ${integrationType}: ${res.status} - ${JSON.stringify(res.data)}`
+            `Failed to create integration ${integrationType}: ${res.status} - ${JSON.stringify(res.data)}`,
         );
     }
-    
+
     return res.data;
 }
 
@@ -138,15 +153,15 @@ async function getIntegrations(userId = DEFAULT_USER_ID) {
         'GET',
         '/api/integrations',
         null,
-        userId
+        userId,
     );
-    
+
     if (res.status !== 200) {
         throw new Error(
-            `Failed to get integrations: ${res.status} - ${JSON.stringify(res.data)}`
+            `Failed to get integrations: ${res.status} - ${JSON.stringify(res.data)}`,
         );
     }
-    
+
     return res.data;
 }
 
@@ -161,15 +176,15 @@ async function getIntegration(integrationId, userId = DEFAULT_USER_ID) {
         'GET',
         `/api/integrations/${integrationId}`,
         null,
-        userId
+        userId,
     );
-    
+
     if (res.status !== 200) {
         throw new Error(
-            `Failed to get integration ${integrationId}: ${res.status} - ${JSON.stringify(res.data)}`
+            `Failed to get integration ${integrationId}: ${res.status} - ${JSON.stringify(res.data)}`,
         );
     }
-    
+
     return res.data;
 }
 
@@ -184,12 +199,12 @@ async function deleteIntegration(integrationId, userId = DEFAULT_USER_ID) {
         'DELETE',
         `/api/integrations/${integrationId}`,
         null,
-        userId
+        userId,
     );
-    
+
     if (res.status !== 204) {
         throw new Error(
-            `Failed to delete integration ${integrationId}: ${res.status} - ${JSON.stringify(res.data)}`
+            `Failed to delete integration ${integrationId}: ${res.status} - ${JSON.stringify(res.data)}`,
         );
     }
 }
@@ -205,9 +220,9 @@ async function testEntityAuth(entityId, userId = DEFAULT_USER_ID) {
         'GET',
         `/api/entities/${entityId}/test-auth`,
         null,
-        userId
+        userId,
     );
-    
+
     return { status: res.status, data: res.data };
 }
 
@@ -222,13 +237,13 @@ async function createTestUser(username, password) {
         username,
         password,
     });
-    
+
     if (res.status !== 201) {
         throw new Error(
-            `Failed to create test user: ${res.status} - ${JSON.stringify(res.data)}`
+            `Failed to create test user: ${res.status} - ${JSON.stringify(res.data)}`,
         );
     }
-    
+
     return res.data;
 }
 
@@ -243,13 +258,13 @@ async function loginTestUser(username, password) {
         username,
         password,
     });
-    
+
     if (res.status !== 201) {
         throw new Error(
-            `Failed to login: ${res.status} - ${JSON.stringify(res.data)}`
+            `Failed to login: ${res.status} - ${JSON.stringify(res.data)}`,
         );
     }
-    
+
     return res.data;
 }
 
@@ -274,47 +289,50 @@ async function cleanupTestData(integrationId, userId = DEFAULT_USER_ID) {
  * @param {number} [intervalMs=500] - Polling interval in milliseconds
  * @returns {Promise<void>}
  */
-async function waitForCondition(condition, timeoutMs = 10000, intervalMs = 500) {
+async function waitForCondition(
+    condition,
+    timeoutMs = 10000,
+    intervalMs = 500,
+) {
     const start = Date.now();
-    
+
     while (Date.now() - start < timeoutMs) {
         if (await condition()) {
             return;
         }
-        await new Promise(resolve => setTimeout(resolve, intervalMs));
+        await new Promise((resolve) => setTimeout(resolve, intervalMs));
     }
-    
+
     throw new Error(`Condition not met within ${timeoutMs}ms`);
 }
 
 module.exports = {
     // Request helpers
     makeAuthenticatedRequest,
-    
+
     // Entity/Module helpers
     getAuthRequirements,
     authenticateModule,
     testEntityAuth,
-    
+
     // Integration helpers
     createIntegration,
     getIntegrations,
     getIntegration,
     deleteIntegration,
-    
+
     // User helpers
     createTestUser,
     loginTestUser,
-    
+
     // Cleanup
     cleanupTestData,
-    
+
     // Utilities
     waitForCondition,
-    
+
     // Constants
     BASE_URL,
     DEFAULT_USER_ID,
     DEFAULT_ORG_ID,
 };
-

@@ -432,7 +432,9 @@ class Api extends ApiKeyRequester {
             },
             query: params,
         };
-        return this._get(options);
+
+        const response = await this._get(options);
+        return { results: response.results?.data, errors: response.errors };
     }
 
     /**
@@ -516,7 +518,8 @@ class Api extends ApiKeyRequester {
             },
             query: params,
         };
-        return this._get(options);
+        const response = await this._get(options);
+        return { results: response.results?.data, errors: response.errors };
     }
 
     // ==================== VISIT ENDPOINTS ====================

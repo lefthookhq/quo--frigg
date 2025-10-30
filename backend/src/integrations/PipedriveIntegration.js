@@ -28,6 +28,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
             pipedrive: { definition: pipedrive.Definition },
             quo: { definition: quo.Definition },
         },
+        webhooks: {
+            enabled: true,
+        },
         routes: [
             {
                 path: '/pipedrive/deals',
@@ -66,7 +69,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
             reverseChronological: true,
             initialBatchSize: 100,
             ongoingBatchSize: 50,
-            supportsWebhooks: true,  // ✅ Webhook support implemented (programmatic registration)
+            supportsWebhooks: true, // ✅ Webhook support implemented (programmatic registration)
         },
         queueConfig: {
             maxWorkers: 20,
@@ -77,10 +80,29 @@ class PipedriveIntegration extends BaseCRMIntegration {
         },
     };
 
+    /**
+     * Webhook configuration constants
+     * Used for webhook labels and identification in webhook processing
+     */
+    static WEBHOOK_LABELS = {
+        QUO_MESSAGES: 'Pipedrive Integration - Messages',
+        QUO_CALLS: 'Pipedrive Integration - Calls',
+        QUO_CALL_SUMMARIES: 'Pipedrive Integration - Call Summaries',
+    };
+
+    /**
+     * Webhook event subscriptions
+     * Defines which events each webhook type listens for
+     */
+    static WEBHOOK_EVENTS = {
+        QUO_MESSAGES: ['message.received', 'message.delivered'],
+        QUO_CALLS: ['call.completed'],
+        QUO_CALL_SUMMARIES: ['call.summary.completed'],
+    };
+
     constructor(params) {
         super(params);
 
-        // Initialize Frigg commands for database operations
         this.commands = createFriggCommands({
             integrationClass: PipedriveIntegration,
         });
@@ -123,6 +145,143 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 userActionType: 'REPORT',
             },
         };
+    }
+
+    // ============================================================================
+    // WEBHOOK INFRASTRUCTURE - Private Helper Methods
+    // ============================================================================
+
+    /**
+     * Verify Quo (OpenPhone) webhook signature
+     * Uses HMAC-SHA256 to verify the webhook payload
+     * Signature format: "hmac;version;timestamp;signature"
+     *
+     * @private
+     * @param {Object} headers - HTTP headers
+     * @param {Object} body - Webhook payload
+     * @param {string} eventType - Event type (e.g., "call.completed")
+     * @returns {Promise<void>}
+     * @throws {Error} If signature is invalid or missing
+     */
+    async _verifyQuoWebhookSignature(headers, body, eventType) {
+        const signatureHeader = headers['openphone-signature'];
+
+        if (!signatureHeader) {
+            throw new Error('Missing Openphone-Signature header');
+        }
+
+        // Parse signature format: hmac;version;timestamp;signature
+        const parts = signatureHeader.split(';');
+        if (parts.length !== 4 || parts[0] !== 'hmac') {
+            throw new Error('Invalid Openphone-Signature format');
+        }
+
+        const [_, version, timestamp, receivedSignature] = parts;
+
+        let webhookKey;
+        if (eventType.startsWith('call.summary')) {
+            webhookKey = this.config?.quoCallSummaryWebhookKey;
+        } else if (eventType.startsWith('call.')) {
+            webhookKey = this.config?.quoCallWebhookKey;
+        } else if (eventType.startsWith('message.')) {
+            webhookKey = this.config?.quoMessageWebhookKey;
+        } else {
+            throw new Error(
+                `Unknown event type for key selection: ${eventType}`,
+            );
+        }
+
+        if (!webhookKey) {
+            throw new Error('Webhook key not found in config');
+        }
+
+        const crypto = require('crypto');
+
+        const testFormats = [
+            {
+                name: 'timestamp + body (no separator)',
+                payload: timestamp + JSON.stringify(body),
+                keyTransform: 'plain',
+            },
+            {
+                name: 'timestamp + body (no separator, base64 key)',
+                payload: timestamp + JSON.stringify(body),
+                keyTransform: 'base64',
+            },
+            {
+                name: 'timestamp + "." + body (dot separator)',
+                payload: timestamp + '.' + JSON.stringify(body),
+                keyTransform: 'plain',
+            },
+            {
+                name: 'timestamp + "." + body (dot separator, base64 key)',
+                payload: timestamp + '.' + JSON.stringify(body),
+                keyTransform: 'base64',
+            },
+        ];
+
+        let matchFound = false;
+
+        for (const format of testFormats) {
+            const key =
+                format.keyTransform === 'base64'
+                    ? Buffer.from(webhookKey, 'base64')
+                    : webhookKey;
+
+            const hmac = crypto.createHmac('sha256', key);
+            hmac.update(format.payload);
+            const computedSignature = hmac.digest('base64');
+
+            const matches = computedSignature === receivedSignature;
+
+            if (matches) {
+                matchFound = true;
+                break;
+            }
+        }
+
+        if (!matchFound) {
+            throw new Error(
+                'Webhook signature verification failed - no matching format found',
+            );
+        }
+
+        console.log('[Quo Webhook] ✓ Signature verified');
+    }
+
+    /**
+     * Normalize phone number for consistent matching
+     * Removes formatting characters while preserving E.164 format
+     *
+     * @private
+     * @param {string} phone - Phone number to normalize
+     * @returns {string} Normalized phone number
+     */
+    _normalizePhoneNumber(phone) {
+        if (!phone) return phone;
+        // Remove spaces, parentheses, dashes, but keep + for international format
+        return phone.replace(/[\s\(\)\-]/g, '');
+    }
+
+    /**
+     * Generate webhook URL with BASE_URL validation
+     * Centralizes URL construction and ensures BASE_URL is configured
+     *
+     * @private
+     * @param {string} path - Webhook path (e.g., '/webhooks/{id}')
+     * @returns {string} Complete webhook URL
+     * @throws {Error} If BASE_URL environment variable is not configured
+     */
+    _generateWebhookUrl(path) {
+        if (!process.env.BASE_URL) {
+            throw new Error(
+                'BASE_URL environment variable is required for webhook setup. ' +
+                    'Please configure this in your deployment environment before enabling webhooks.',
+            );
+        }
+
+        const integrationName = this.constructor.Definition.name;
+        return `${process.env.BASE_URL}/api/${integrationName}-integration${path}`;
     }
 
     // ============================================================================
@@ -251,13 +410,13 @@ class PipedriveIntegration extends BaseCRMIntegration {
     }
 
     /**
-     * Log SMS message to Pipedrive as an activity
+     * Log SMS message to Pipedrive as a note
      * @param {Object} activity - SMS activity
      * @returns {Promise<void>}
      */
     async logSMSToActivity(activity) {
         try {
-            const person = await this.pipedrive.api.persons.get(
+            const person = await this.pipedrive.api.getPerson(
                 activity.contactExternalId,
             );
             if (!person || !person.data) {
@@ -267,19 +426,14 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 return;
             }
 
-            const activityData = {
-                subject: `SMS: ${activity.direction}`,
-                type: 'sms',
-                done: 1,
-                note: activity.content,
+            const noteData = {
+                content: activity.content,
                 person_id: person.data.id,
-                due_date: activity.timestamp.split('T')[0],
-                due_time: activity.timestamp.split('T')[1]?.substring(0, 5),
             };
 
-            await this.pipedrive.api.activities.create(activityData);
+            await this.pipedrive.api.createNote(noteData);
         } catch (error) {
-            console.error('Failed to log SMS activity to Pipedrive:', error);
+            console.error('Failed to log SMS to Pipedrive:', error);
             throw error;
         }
     }
@@ -291,7 +445,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
      */
     async logCallToActivity(activity) {
         try {
-            const person = await this.pipedrive.api.persons.get(
+            const person = await this.pipedrive.api.getPerson(
                 activity.contactExternalId,
             );
             if (!person || !person.data) {
@@ -312,7 +466,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 duration: Math.floor(activity.duration / 60),
             };
 
-            await this.pipedrive.api.activities.create(activityData);
+            await this.pipedrive.api.createActivity(activityData);
         } catch (error) {
             console.error('Failed to log call activity to Pipedrive:', error);
             throw error;
@@ -320,15 +474,14 @@ class PipedriveIntegration extends BaseCRMIntegration {
     }
 
     /**
-     * Setup webhooks with Pipedrive
-     * Called during onCreate lifecycle (BaseCRMIntegration)
+     * Setup Pipedrive webhooks
      * Programmatically registers multiple webhooks with Pipedrive API
      * Stores webhook IDs in config for later cleanup
+     * @private
      * @returns {Promise<Object>} Setup result
      */
-    async setupWebhooks() {
+    async setupPipedriveWebhooks() {
         try {
-            // 1. Check if webhooks already registered
             if (
                 this.config?.pipedriveWebhookIds &&
                 this.config.pipedriveWebhookIds.length > 0
@@ -344,7 +497,6 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 };
             }
 
-            // 2. Construct webhook URL for this integration instance
             const webhookUrl = `${process.env.BASE_URL}/api/pipedrive-integration/webhooks/${this.id}`;
 
             console.log(`[Pipedrive] Registering webhooks at: ${webhookUrl}`);
@@ -373,7 +525,6 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 },
             ];
 
-            // 4. Register each webhook with Pipedrive API
             const webhookIds = [];
             const createdWebhooks = [];
 
@@ -385,10 +536,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                             event_action: sub.event_action,
                             event_object: sub.event_object,
                             name: `Quo - ${sub.name}`,
-                            version: '2.0',
-                            // Optional: Add HTTP Basic Auth for additional security
-                            // http_auth_user: process.env.PIPEDRIVE_WEBHOOK_USER,
-                            // http_auth_password: process.env.PIPEDRIVE_WEBHOOK_PASSWORD,
+                            version: '1.0',
                         });
 
                     if (webhookResponse?.data?.id) {
@@ -433,7 +581,6 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 config: updatedConfig,
             });
 
-            // 6. Update local config reference
             this.config = updatedConfig;
 
             console.log(
@@ -464,18 +611,398 @@ class PipedriveIntegration extends BaseCRMIntegration {
     }
 
     /**
-     * Process webhook events from Pipedrive
+     * Setup Quo webhooks (message, call, and call-summary webhooks)
+     * Registers webhooks with Quo API and stores webhook IDs + keys in config
+     * Uses atomic pattern: creates all webhooks before saving config, with rollback on failure
+     * @private
+     * @returns {Promise<Object>} Setup result with status, webhookIds, webhookUrls, etc.
+     */
+    async setupQuoWebhook() {
+        const createdWebhooks = [];
+
+        try {
+            if (
+                this.config?.quoMessageWebhookId &&
+                this.config?.quoCallWebhookId &&
+                this.config?.quoCallSummaryWebhookId
+            ) {
+                console.log(
+                    `[Quo] Webhooks already registered: message=${this.config.quoMessageWebhookId}, call=${this.config.quoCallWebhookId}, callSummary=${this.config.quoCallSummaryWebhookId}`,
+                );
+                return {
+                    status: 'already_configured',
+                    messageWebhookId: this.config.quoMessageWebhookId,
+                    callWebhookId: this.config.quoCallWebhookId,
+                    callSummaryWebhookId: this.config.quoCallSummaryWebhookId,
+                    webhookUrl: this.config.quoWebhooksUrl,
+                };
+            }
+
+            // Check for partial configuration (recovery scenario)
+            const hasPartialConfig =
+                this.config?.quoMessageWebhookId ||
+                this.config?.quoCallWebhookId ||
+                this.config?.quoCallSummaryWebhookId;
+
+            if (hasPartialConfig) {
+                console.warn(
+                    '[Quo] Partial webhook configuration detected - cleaning up before retry',
+                );
+
+                if (this.config?.quoMessageWebhookId) {
+                    try {
+                        await this.quo.api.deleteWebhook(
+                            this.config.quoMessageWebhookId,
+                        );
+                        console.log(
+                            `[Quo] Cleaned up orphaned message webhook: ${this.config.quoMessageWebhookId}`,
+                        );
+                    } catch (cleanupError) {
+                        console.warn(
+                            `[Quo] Could not clean up message webhook (may have been deleted): ${cleanupError.message}`,
+                        );
+                    }
+                }
+
+                if (this.config?.quoCallWebhookId) {
+                    try {
+                        await this.quo.api.deleteWebhook(
+                            this.config.quoCallWebhookId,
+                        );
+                        console.log(
+                            `[Quo] Cleaned up orphaned call webhook: ${this.config.quoCallWebhookId}`,
+                        );
+                    } catch (cleanupError) {
+                        console.warn(
+                            `[Quo] Could not clean up call webhook (may have been deleted): ${cleanupError.message}`,
+                        );
+                    }
+                }
+
+                if (this.config?.quoCallSummaryWebhookId) {
+                    try {
+                        await this.quo.api.deleteWebhook(
+                            this.config.quoCallSummaryWebhookId,
+                        );
+                        console.log(
+                            `[Quo] Cleaned up orphaned call-summary webhook: ${this.config.quoCallSummaryWebhookId}`,
+                        );
+                    } catch (cleanupError) {
+                        console.warn(
+                            `[Quo] Could not clean up call-summary webhook (may have been deleted): ${cleanupError.message}`,
+                        );
+                    }
+                }
+            }
+
+            const webhookUrl = this._generateWebhookUrl(`/webhooks/${this.id}`);
+
+            console.log(
+                `[Quo] Registering message and call webhooks at: ${webhookUrl}`,
+            );
+
+            const messageWebhookResponse =
+                await this.quo.api.createMessageWebhook({
+                    url: webhookUrl,
+                    events: this.constructor.WEBHOOK_EVENTS.QUO_MESSAGES,
+                    label: this.constructor.WEBHOOK_LABELS.QUO_MESSAGES,
+                    status: 'enabled',
+                });
+
+            if (!messageWebhookResponse?.data?.id) {
+                throw new Error(
+                    'Invalid Quo message webhook response: missing webhook ID',
+                );
+            }
+
+            if (!messageWebhookResponse.data.key) {
+                throw new Error(
+                    'Invalid Quo message webhook response: missing webhook key',
+                );
+            }
+
+            const messageWebhookId = messageWebhookResponse.data.id;
+            const messageWebhookKey = messageWebhookResponse.data.key;
+
+            createdWebhooks.push({
+                type: 'message',
+                id: messageWebhookId,
+            });
+
+            console.log(
+                `[Quo] ✓ Message webhook registered with ID: ${messageWebhookId}`,
+            );
+
+            const callWebhookResponse = await this.quo.api.createCallWebhook({
+                url: webhookUrl,
+                events: this.constructor.WEBHOOK_EVENTS.QUO_CALLS,
+                label: this.constructor.WEBHOOK_LABELS.QUO_CALLS,
+                status: 'enabled',
+            });
+
+            if (!callWebhookResponse?.data?.id) {
+                throw new Error(
+                    'Invalid Quo call webhook response: missing webhook ID',
+                );
+            }
+
+            if (!callWebhookResponse.data.key) {
+                throw new Error(
+                    'Invalid Quo call webhook response: missing webhook key',
+                );
+            }
+
+            const callWebhookId = callWebhookResponse.data.id;
+            const callWebhookKey = callWebhookResponse.data.key;
+
+            createdWebhooks.push({
+                type: 'call',
+                id: callWebhookId,
+            });
+
+            console.log(
+                `[Quo] ✓ Call webhook registered with ID: ${callWebhookId}`,
+            );
+
+            const callSummaryWebhookResponse =
+                await this.quo.api.createCallSummaryWebhook({
+                    url: webhookUrl,
+                    events: this.constructor.WEBHOOK_EVENTS.QUO_CALL_SUMMARIES,
+                    label: this.constructor.WEBHOOK_LABELS.QUO_CALL_SUMMARIES,
+                    status: 'enabled',
+                });
+
+            if (!callSummaryWebhookResponse?.data?.id) {
+                throw new Error(
+                    'Invalid Quo call-summary webhook response: missing webhook ID',
+                );
+            }
+
+            if (!callSummaryWebhookResponse.data.key) {
+                throw new Error(
+                    'Invalid Quo call-summary webhook response: missing webhook key',
+                );
+            }
+
+            const callSummaryWebhookId = callSummaryWebhookResponse.data.id;
+            const callSummaryWebhookKey = callSummaryWebhookResponse.data.key;
+
+            createdWebhooks.push({
+                type: 'callSummary',
+                id: callSummaryWebhookId,
+            });
+
+            console.log(
+                `[Quo] ✓ Call-summary webhook registered with ID: ${callSummaryWebhookId}`,
+            );
+
+            const updatedConfig = {
+                ...this.config,
+                quoMessageWebhookId: messageWebhookId,
+                quoMessageWebhookKey: messageWebhookKey,
+                quoCallWebhookId: callWebhookId,
+                quoCallWebhookKey: callWebhookKey,
+                quoCallSummaryWebhookId: callSummaryWebhookId,
+                quoCallSummaryWebhookKey: callSummaryWebhookKey,
+                quoWebhooksUrl: webhookUrl,
+                quoWebhooksCreatedAt: new Date().toISOString(),
+            };
+
+            await this.commands.updateIntegrationConfig({
+                integrationId: this.id,
+                config: updatedConfig,
+            });
+
+            this.config = updatedConfig;
+
+            console.log(`[Quo] ✓ Keys stored securely (encrypted at rest)`);
+
+            return {
+                status: 'configured',
+                messageWebhookId: messageWebhookId,
+                callWebhookId: callWebhookId,
+                callSummaryWebhookId: callSummaryWebhookId,
+                webhookUrl: webhookUrl,
+            };
+        } catch (error) {
+            console.error('[Quo] Failed to setup webhooks:', error);
+
+            if (createdWebhooks.length > 0) {
+                console.warn(
+                    `[Quo] Rolling back ${createdWebhooks.length} created webhook(s)`,
+                );
+
+                for (const webhook of createdWebhooks) {
+                    try {
+                        await this.quo.api.deleteWebhook(webhook.id);
+                        console.log(
+                            `[Quo] ✓ Rolled back ${webhook.type} webhook ${webhook.id}`,
+                        );
+                    } catch (rollbackError) {
+                        console.error(
+                            `[Quo] Failed to rollback ${webhook.type} webhook ${webhook.id}:`,
+                            rollbackError.message,
+                        );
+                    }
+                }
+            }
+
+            // Fatal error - both webhooks required
+            await this.updateIntegrationMessages.execute(
+                this.id,
+                'errors',
+                'Quo Webhook Setup Failed',
+                `Could not register webhooks with Quo: ${error.message}. Integration requires message, call, and call-summary webhooks to function properly.`,
+                Date.now(),
+            );
+
+            return {
+                status: 'failed',
+                error: error.message,
+            };
+        }
+    }
+
+    /**
+     * Setup webhooks with both Pipedrive and Quo
+     * Called during onCreate lifecycle (BaseCRMIntegration)
+     * Orchestrates webhook setup for both services - BOTH required for success
+     * @returns {Promise<Object>} Setup result
+     */
+    async setupWebhooks() {
+        const results = {
+            pipedrive: null,
+            quo: null,
+            overallStatus: 'success',
+        };
+
+        try {
+            results.pipedrive = await this.setupPipedriveWebhooks();
+
+            results.quo = await this.setupQuoWebhook();
+
+            // BOTH required - fail if either fails
+            if (
+                results.pipedrive.status === 'failed' ||
+                results.quo.status === 'failed'
+            ) {
+                results.overallStatus = 'failed';
+                const failedServices = [];
+                if (results.pipedrive.status === 'failed')
+                    failedServices.push('Pipedrive');
+                if (results.quo.status === 'failed') failedServices.push('Quo');
+
+                throw new Error(
+                    `Webhook setup failed for: ${failedServices.join(', ')}. Both Pipedrive and Quo webhooks are required for integration to function.`,
+                );
+            }
+
+            console.log(
+                '[Webhook Setup] ✓ All webhooks configured successfully',
+            );
+            return results;
+        } catch (error) {
+            console.error('[Webhook Setup] Failed:', error);
+
+            await this.updateIntegrationMessages.execute(
+                this.id,
+                'errors',
+                'Webhook Setup Failed',
+                `Failed to setup webhooks: ${error.message}`,
+                Date.now(),
+            );
+
+            throw error; // Re-throw since both are required
+        }
+    }
+
+    /**
+     * HTTP webhook receiver - handles incoming webhooks before queuing
+     * Called on incoming webhook POST before queuing to SQS
+     * Context: NO database connection (fast cold start)
+     *
+     * Determines webhook source (Pipedrive vs Quo) and validates signatures
+     * before queuing for processing
+     *
+     * @param {Object} params
+     * @param {Object} params.req - Express request object
+     * @param {Object} params.res - Express response object
+     * @returns {Promise<void>}
+     */
+    async onWebhookReceived({ req, res }) {
+        try {
+            const quoSignature = req.headers['openphone-signature'];
+
+            // Determine webhook source based on signature header
+            // Pipedrive webhooks don't have openphone-signature header
+            const source = quoSignature ? 'quo' : 'pipedrive';
+
+            // Early signature validation for Quo webhooks
+            // This prevents queue flooding attacks
+            if (source === 'quo' && !quoSignature) {
+                console.error(
+                    `[Quo Webhook] Missing signature header - rejecting webhook`,
+                );
+                res.status(401).json({ error: 'Signature required' });
+                return;
+            }
+
+            // Note: We can't verify signature here because we don't have DB access
+            // Signature verification will happen in onWebhook() with full context
+
+            const webhookData = {
+                body: req.body,
+                headers: req.headers,
+                integrationId: req.params.integrationId,
+                signature: quoSignature || null,
+                source: source,
+                receivedAt: new Date().toISOString(),
+            };
+
+            await this.queueWebhook(webhookData);
+
+            res.status(200).json({ received: true });
+        } catch (error) {
+            console.error('[Webhook] Receive error:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Process webhook events from Pipedrive and Quo
      * Called by queue worker with full database access and hydrated integration
      * Automatically invoked by Frigg's webhook infrastructure
+     * Routes to appropriate handler based on webhook source
      *
      * @param {Object} params
      * @param {Object} params.data - Webhook data from queue
-     * @param {Object} params.data.body - Pipedrive webhook payload (v2.0)
+     * @param {Object} params.data.body - Webhook payload
      * @param {Object} params.data.headers - HTTP headers
+     * @param {string} params.data.source - Webhook source ('pipedrive' or 'quo')
      * @param {string} params.data.integrationId - Integration ID
      * @returns {Promise<Object>} Processing result
      */
     async onWebhook({ data }) {
+        const { source } = data;
+
+        console.log(`[Webhook] Processing ${source} webhook`);
+
+        if (source === 'quo') {
+            return await this._handleQuoWebhook(data);
+        } else {
+            return await this._handlePipedriveWebhook(data);
+        }
+    }
+
+    /**
+     * Process webhook events from Pipedrive
+     * Called by onWebhook() router
+     *
+     * @private
+     * @param {Object} data - Webhook data from queue
+     * @returns {Promise<Object>} Processing result
+     */
+    async _handlePipedriveWebhook(data) {
         const { body, headers, integrationId } = data;
 
         console.log(`[Pipedrive Webhook] Processing event:`, {
@@ -487,36 +1014,30 @@ class PipedriveIntegration extends BaseCRMIntegration {
         });
 
         try {
-            // 1. Extract event details from Pipedrive webhook payload (v2.0)
             const { meta, current, previous, event } = body;
 
             if (!meta || !event) {
-                throw new Error('Invalid webhook payload: missing meta or event');
+                throw new Error(
+                    'Invalid webhook payload: missing meta or event',
+                );
             }
 
             // 2. Parse event type (e.g., "updated.person" -> action: updated, object: person)
             const [action, object] = event.split('.');
 
-            // 3. Route based on object type
             switch (object) {
                 case 'person':
-                    await this._handlePersonWebhook({ action, data: current, previous, meta });
+                    await this._handlePersonWebhook({
+                        action,
+                        data: current,
+                        previous,
+                        meta,
+                    });
                     break;
-
-                case 'organization':
-                    await this._handleOrganizationWebhook({ action, data: current, previous, meta });
-                    break;
-
-                case 'deal':
-                    await this._handleDealWebhook({ action, data: current, previous, meta });
-                    break;
-
-                case 'activity':
-                    await this._handleActivityWebhook({ action, data: current, previous, meta });
-                    break;
-
                 default:
-                    console.log(`[Pipedrive Webhook] Unhandled object type: ${object}`);
+                    console.log(
+                        `[Pipedrive Webhook] Unhandled object type: ${object}`,
+                    );
                     return {
                         success: true,
                         skipped: true,
@@ -524,7 +1045,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
                     };
             }
 
-            console.log(`[Pipedrive Webhook] ✓ Successfully processed ${event}`);
+            console.log(
+                `[Pipedrive Webhook] ✓ Successfully processed ${event}`,
+            );
 
             return {
                 success: true,
@@ -534,7 +1057,6 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 objectId: meta.id,
                 processedAt: new Date().toISOString(),
             };
-
         } catch (error) {
             console.error('[Pipedrive Webhook] Processing error:', error);
 
@@ -544,7 +1066,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 'errors',
                 'Webhook Processing Error',
                 `Failed to process ${body.event}: ${error.message}`,
-                Date.now()
+                Date.now(),
             );
 
             // Re-throw for SQS retry and DLQ
@@ -568,43 +1090,34 @@ class PipedriveIntegration extends BaseCRMIntegration {
         console.log(`[Pipedrive Webhook] Handling person ${action}:`, meta.id);
 
         try {
-            // Handle deletion separately
-            if (action === 'deleted') {
-                await this._handlePersonDeleted(meta.id, data);
-                return;
-            }
-
-            // Handle merge separately
-            if (action === 'merged') {
-                await this._handlePersonMerged(data, previous, meta);
-                return;
-            }
-
-            // For added/updated: Fetch full person data to ensure we have all fields
-            // (webhook payload may be incomplete)
             let person;
-            try {
-                const response = await this.pipedrive.api.getPerson(meta.id);
-                person = response.data;
-            } catch (error) {
-                console.warn(`[Pipedrive Webhook] Could not fetch person ${meta.id}, using webhook data:`, error.message);
-                person = data;
+
+            if (action === 'deleted') {
+                // For deletion, we only need the person ID
+                person = { id: meta.id };
+            } else {
+                try {
+                    const response = await this.pipedrive.api.getPerson(
+                        meta.id,
+                    );
+                    person = response.data;
+                } catch (error) {
+                    console.warn(
+                        `[Pipedrive Webhook] Could not fetch person ${meta.id}, using webhook data:`,
+                        error.message,
+                    );
+                    person = data;
+                }
+
+                if (!person) {
+                    console.warn(
+                        `[Pipedrive Webhook] Person ${meta.id} not found`,
+                    );
+                    return;
+                }
             }
 
-            if (!person) {
-                console.warn(`[Pipedrive Webhook] Person ${meta.id} not found`);
-                return;
-            }
-
-            // Transform to Quo format using existing method
-            const quoContact = await this.transformPersonToQuo(person);
-
-            // Sync to Quo using existing API
-            if (!this.quo?.api) {
-                throw new Error('Quo API not available');
-            }
-
-            await this.quo.api.createContact(quoContact);
+            await this._syncPersonToQuo(person, action);
 
             // Update mapping for idempotency tracking
             await this.upsertMapping(String(meta.id), {
@@ -615,151 +1128,553 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 action: action,
             });
 
-            console.log(`[Pipedrive Webhook] ✓ Synced person ${meta.id} to Quo`);
-
+            console.log(
+                `[Pipedrive Webhook] ✓ Synced person ${meta.id} to Quo`,
+            );
         } catch (error) {
-            console.error(`[Pipedrive Webhook] Failed to sync person ${meta.id}:`, error.message);
+            console.error(
+                `[Pipedrive Webhook] Failed to sync person ${meta.id}:`,
+                error.message,
+            );
             throw error;
         }
     }
 
     /**
-     * Handle person deleted event
+     * Sync Pipedrive person to Quo
+     * Handles all person sync operations: create, update, and delete
+     *
      * @private
+     * @param {Object} person - Pipedrive person object (or object with id for deletion)
+     * @param {string} action - 'added', 'updated', or 'deleted'
+     * @returns {Promise<void>}
      */
-    async _handlePersonDeleted(personId, data) {
-        console.log(`[Pipedrive Webhook] Handling person deletion:`, personId);
+    async _syncPersonToQuo(person, action) {
+        console.log(
+            `[Pipedrive] Syncing person to Quo (${action}):`,
+            person.id,
+        );
 
         try {
-            // Strategy: Remove mapping (stop syncing)
-            // Alternative: Soft delete in Quo or mark as inactive
-            await this.deleteMapping(String(personId));
-
-            console.log(`[Pipedrive Webhook] ✓ Removed mapping for person ${personId}`);
-        } catch (error) {
-            console.error(`[Pipedrive Webhook] Failed to handle person deletion ${personId}:`, error.message);
-            throw error;
-        }
-    }
-
-    /**
-     * Handle person merged event
-     * When two persons are merged, sync the winner and remove the loser
-     * @private
-     */
-    async _handlePersonMerged(current, previous, meta) {
-        console.log(`[Pipedrive Webhook] Handling person merge:`, meta.id);
-
-        try {
-            // In Pipedrive, merged records have the winner's ID in current.id
-            // and may include merge information in meta or current
-
-            // 1. Fetch the winner person (current)
-            const winnerResponse = await this.pipedrive.api.getPerson(meta.id);
-            const winner = winnerResponse.data;
-
-            if (winner) {
-                // 2. Transform and sync winner to Quo
-                const quoContact = await this.transformPersonToQuo(winner);
-                await this.quo.api.createContact(quoContact);
-
-                // 3. Update mapping for winner
-                await this.upsertMapping(String(meta.id), {
-                    externalId: String(meta.id),
-                    entityType: 'Person',
-                    lastSyncedAt: new Date().toISOString(),
-                    syncMethod: 'webhook',
-                    action: 'merged',
-                });
+            if (!this.quo?.api) {
+                throw new Error('Quo API not available');
             }
 
-            // 4. TODO: Identify and remove mapping for loser person
-            // Pipedrive may not provide the loser's ID in the webhook
-            // Consider tracking merge events separately or querying Pipedrive API
-
-            console.log(`[Pipedrive Webhook] ✓ Handled person merge for ${meta.id}`);
-        } catch (error) {
-            console.error(`[Pipedrive Webhook] Failed to handle person merge ${meta.id}:`, error.message);
-            throw error;
-        }
-    }
-
-    /**
-     * Handle organization webhook events (added, updated, deleted, merged)
-     * @private
-     */
-    async _handleOrganizationWebhook({ action, data, previous, meta }) {
-        console.log(`[Pipedrive Webhook] Handling organization ${action}:`, meta.id);
-
-        try {
+            // Handle deletion separately (no transformation needed)
             if (action === 'deleted') {
-                await this.deleteMapping(`org_${meta.id}`);
-                console.log(`[Pipedrive Webhook] ✓ Removed mapping for organization ${meta.id}`);
+                const existingContacts = await this.quo.api.listContacts({
+                    externalIds: [String(person.id)],
+                    maxResults: 10,
+                });
+
+                const exactMatch =
+                    existingContacts?.data && existingContacts.data.length > 0
+                        ? existingContacts.data.find(
+                              (contact) =>
+                                  contact.externalId === String(person.id),
+                          )
+                        : null;
+
+                if (exactMatch) {
+                    await this.quo.api.deleteContact(exactMatch.id);
+                    console.log(
+                        `[Pipedrive] ✓ Deleted Quo contact ${exactMatch.id} for person ${person.id}`,
+                    );
+                } else {
+                    console.log(
+                        `[Pipedrive] Contact for person ${person.id} not found in Quo, nothing to delete`,
+                    );
+                }
                 return;
             }
 
-            // For added/updated/merged: Fetch full organization data
-            let organization;
-            try {
-                const response = await this.pipedrive.api.getOrganization(meta.id);
-                organization = response.data;
-            } catch (error) {
-                console.warn(`[Pipedrive Webhook] Could not fetch organization ${meta.id}, using webhook data:`, error.message);
-                organization = data;
+            const quoContact = await this.transformPersonToQuo(person);
+
+            if (action === 'added') {
+                const createResponse =
+                    await this.quo.api.createContact(quoContact);
+
+                if (!createResponse?.data) {
+                    throw new Error(
+                        `Create contact failed: Invalid response from Quo API`,
+                    );
+                }
+
+                console.log(
+                    `[Pipedrive] ✓ Contact ${createResponse.data.id} created in Quo (externalId: ${quoContact.externalId})`,
+                );
+            } else {
+                const existingContacts = await this.quo.api.listContacts({
+                    externalIds: [quoContact.externalId],
+                    maxResults: 10,
+                });
+
+                const exactMatch =
+                    existingContacts?.data && existingContacts.data.length > 0
+                        ? existingContacts.data.find(
+                              (contact) =>
+                                  contact.externalId === quoContact.externalId,
+                          )
+                        : null;
+
+                if (exactMatch) {
+                    const quoContactId = exactMatch.id;
+                    const { externalId, ...contactData } = quoContact;
+                    const updateResponse = await this.quo.api.updateContact(
+                        quoContactId,
+                        contactData,
+                    );
+
+                    if (!updateResponse?.data) {
+                        throw new Error(
+                            `Update contact failed: Invalid response from Quo API`,
+                        );
+                    }
+
+                    console.log(
+                        `[Pipedrive] ✓ Contact ${quoContactId} updated in Quo (externalId: ${externalId})`,
+                    );
+                } else {
+                    // Contact not found - create it as fallback
+                    console.log(
+                        `[Pipedrive] Contact with externalId ${quoContact.externalId} not found in Quo, creating as fallback`,
+                    );
+
+                    const createResponse =
+                        await this.quo.api.createContact(quoContact);
+
+                    if (!createResponse?.data) {
+                        throw new Error(
+                            `Create contact failed: Invalid response from Quo API`,
+                        );
+                    }
+
+                    console.log(
+                        `[Pipedrive] ✓ Contact ${createResponse.data.id} created in Quo as fallback (externalId: ${quoContact.externalId})`,
+                    );
+                }
             }
 
-            if (!organization) {
-                console.warn(`[Pipedrive Webhook] Organization ${meta.id} not found`);
-                return;
+            console.log(`[Pipedrive] ✓ Person ${person.id} synced to Quo`);
+        } catch (error) {
+            console.error(
+                `[Pipedrive] Failed to sync person ${person.id}:`,
+                error.message,
+            );
+            throw error;
+        }
+    }
+
+    /**
+     * Process webhook events from Quo (OpenPhone)
+     * Called by onWebhook() router
+     *
+     * @private
+     * @param {Object} data - Webhook data from queue
+     * @returns {Promise<Object>} Processing result
+     */
+    async _handleQuoWebhook(data) {
+        const { body, headers } = data;
+        const eventType = body.type; // "call.completed", "message.received", etc.
+
+        console.log(`[Quo Webhook] Processing event: ${eventType}`);
+
+        try {
+            await this._verifyQuoWebhookSignature(headers, body, eventType);
+
+            let result;
+            if (eventType === 'call.completed') {
+                result = await this._handleQuoCallEvent(body);
+            } else if (eventType === 'call.summary.completed') {
+                result = await this._handleQuoCallSummaryEvent(body);
+            } else if (
+                eventType === 'message.received' ||
+                eventType === 'message.delivered'
+            ) {
+                result = await this._handleQuoMessageEvent(body);
+            } else {
+                console.warn(`[Quo Webhook] Unknown event type: ${eventType}`);
+                return { success: true, skipped: true, eventType };
             }
 
-            // TODO: Implement organization sync to Quo
-            // For now, just update mapping
-            await this.upsertMapping(`org_${meta.id}`, {
-                externalId: String(meta.id),
-                entityType: 'Organization',
-                lastSyncedAt: new Date().toISOString(),
-                syncMethod: 'webhook',
-                action: action,
+            return {
+                success: true,
+                processedAt: new Date().toISOString(),
+                eventType,
+                result,
+            };
+        } catch (error) {
+            console.error('[Quo Webhook] Processing error:', error);
+
+            await this.updateIntegrationMessages.execute(
+                this.id,
+                'errors',
+                'Quo Webhook Processing Error',
+                `Failed to process ${eventType}: ${error.message}`,
+                Date.now(),
+            );
+
+            throw error; // Re-throw for SQS retry
+        }
+    }
+
+    /**
+     * Handle Quo call.completed webhook event
+     * Finds Pipedrive contact by phone number and logs call activity
+     *
+     * @private
+     * @param {Object} webhookData - Quo webhook payload
+     * @returns {Promise<Object>} Processing result
+     */
+    async _handleQuoCallEvent(webhookData) {
+        const callObject = webhookData.data.object;
+
+        console.log(`[Quo Webhook] Processing call: ${callObject.id}`);
+
+        const participants = callObject.participants || [];
+
+        if (participants.length < 2) {
+            throw new Error('Call must have at least 2 participants');
+        }
+
+        // Find the contact phone (not the user's phone)
+        // Quo webhook participant indexing:
+        // - Outgoing: [user_phone, contact_phone] → contact is index 1
+        // - Incoming: [contact_phone, user_phone] → contact is index 0
+        const contactPhone =
+            callObject.direction === 'outgoing'
+                ? participants[1]
+                : participants[0];
+
+        const pipedrivePersonId =
+            await this._findPipedriveContactByPhone(contactPhone);
+
+        const deepLink = webhookData.data.deepLink || '#';
+
+        const phoneNumberDetails = await this.quo.api.getPhoneNumber(
+            callObject.phoneNumberId,
+        );
+        const inboxName =
+            phoneNumberDetails.data.users.length > 0
+                ? phoneNumberDetails.data.users[0].firstName +
+                  ' ' +
+                  phoneNumberDetails.data.users[0].lastName
+                : 'Quo Line';
+
+        const userDetails = await this.quo.api.getUser(callObject.userId);
+        const userName = `${userDetails.data.firstName || ''} ${userDetails.data.lastName || ''}`.trim() ||
+            'Quo User';
+
+        const minutes = Math.floor(callObject.duration / 60);
+        const seconds = callObject.duration % 60;
+        const durationFormatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+        let statusDescription;
+        if (callObject.status === 'completed') {
+            statusDescription =
+                callObject.direction === 'outgoing'
+                    ? `Outgoing initiated by ${userName}`
+                    : `Incoming answered by ${userName}`;
+        } else if (
+            callObject.status === 'no-answer' ||
+            callObject.status === 'missed'
+        ) {
+            statusDescription = 'Incoming missed';
+        } else {
+            statusDescription = `${callObject.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} ${callObject.status}`;
+        }
+
+        const inboxNumberRaw =
+            phoneNumberDetails.data.number ||
+            phoneNumberDetails.data.formattedNumber ||
+            participants[callObject.direction === 'outgoing' ? 0 : 1];
+
+        let formattedNote;
+        if (callObject.direction === 'outgoing') {
+            formattedNote = `<p><strong>☎️  Call Quo 📱 ${inboxName} ${inboxNumberRaw} → ${contactPhone}</strong></p>
+<p>${statusDescription}</p>
+<p><a href="${deepLink}">View the call activity in Quo</a></p>`;
+        } else {
+            formattedNote = `<p><strong>☎️  Call ${contactPhone} → Quo 📱 ${inboxName} ${inboxNumberRaw}</strong></p>
+<p>${statusDescription}</p>`;
+
+            if (callObject.status === 'completed' && callObject.duration > 0) {
+                formattedNote += `
+<p>▶️ Recording (${durationFormatted})</p>`;
+            }
+
+            formattedNote += `
+<p><a href="${deepLink}">View the call activity in Quo</a></p>`;
+        }
+
+        const noteData = {
+            content: formattedNote,
+            person_id: parseInt(pipedrivePersonId),
+        };
+
+        await this.pipedrive.api.createNote(noteData);
+
+        console.log(
+            `[Quo Webhook] ✓ Call logged as note for person ${pipedrivePersonId}`,
+        );
+
+        return { logged: true, personId: pipedrivePersonId };
+    }
+
+    /**
+     * Handle Quo message.received and message.delivered webhook events
+     * Finds Pipedrive contact by phone number and logs SMS activity
+     *
+     * @private
+     * @param {Object} webhookData - Quo webhook payload
+     * @returns {Promise<Object>} Processing result
+     */
+    async _handleQuoMessageEvent(webhookData) {
+        const messageObject = webhookData.data.object;
+
+        console.log(`[Quo Webhook] Processing message: ${messageObject.id}`);
+
+        // Determine contact phone based on direction
+        // - Outgoing: we sent to contact (use 'to')
+        // - Incoming: contact sent to us (use 'from')
+        const contactPhone =
+            messageObject.direction === 'outgoing'
+                ? messageObject.to
+                : messageObject.from;
+
+        console.log(
+            `[Quo Webhook] Message direction: ${messageObject.direction}, contact: ${contactPhone}`,
+        );
+
+        const pipedrivePersonId =
+            await this._findPipedriveContactByPhone(contactPhone);
+
+        const phoneNumberDetails = await this.quo.api.getPhoneNumber(
+            messageObject.phoneNumberId,
+        );
+        const inboxName =
+            phoneNumberDetails.data.users.length > 0
+                ? phoneNumberDetails.data.users[0].firstName +
+                  ' ' +
+                  phoneNumberDetails.data.users[0].lastName
+                : 'Quo Inbox';
+
+        const inboxNumber =
+            phoneNumberDetails.data.number ||
+            messageObject.to;
+
+        const userDetails = await this.quo.api.getUser(messageObject.userId);
+        const userName = `${userDetails.firstName || ''} ${userDetails.lastName || ''}`.trim() ||
+            'Quo User';
+
+        const deepLink = webhookData.data.deepLink || '#';
+
+        let formattedNote;
+        if (messageObject.direction === 'outgoing') {
+            // Outgoing: Quo → Contact
+            formattedNote = `<p><strong>💬 Message ${inboxName} - ${inboxNumber} —> ${contactPhone}</strong></p>
+<p>${userName} sent: ${messageObject.text || '(no text)'}</p>
+<p><a href="${deepLink}">View the message activity in Quo</a></p>`;
+        } else {
+            // Incoming: Contact → Quo
+            formattedNote = `<p><strong>💬 Message ${contactPhone} --> ${inboxName} - ${inboxNumber}</strong></p>
+<p>Received: ${messageObject.text || '(no text)'}</p>
+<p><a href="${deepLink}">View the message activity in Quo</a></p>`;
+        }
+
+        const noteData = {
+            content: formattedNote,
+            person_id: parseInt(pipedrivePersonId),
+        };
+
+        await this.pipedrive.api.createNote(noteData);
+
+        console.log(
+            `[Quo Webhook] ✓ Message logged as note for person ${pipedrivePersonId}`,
+        );
+
+        return { logged: true, personId: pipedrivePersonId };
+    }
+
+    /**
+     * Handle Quo call.summary.completed webhook event
+     * Creates a Pipedrive note with call context, summary, and next steps
+     *
+     * @private
+     * @param {Object} webhookData - Quo webhook payload
+     * @returns {Promise<Object>} Processing result
+     */
+    async _handleQuoCallSummaryEvent(webhookData) {
+        const summaryObject = webhookData.data.object;
+        const callId = summaryObject.callId;
+        const summary = summaryObject.summary || [];
+        const nextSteps = summaryObject.nextSteps || [];
+
+        console.log(
+            `[Quo Webhook] Processing call summary for call: ${callId}, ${summary.length} summary points, ${nextSteps.length} next steps`,
+        );
+
+        const callResponse = await this.quo.api.getCall(callId);
+        const callObject = callResponse.data;
+
+        const participants = callObject.participants || [];
+        const contactPhone =
+            callObject.direction === 'outgoing'
+                ? participants[1]
+                : participants[0];
+
+        const pipedrivePersonId =
+            await this._findPipedriveContactByPhone(contactPhone);
+
+        const phoneNumberDetails = await this.quo.api.getPhoneNumber(
+            callObject.phoneNumberId,
+        );
+        const inboxName =
+            phoneNumberDetails.data.users.length > 0
+                ? phoneNumberDetails.data.users[0].firstName +
+                  ' ' +
+                  phoneNumberDetails.data.users[0].lastName
+                : 'Quo Line';
+        const inboxNumber =
+            phoneNumberDetails.data.number ||
+            phoneNumberDetails.data.formattedNumber ||
+            participants[callObject.direction === 'outgoing' ? 0 : 1];
+
+        const userDetails = await this.quo.api.getUser(callObject.userId);
+        const userName =
+            `${userDetails.data.firstName || ''} ${userDetails.data.lastName || ''}`.trim() ||
+            'Quo User';
+
+        const minutes = Math.floor(callObject.duration / 60);
+        const seconds = callObject.duration % 60;
+        const durationFormatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+        let statusDescription;
+        if (callObject.status === 'completed') {
+            statusDescription =
+                callObject.direction === 'outgoing'
+                    ? `Outgoing initiated by ${userName}`
+                    : `Incoming answered by ${userName}`;
+        } else if (
+            callObject.status === 'no-answer' ||
+            callObject.status === 'missed'
+        ) {
+            statusDescription = 'Incoming missed';
+        } else {
+            statusDescription = `${callObject.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} ${callObject.status}`;
+        }
+
+        const deepLink = webhookData.data.deepLink || '#';
+
+        let formattedNote = '';
+
+        if (callObject.direction === 'outgoing') {
+            formattedNote = `<p><strong>☎️  Call Quo 📱 ${inboxName} ${inboxNumber} → ${contactPhone}</strong></p>`;
+        } else {
+            formattedNote = `<p><strong>☎️  Call ${contactPhone} → Quo 📱 ${inboxName} ${inboxNumber}</strong></p>`;
+        }
+
+        formattedNote += `\n<p>${statusDescription}`;
+        if (callObject.status === 'completed' && callObject.duration > 0) {
+            formattedNote += ` / ▶️ Recording (${durationFormatted})`;
+        }
+        formattedNote += `</p>`;
+
+        if (summary.length > 0) {
+            formattedNote += `\n<p><strong>📝 Summary:</strong></p>\n<ul>`;
+            for (const point of summary) {
+                const text =
+                    typeof point === 'string'
+                        ? point
+                        : point.text || point.content || '';
+                formattedNote += `\n<li>${text}</li>`;
+            }
+            formattedNote += `\n</ul>`;
+        }
+
+        if (nextSteps.length > 0) {
+            formattedNote += `\n<p><strong>✅ Next Steps:</strong></p>\n<ul>`;
+            for (const step of nextSteps) {
+                const text =
+                    typeof step === 'string'
+                        ? step
+                        : step.text || step.content || '';
+                formattedNote += `\n<li>${text}</li>`;
+            }
+            formattedNote += `\n</ul>`;
+        }
+
+        formattedNote += `\n<p><a href="${deepLink}">View the call activity in Quo</a></p>`;
+
+        const noteData = {
+            content: formattedNote,
+            person_id: parseInt(pipedrivePersonId),
+        };
+
+        await this.pipedrive.api.createNote(noteData);
+
+        console.log(
+            `[Quo Webhook] ✓ Call summary logged as note for person ${pipedrivePersonId}`,
+        );
+
+        return {
+            logged: true,
+            personId: pipedrivePersonId,
+            callId,
+            summaryPoints: summary.length,
+            nextStepsCount: nextSteps.length,
+        };
+    }
+
+    /**
+     * Find Pipedrive contact by phone number
+     * Uses exact phone number matching with normalized format
+     *
+     * @private
+     * @param {string} phoneNumber - Phone number to search for
+     * @returns {Promise<string>} Pipedrive person ID
+     * @throws {Error} If contact not found in Pipedrive
+     */
+    async _findPipedriveContactByPhone(phoneNumber) {
+        console.log(
+            `[Quo Webhook] Looking up Pipedrive contact by phone: ${phoneNumber}`,
+        );
+
+        const normalizedPhone = this._normalizePhoneNumber(phoneNumber);
+        console.log(
+            `[Quo Webhook] Normalized phone: ${phoneNumber} → ${normalizedPhone}`,
+        );
+
+        try {
+            // Using dedicated person search endpoint with phone field filter
+            const searchResult = await this.pipedrive.api.searchPersons({
+                term: normalizedPhone,
+                fields: 'phone',
+                exact_match: true,
+                limit: 1,
             });
 
-            console.log(`[Pipedrive Webhook] ✓ Organization ${meta.id} processed (sync not yet implemented)`);
+            if (
+                !searchResult?.data?.items ||
+                searchResult.data.items.length === 0
+            ) {
+                throw new Error(
+                    `No Pipedrive contact found with phone number ${phoneNumber} (normalized: ${normalizedPhone}). ` +
+                        `Contact must exist in Pipedrive to log activities.`,
+                );
+            }
+
+            // With exact_match=true and fields='phone', take the first (most relevant) result
+            const firstItem = searchResult.data.items[0];
+            const personId = String(firstItem.item.id);
+
+            console.log(`[Quo Webhook] ✓ Found contact by phone: ${personId}`);
+            return personId;
         } catch (error) {
-            console.error(`[Pipedrive Webhook] Failed to process organization ${meta.id}:`, error.message);
-            throw error;
-        }
-    }
-
-    /**
-     * Handle deal webhook events (added, updated, deleted, merged)
-     * @private
-     */
-    async _handleDealWebhook({ action, data, previous, meta }) {
-        console.log(`[Pipedrive Webhook] Handling deal ${action}:`, meta.id);
-
-        try {
-            // TODO: Implement deal sync logic
-            // For now, just log the event
-            console.log('[Pipedrive Webhook] Deal sync not yet implemented');
-        } catch (error) {
-            console.error(`[Pipedrive Webhook] Failed to process deal ${meta.id}:`, error.message);
-            throw error;
-        }
-    }
-
-    /**
-     * Handle activity webhook events (added, updated, deleted)
-     * @private
-     */
-    async _handleActivityWebhook({ action, data, previous, meta }) {
-        console.log(`[Pipedrive Webhook] Handling activity ${action}:`, meta.id);
-
-        try {
-            // TODO: Implement activity sync logic
-            // For now, just log the event
-            console.log('[Pipedrive Webhook] Activity sync not yet implemented');
-        } catch (error) {
-            console.error(`[Pipedrive Webhook] Failed to process activity ${meta.id}:`, error.message);
+            console.error(
+                `[Quo Webhook] Contact lookup failed:`,
+                error.message,
+            );
             throw error;
         }
     }
@@ -845,7 +1760,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
      * @returns {Promise<Object>}
      */
     async fetchPersonById(id) {
-        const response = await this.pipedrive.api.persons.get(id);
+        const response = await this.pipedrive.api.getPerson(id);
         return response.data;
     }
 
@@ -874,12 +1789,11 @@ class PipedriveIntegration extends BaseCRMIntegration {
     async listDeals({ req, res }) {
         try {
             const params = {
-                start: req.query.start ? parseInt(req.query.start) : 0,
                 limit: req.query.limit ? parseInt(req.query.limit) : 50,
-                sort: req.query.sort || 'update_time DESC',
+                cursor: req.query.cursor,
             };
 
-            const deals = await this.pipedrive.api.deals.getAll(params);
+            const deals = await this.pipedrive.api.listDeals(params);
             res.json(deals);
         } catch (error) {
             console.error('Failed to list Pipedrive deals:', error);
@@ -893,12 +1807,11 @@ class PipedriveIntegration extends BaseCRMIntegration {
     async listPersons({ req, res }) {
         try {
             const params = {
-                start: req.query.start ? parseInt(req.query.start) : 0,
                 limit: req.query.limit ? parseInt(req.query.limit) : 50,
-                sort: req.query.sort || 'update_time DESC',
+                cursor: req.query.cursor,
             };
 
-            const persons = await this.pipedrive.api.persons.getAll(params);
+            const persons = await this.pipedrive.api.listPersons(params);
             res.json(persons);
         } catch (error) {
             console.error('Failed to list Pipedrive persons:', error);
@@ -912,13 +1825,12 @@ class PipedriveIntegration extends BaseCRMIntegration {
     async listOrganizations({ req, res }) {
         try {
             const params = {
-                start: req.query.start ? parseInt(req.query.start) : 0,
                 limit: req.query.limit ? parseInt(req.query.limit) : 50,
-                sort: req.query.sort || 'update_time DESC',
+                cursor: req.query.cursor,
             };
 
             const organizations =
-                await this.pipedrive.api.organizations.getAll(params);
+                await this.pipedrive.api.listOrganizations(params);
             res.json(organizations);
         } catch (error) {
             console.error('Failed to list Pipedrive organizations:', error);
@@ -932,12 +1844,11 @@ class PipedriveIntegration extends BaseCRMIntegration {
     async listActivities({ req, res }) {
         try {
             const params = {
-                start: req.query.start ? parseInt(req.query.start) : 0,
                 limit: req.query.limit ? parseInt(req.query.limit) : 50,
+                cursor: req.query.cursor,
             };
 
-            const activities =
-                await this.pipedrive.api.activities.getAll(params);
+            const activities = await this.pipedrive.api.listActivities(params);
             res.json(activities);
         } catch (error) {
             console.error('Failed to list Pipedrive activities:', error);
@@ -958,7 +1869,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 });
             }
 
-            const result = await this.pipedrive.api.deals.create(dealData);
+            const result = await this.pipedrive.api.createDeal(dealData);
             res.json(result);
         } catch (error) {
             console.error('Failed to create Pipedrive deal:', error);
@@ -998,9 +1909,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
     async getStats({ req, res }) {
         try {
             const [deals, persons, activities] = await Promise.all([
-                this.pipedrive.api.deals.getAll({ limit: 1 }),
-                this.pipedrive.api.persons.getAll({ limit: 1 }),
-                this.pipedrive.api.activities.getAll({ limit: 1 }),
+                this.pipedrive.api.listDeals({ limit: 1 }),
+                this.pipedrive.api.listPersons({ limit: 1 }),
+                this.pipedrive.api.listActivities({ limit: 1 }),
             ]);
 
             const stats = {
@@ -1028,38 +1939,208 @@ class PipedriveIntegration extends BaseCRMIntegration {
      * @returns {Promise<void>}
      */
     async onDelete(params) {
-        try {
-            const webhookIds = this.config?.pipedriveWebhookIds || [];
+        const deletionResults = {
+            pipedrive: [],
+            quoMessage: null,
+            quoCall: null,
+            quoCallSummary: null,
+        };
 
-            if (webhookIds.length > 0) {
-                console.log(
-                    `[Pipedrive] Deleting ${webhookIds.length} webhooks`,
+        try {
+            if (!this.pipedrive?.api || !this.quo?.api) {
+                const missingModules = [];
+                if (!this.pipedrive?.api) missingModules.push('pipedrive');
+                if (!this.quo?.api) missingModules.push('quo');
+
+                console.error(
+                    `[Webhook Cleanup] Cannot delete webhooks: Missing API modules: ${missingModules.join(', ')}`,
+                );
+                console.error(
+                    '[Webhook Cleanup] This likely means modules were not loaded during the deletion lifecycle.',
+                );
+                console.warn(
+                    '[Webhook Cleanup] Webhook IDs have been preserved in config for manual cleanup:',
                 );
 
-                // Delete each webhook from Pipedrive
-                for (const webhookId of webhookIds) {
+                const pipedriveWebhookIds =
+                    this.config?.pipedriveWebhookIds || [];
+                if (pipedriveWebhookIds.length > 0) {
+                    for (const webhookId of pipedriveWebhookIds) {
+                        console.warn(`  - Pipedrive webhook: ${webhookId}`);
+                    }
+                }
+
+                if (this.config?.quoMessageWebhookId) {
+                    console.warn(
+                        `  - Quo message webhook: ${this.config.quoMessageWebhookId}`,
+                    );
+                }
+                if (this.config?.quoCallWebhookId) {
+                    console.warn(
+                        `  - Quo call webhook: ${this.config.quoCallWebhookId}`,
+                    );
+                }
+                if (this.config?.quoCallSummaryWebhookId) {
+                    console.warn(
+                        `  - Quo call-summary webhook: ${this.config.quoCallSummaryWebhookId}`,
+                    );
+                }
+
+                console.warn(
+                    '[Webhook Cleanup] You will need to manually delete these webhooks from the external services.',
+                );
+
+                await super.onDelete(params);
+                return;
+            }
+
+            const pipedriveWebhookIds = this.config?.pipedriveWebhookIds || [];
+
+            if (pipedriveWebhookIds.length > 0) {
+                console.log(
+                    `[Pipedrive] Deleting ${pipedriveWebhookIds.length} webhooks`,
+                );
+
+                for (const webhookId of pipedriveWebhookIds) {
                     try {
                         await this.pipedrive.api.deleteWebhook(webhookId);
+                        deletionResults.pipedrive.push('success');
                         console.log(
-                            `[Pipedrive] ✓ Deleted webhook ${webhookId}`,
+                            `[Pipedrive] ✓ Webhook ${webhookId} deleted from Pipedrive`,
                         );
                     } catch (error) {
+                        deletionResults.pipedrive.push('failed');
                         console.error(
                             `[Pipedrive] Failed to delete webhook ${webhookId}:`,
                             error.message,
                         );
-                        // Continue with other webhooks
+                        console.warn(
+                            `[Pipedrive] Webhook ID ${webhookId} preserved in config for manual cleanup`,
+                        );
                     }
                 }
             } else {
                 console.log('[Pipedrive] No webhooks to delete');
             }
+
+            const quoMessageWebhookId = this.config?.quoMessageWebhookId;
+
+            if (quoMessageWebhookId) {
+                console.log(
+                    `[Quo] Deleting message webhook: ${quoMessageWebhookId}`,
+                );
+
+                try {
+                    await this.quo.api.deleteWebhook(quoMessageWebhookId);
+                    deletionResults.quoMessage = 'success';
+                    console.log(
+                        `[Quo] ✓ Message webhook ${quoMessageWebhookId} deleted from Quo`,
+                    );
+                } catch (error) {
+                    deletionResults.quoMessage = 'failed';
+                    console.error(
+                        `[Quo] Failed to delete message webhook from Quo:`,
+                        error.message,
+                    );
+                    console.warn(
+                        `[Quo] Message webhook ID ${quoMessageWebhookId} preserved in config for manual cleanup`,
+                    );
+                }
+            } else {
+                console.log('[Quo] No message webhook to delete');
+            }
+
+            const quoCallWebhookId = this.config?.quoCallWebhookId;
+
+            if (quoCallWebhookId) {
+                console.log(`[Quo] Deleting call webhook: ${quoCallWebhookId}`);
+
+                try {
+                    await this.quo.api.deleteWebhook(quoCallWebhookId);
+                    deletionResults.quoCall = 'success';
+                    console.log(
+                        `[Quo] ✓ Call webhook ${quoCallWebhookId} deleted from Quo`,
+                    );
+                } catch (error) {
+                    deletionResults.quoCall = 'failed';
+                    console.error(
+                        `[Quo] Failed to delete call webhook from Quo:`,
+                        error.message,
+                    );
+                    console.warn(
+                        `[Quo] Call webhook ID ${quoCallWebhookId} preserved in config for manual cleanup`,
+                    );
+                }
+            } else {
+                console.log('[Quo] No call webhook to delete');
+            }
+
+            const quoCallSummaryWebhookId =
+                this.config?.quoCallSummaryWebhookId;
+
+            if (quoCallSummaryWebhookId) {
+                console.log(
+                    `[Quo] Deleting call-summary webhook: ${quoCallSummaryWebhookId}`,
+                );
+
+                try {
+                    await this.quo.api.deleteWebhook(quoCallSummaryWebhookId);
+                    deletionResults.quoCallSummary = 'success';
+                    console.log(
+                        `[Quo] ✓ Call-summary webhook ${quoCallSummaryWebhookId} deleted from Quo`,
+                    );
+                } catch (error) {
+                    deletionResults.quoCallSummary = 'failed';
+                    console.error(
+                        `[Quo] Failed to delete call-summary webhook from Quo:`,
+                        error.message,
+                    );
+                    console.warn(
+                        `[Quo] Call-summary webhook ID ${quoCallSummaryWebhookId} preserved in config for manual cleanup`,
+                    );
+                }
+            } else {
+                console.log('[Quo] No call-summary webhook to delete');
+            }
+
+            const pipedriveSuccessCount = deletionResults.pipedrive.filter(
+                (result) => result === 'success',
+            ).length;
+            const pipedriveFailedCount = deletionResults.pipedrive.filter(
+                (result) => result === 'failed',
+            ).length;
+
+            const quoResults = [
+                deletionResults.quoMessage,
+                deletionResults.quoCall,
+                deletionResults.quoCallSummary,
+            ];
+            const quoSuccessCount = quoResults.filter(
+                (result) => result === 'success',
+            ).length;
+            const quoFailedCount = quoResults.filter(
+                (result) => result === 'failed',
+            ).length;
+
+            const totalSuccess = pipedriveSuccessCount + quoSuccessCount;
+            const totalFailed = pipedriveFailedCount + quoFailedCount;
+
+            if (totalFailed > 0) {
+                console.warn(
+                    `[Webhook Cleanup] Partial cleanup: ${totalSuccess} succeeded, ${totalFailed} failed. Failed webhook IDs preserved for manual cleanup.`,
+                );
+            } else {
+                console.log(
+                    `[Webhook Cleanup] ✓ All webhooks deleted successfully`,
+                );
+            }
         } catch (error) {
-            console.error('[Pipedrive] Failed to delete webhooks:', error);
-            // Non-fatal - integration is being deleted anyway
+            console.error(
+                '[Webhook Cleanup] Unexpected error during cleanup:',
+                error,
+            );
         }
 
-        // Call parent class cleanup
         await super.onDelete(params);
     }
 }

@@ -1,26 +1,26 @@
 /**
  * SyncOrchestrator Service
- * 
+ *
  * Orchestrates CRM sync workflows by coordinating ProcessManager and QueueManager.
  * Implements high-level sync patterns: initial sync, ongoing sync, webhook handling.
- * 
+ *
  * Design Philosophy:
  * - Composes ProcessManager and QueueManager services
  * - Implements sync workflow business logic
  * - Stateless service (state managed through ProcessManager)
  * - Testable through service injection
- * 
+ *
  * Sync Patterns:
  * 1. Initial Sync: Full data sync, reverse chronological, fan-out pages
  * 2. Ongoing Sync: Delta sync using modifiedSince filter
  * 3. Webhook Sync: Real-time updates from CRM webhooks
- * 
+ *
  * @example
  * const syncOrchestrator = new SyncOrchestrator({
  *   processManager,
  *   queueManager
  * });
- * 
+ *
  * await syncOrchestrator.startInitialSync({
  *   integration,
  *   integrationId: 'int123',
@@ -61,10 +61,11 @@ class SyncOrchestrator {
         }
 
         // Defensive: Resolve userId from multiple sources
-        const userId = integration.userId || integration.record?.userId || integration.id;
+        const userId =
+            integration.userId || integration.record?.userId || integration.id;
         if (!userId) {
             throw new Error(
-                `Cannot start sync: userId not available on integration ${integrationId}`
+                `Cannot start sync: userId not available on integration ${integrationId}`,
             );
         }
 
@@ -98,7 +99,7 @@ class SyncOrchestrator {
         return {
             message: `Initial sync started for ${personObjectTypes.length} person type(s)`,
             processIds,
-            personObjectTypes: personObjectTypes.map(pt => pt.crmObjectName),
+            personObjectTypes: personObjectTypes.map((pt) => pt.crmObjectName),
             estimatedCompletion: new Date(Date.now() + 10 * 60 * 1000), // 10 min estimate
         };
     }
@@ -106,7 +107,7 @@ class SyncOrchestrator {
     /**
      * Start ongoing sync (delta sync)
      * Fetches only records modified since last sync
-     * 
+     *
      * @param {Object} params
      * @param {Object} params.integration - Integration instance
      * @param {string} params.integrationId - Integration ID
@@ -114,16 +115,22 @@ class SyncOrchestrator {
      * @param {Date} [params.lastSyncTime] - Last sync timestamp (optional)
      * @returns {Promise<Object>} Sync start result
      */
-    async startOngoingSync({ integration, integrationId, personObjectTypes, lastSyncTime = null }) {
+    async startOngoingSync({
+        integration,
+        integrationId,
+        personObjectTypes,
+        lastSyncTime = null,
+    }) {
         if (!personObjectTypes || personObjectTypes.length === 0) {
             throw new Error('No personObjectTypes configured for sync');
         }
 
         // Defensive: Resolve userId from multiple sources
-        const userId = integration.userId || integration.record?.userId || integration.id;
+        const userId =
+            integration.userId || integration.record?.userId || integration.id;
         if (!userId) {
             throw new Error(
-                `Cannot start sync: userId not available on integration ${integrationId}`
+                `Cannot start sync: userId not available on integration ${integrationId}`,
             );
         }
 
@@ -186,10 +193,11 @@ class SyncOrchestrator {
         }
 
         // Defensive: Resolve userId from multiple sources
-        const userId = integration.userId || integration.record?.userId || integration.id;
+        const userId =
+            integration.userId || integration.record?.userId || integration.id;
         if (!userId) {
             throw new Error(
-                `Cannot process webhook: userId not available on integration ${integration.id}`
+                `Cannot process webhook: userId not available on integration ${integration.id}`,
             );
         }
 
@@ -206,7 +214,7 @@ class SyncOrchestrator {
         // Queue for processing
         await this.queueManager.queueProcessPersonBatch({
             processId: process.id,
-            crmPersonIds: webhookData.map(p => p.id),
+            crmPersonIds: webhookData.map((p) => p.id),
             isWebhook: true,
         });
 
@@ -220,7 +228,7 @@ class SyncOrchestrator {
     /**
      * Get last sync time for an integration
      * Queries for most recent completed CRM_SYNC process
-     * 
+     *
      * @param {string} integrationId - Integration ID
      * @returns {Promise<Date|null>} Last sync time or null
      */
@@ -260,4 +268,3 @@ class SyncOrchestrator {
 }
 
 module.exports = SyncOrchestrator;
-
