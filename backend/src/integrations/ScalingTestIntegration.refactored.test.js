@@ -31,12 +31,18 @@ describe('ScalingTestIntegration (Refactored)', () => {
     describe('Static Configuration', () => {
         it('should have correct Definition', () => {
             expect(ScalingTestIntegration.Definition.name).toBe('scalingtest');
-            expect(ScalingTestIntegration.Definition.display.label).toBe('Scaling Test Integration');
+            expect(ScalingTestIntegration.Definition.display.label).toBe(
+                'Scaling Test Integration',
+            );
         });
 
         it('should have high-scale CRMConfig', () => {
-            expect(ScalingTestIntegration.CRMConfig.syncConfig.initialBatchSize).toBe(500);
-            expect(ScalingTestIntegration.CRMConfig.queueConfig.maxWorkers).toBe(100);
+            expect(
+                ScalingTestIntegration.CRMConfig.syncConfig.initialBatchSize,
+            ).toBe(500);
+            expect(
+                ScalingTestIntegration.CRMConfig.queueConfig.maxWorkers,
+            ).toBe(100);
         });
     });
 
@@ -82,14 +88,16 @@ describe('ScalingTestIntegration (Refactored)', () => {
 
         describe('logSMSToActivity', () => {
             it('should simulate SMS logging', async () => {
-                const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
-                
+                const consoleSpy = jest
+                    .spyOn(console, 'log')
+                    .mockImplementation();
+
                 await integration.logSMSToActivity({
                     contactExternalId: '123',
                     direction: 'outbound',
                     content: 'Test',
                 });
-                
+
                 expect(consoleSpy).toHaveBeenCalled();
                 consoleSpy.mockRestore();
             });
@@ -97,11 +105,15 @@ describe('ScalingTestIntegration (Refactored)', () => {
 
         describe('setupWebhooks', () => {
             it('should simulate webhook setup', async () => {
-                const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
-                
+                const consoleSpy = jest
+                    .spyOn(console, 'log')
+                    .mockImplementation();
+
                 await integration.setupWebhooks();
-                
-                expect(consoleSpy).toHaveBeenCalledWith('ScalingTest: Webhooks configured (simulated)');
+
+                expect(consoleSpy).toHaveBeenCalledWith(
+                    'ScalingTest: Webhooks configured (simulated)',
+                );
                 consoleSpy.mockRestore();
             });
         });
@@ -111,21 +123,25 @@ describe('ScalingTestIntegration (Refactored)', () => {
         it('should generate consistent synthetic data', () => {
             const contact1 = integration.generateSyntheticContact(5);
             const contact2 = integration.generateSyntheticContact(5);
-            
+
             expect(contact1.id).toBe(contact2.id);
             expect(contact1.first_name).toBe(contact2.first_name);
         });
 
         it('should fetch person by ID', async () => {
             const person = await integration.fetchPersonById('10');
-            
+
             expect(person.id).toBe(10);
             expect(person.first_name).toBe('Test9');
         });
 
         it('should fetch persons by IDs', async () => {
-            const persons = await integration.fetchPersonsByIds(['1', '2', '3']);
-            
+            const persons = await integration.fetchPersonsByIds([
+                '1',
+                '2',
+                '3',
+            ]);
+
             expect(persons).toHaveLength(3);
             expect(persons[0].id).toBe(1);
             expect(persons[2].id).toBe(3);

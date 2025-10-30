@@ -1,6 +1,6 @@
 /**
  * SyncOrchestrator Service Tests
- * 
+ *
  * Tests sync workflow orchestration and coordination.
  */
 
@@ -34,13 +34,18 @@ describe('SyncOrchestrator', () => {
 
     describe('constructor', () => {
         it('should require processManager', () => {
-            expect(() => new SyncOrchestrator({ queueManager: mockQueueManager }))
-                .toThrow('processManager is required');
+            expect(
+                () => new SyncOrchestrator({ queueManager: mockQueueManager }),
+            ).toThrow('processManager is required');
         });
 
         it('should require queueManager', () => {
-            expect(() => new SyncOrchestrator({ processManager: mockProcessManager }))
-                .toThrow('queueManager is required');
+            expect(
+                () =>
+                    new SyncOrchestrator({
+                        processManager: mockProcessManager,
+                    }),
+            ).toThrow('queueManager is required');
         });
 
         it('should initialize with dependencies', () => {
@@ -75,7 +80,9 @@ describe('SyncOrchestrator', () => {
                 personObjectTypes,
             });
 
-            expect(mockProcessManager.createSyncProcess).toHaveBeenCalledTimes(2);
+            expect(mockProcessManager.createSyncProcess).toHaveBeenCalledTimes(
+                2,
+            );
             expect(mockProcessManager.createSyncProcess).toHaveBeenCalledWith({
                 integrationId: 'integration-123',
                 userId: 'user-456',
@@ -93,7 +100,9 @@ describe('SyncOrchestrator', () => {
                 pageSize: 100,
             });
 
-            expect(mockQueueManager.queueFetchPersonPage).toHaveBeenCalledTimes(2);
+            expect(mockQueueManager.queueFetchPersonPage).toHaveBeenCalledTimes(
+                2,
+            );
             expect(mockQueueManager.queueFetchPersonPage).toHaveBeenCalledWith({
                 processId: 'process-1',
                 personObjectType: 'Contact',
@@ -118,26 +127,35 @@ describe('SyncOrchestrator', () => {
         });
 
         it('should throw error if no personObjectTypes provided', async () => {
-            await expect(syncOrchestrator.startInitialSync({
-                integration: mockIntegration,
-                integrationId: 'integration-123',
-                personObjectTypes: [],
-            })).rejects.toThrow('No personObjectTypes configured for sync');
+            await expect(
+                syncOrchestrator.startInitialSync({
+                    integration: mockIntegration,
+                    integrationId: 'integration-123',
+                    personObjectTypes: [],
+                }),
+            ).rejects.toThrow('No personObjectTypes configured for sync');
         });
 
         it('should throw error if personObjectTypes is null', async () => {
-            await expect(syncOrchestrator.startInitialSync({
-                integration: mockIntegration,
-                integrationId: 'integration-123',
-                personObjectTypes: null,
-            })).rejects.toThrow('No personObjectTypes configured for sync');
+            await expect(
+                syncOrchestrator.startInitialSync({
+                    integration: mockIntegration,
+                    integrationId: 'integration-123',
+                    personObjectTypes: null,
+                }),
+            ).rejects.toThrow('No personObjectTypes configured for sync');
         });
 
         it('should use custom batch sizes from CRMConfig', async () => {
             const customIntegration = createMockIntegration({
                 constructor: {
                     CRMConfig: {
-                        personObjectTypes: [{ crmObjectName: 'Contact', quoContactType: 'contact' }],
+                        personObjectTypes: [
+                            {
+                                crmObjectName: 'Contact',
+                                quoContactType: 'contact',
+                            },
+                        ],
                         syncConfig: {
                             reverseChronological: true,
                             initialBatchSize: 200, // Custom size
@@ -155,18 +173,20 @@ describe('SyncOrchestrator', () => {
             await syncOrchestrator.startInitialSync({
                 integration: customIntegration,
                 integrationId: 'integration-123',
-                personObjectTypes: [{ crmObjectName: 'Contact', quoContactType: 'contact' }],
+                personObjectTypes: [
+                    { crmObjectName: 'Contact', quoContactType: 'contact' },
+                ],
             });
 
             expect(mockProcessManager.createSyncProcess).toHaveBeenCalledWith(
                 expect.objectContaining({
                     pageSize: 200,
-                })
+                }),
             );
             expect(mockQueueManager.queueFetchPersonPage).toHaveBeenCalledWith(
                 expect.objectContaining({
                     limit: 200,
-                })
+                }),
             );
         });
 
@@ -174,7 +194,12 @@ describe('SyncOrchestrator', () => {
             const ascIntegration = createMockIntegration({
                 constructor: {
                     CRMConfig: {
-                        personObjectTypes: [{ crmObjectName: 'Contact', quoContactType: 'contact' }],
+                        personObjectTypes: [
+                            {
+                                crmObjectName: 'Contact',
+                                quoContactType: 'contact',
+                            },
+                        ],
                         syncConfig: {
                             reverseChronological: false, // Ascending order
                             initialBatchSize: 100,
@@ -189,13 +214,15 @@ describe('SyncOrchestrator', () => {
             await syncOrchestrator.startInitialSync({
                 integration: ascIntegration,
                 integrationId: 'integration-123',
-                personObjectTypes: [{ crmObjectName: 'Contact', quoContactType: 'contact' }],
+                personObjectTypes: [
+                    { crmObjectName: 'Contact', quoContactType: 'contact' },
+                ],
             });
 
             expect(mockQueueManager.queueFetchPersonPage).toHaveBeenCalledWith(
                 expect.objectContaining({
                     sortDesc: false,
-                })
+                }),
             );
         });
     });
@@ -272,11 +299,13 @@ describe('SyncOrchestrator', () => {
         });
 
         it('should throw error if no personObjectTypes provided', async () => {
-            await expect(syncOrchestrator.startOngoingSync({
-                integration: mockIntegration,
-                integrationId: 'integration-123',
-                personObjectTypes: [],
-            })).rejects.toThrow('No personObjectTypes configured for sync');
+            await expect(
+                syncOrchestrator.startOngoingSync({
+                    integration: mockIntegration,
+                    integrationId: 'integration-123',
+                    personObjectTypes: [],
+                }),
+            ).rejects.toThrow('No personObjectTypes configured for sync');
         });
     });
 
@@ -310,7 +339,9 @@ describe('SyncOrchestrator', () => {
                 totalRecords: 1,
             });
 
-            expect(mockQueueManager.queueProcessPersonBatch).toHaveBeenCalledWith({
+            expect(
+                mockQueueManager.queueProcessPersonBatch,
+            ).toHaveBeenCalledWith({
                 processId: 'process-1',
                 crmPersonIds: ['person-123'],
                 isWebhook: true,
@@ -341,10 +372,12 @@ describe('SyncOrchestrator', () => {
             expect(mockProcessManager.createSyncProcess).toHaveBeenCalledWith(
                 expect.objectContaining({
                     totalRecords: 3,
-                })
+                }),
             );
 
-            expect(mockQueueManager.queueProcessPersonBatch).toHaveBeenCalledWith({
+            expect(
+                mockQueueManager.queueProcessPersonBatch,
+            ).toHaveBeenCalledWith({
                 processId: 'process-1',
                 crmPersonIds: ['person-1', 'person-2', 'person-3'],
                 isWebhook: true,
@@ -364,7 +397,9 @@ describe('SyncOrchestrator', () => {
             });
 
             expect(mockProcessManager.createSyncProcess).not.toHaveBeenCalled();
-            expect(mockQueueManager.queueProcessPersonBatch).not.toHaveBeenCalled();
+            expect(
+                mockQueueManager.queueProcessPersonBatch,
+            ).not.toHaveBeenCalled();
 
             expect(result).toEqual({
                 status: 'skipped',
@@ -389,21 +424,24 @@ describe('SyncOrchestrator', () => {
 
     describe('getLastSyncTime', () => {
         it('should return null (not yet implemented)', async () => {
-            const result = await syncOrchestrator.getLastSyncTime('integration-123');
+            const result =
+                await syncOrchestrator.getLastSyncTime('integration-123');
             expect(result).toBeNull();
         });
     });
 
     describe('hasActiveSyncs', () => {
         it('should return false (not yet implemented)', async () => {
-            const result = await syncOrchestrator.hasActiveSyncs('integration-123');
+            const result =
+                await syncOrchestrator.hasActiveSyncs('integration-123');
             expect(result).toBe(false);
         });
     });
 
     describe('cancelActiveSyncs', () => {
         it('should return not implemented message', async () => {
-            const result = await syncOrchestrator.cancelActiveSyncs('integration-123');
+            const result =
+                await syncOrchestrator.cancelActiveSyncs('integration-123');
             expect(result).toEqual({
                 message: 'Active sync cancellation not yet implemented',
                 cancelledCount: 0,
@@ -414,13 +452,19 @@ describe('SyncOrchestrator', () => {
     describe('error handling', () => {
         it('should propagate processManager errors', async () => {
             const processError = new Error('Process creation failed');
-            mockProcessManager.createSyncProcess.mockRejectedValue(processError);
+            mockProcessManager.createSyncProcess.mockRejectedValue(
+                processError,
+            );
 
-            await expect(syncOrchestrator.startInitialSync({
-                integration: mockIntegration,
-                integrationId: 'integration-123',
-                personObjectTypes: [{ crmObjectName: 'Contact', quoContactType: 'contact' }],
-            })).rejects.toThrow('Process creation failed');
+            await expect(
+                syncOrchestrator.startInitialSync({
+                    integration: mockIntegration,
+                    integrationId: 'integration-123',
+                    personObjectTypes: [
+                        { crmObjectName: 'Contact', quoContactType: 'contact' },
+                    ],
+                }),
+            ).rejects.toThrow('Process creation failed');
         });
 
         it('should propagate queueManager errors', async () => {
@@ -430,11 +474,15 @@ describe('SyncOrchestrator', () => {
             const process = buildProcessRecord({ id: 'process-1' });
             mockProcessManager.createSyncProcess.mockResolvedValue(process);
 
-            await expect(syncOrchestrator.startInitialSync({
-                integration: mockIntegration,
-                integrationId: 'integration-123',
-                personObjectTypes: [{ crmObjectName: 'Contact', quoContactType: 'contact' }],
-            })).rejects.toThrow('Queue operation failed');
+            await expect(
+                syncOrchestrator.startInitialSync({
+                    integration: mockIntegration,
+                    integrationId: 'integration-123',
+                    personObjectTypes: [
+                        { crmObjectName: 'Contact', quoContactType: 'contact' },
+                    ],
+                }),
+            ).rejects.toThrow('Queue operation failed');
         });
     });
 });

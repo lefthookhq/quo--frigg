@@ -5,5 +5,5 @@ const Config = require('./defaultConfig.json');
 module.exports = {
     Definition,
     API: Api,
-    Config
+    Config,
 };

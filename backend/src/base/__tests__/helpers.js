@@ -1,6 +1,6 @@
 /**
  * Test Helpers for BaseCRMIntegration
- * 
+ *
  * Provides mock factories and test data builders for testing
  * CRM integration components.
  */
@@ -295,4 +295,3 @@ module.exports = {
     assertValidProcess,
     assertValidCRMSyncContext,
 };
-

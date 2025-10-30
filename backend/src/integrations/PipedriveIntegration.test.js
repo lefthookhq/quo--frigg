@@ -78,21 +78,36 @@ describe('PipedriveIntegration (Refactored)', () => {
             expect(PipedriveIntegration.Definition).toBeDefined();
             expect(PipedriveIntegration.Definition.name).toBe('pipedrive');
             expect(PipedriveIntegration.Definition.version).toBe('1.0.0');
-            expect(PipedriveIntegration.Definition.display.label).toBe('Pipedrive');
+            expect(PipedriveIntegration.Definition.display.label).toBe(
+                'Pipedrive',
+            );
         });
 
         it('should have correct CRMConfig', () => {
             expect(PipedriveIntegration.CRMConfig).toBeDefined();
-            expect(PipedriveIntegration.CRMConfig.personObjectTypes).toHaveLength(1);
-            expect(PipedriveIntegration.CRMConfig.personObjectTypes[0].crmObjectName).toBe('Person');
-            expect(PipedriveIntegration.CRMConfig.syncConfig.supportsWebhooks).toBe(true);
-            expect(PipedriveIntegration.CRMConfig.syncConfig.initialBatchSize).toBe(100);
+            expect(
+                PipedriveIntegration.CRMConfig.personObjectTypes,
+            ).toHaveLength(1);
+            expect(
+                PipedriveIntegration.CRMConfig.personObjectTypes[0]
+                    .crmObjectName,
+            ).toBe('Person');
+            expect(
+                PipedriveIntegration.CRMConfig.syncConfig.supportsWebhooks,
+            ).toBe(true);
+            expect(
+                PipedriveIntegration.CRMConfig.syncConfig.initialBatchSize,
+            ).toBe(100);
         });
 
         it('should have queue configuration', () => {
             expect(PipedriveIntegration.CRMConfig.queueConfig).toBeDefined();
-            expect(PipedriveIntegration.CRMConfig.queueConfig.maxWorkers).toBe(20);
-            expect(PipedriveIntegration.CRMConfig.queueConfig.provisioned).toBe(8);
+            expect(PipedriveIntegration.CRMConfig.queueConfig.maxWorkers).toBe(
+                20,
+            );
+            expect(PipedriveIntegration.CRMConfig.queueConfig.provisioned).toBe(
+                8,
+            );
         });
     });
 
@@ -105,14 +120,32 @@ describe('PipedriveIntegration (Refactored)', () => {
                             id: 1,
                             first_name: 'John',
                             last_name: 'Doe',
-                            emails: [{ value: 'john@example.com', primary: true, label: 'work' }],
-                            phones: [{ value: '555-1234', primary: true, label: 'work' }],
+                            emails: [
+                                {
+                                    value: 'john@example.com',
+                                    primary: true,
+                                    label: 'work',
+                                },
+                            ],
+                            phones: [
+                                {
+                                    value: '555-1234',
+                                    primary: true,
+                                    label: 'work',
+                                },
+                            ],
                         },
                         {
                             id: 2,
                             first_name: 'Jane',
                             last_name: 'Smith',
-                            emails: [{ value: 'jane@example.com', primary: true, label: 'work' }],
+                            emails: [
+                                {
+                                    value: 'jane@example.com',
+                                    primary: true,
+                                    label: 'work',
+                                },
+                            ],
                         },
                     ],
                     additional_data: {
@@ -120,7 +153,9 @@ describe('PipedriveIntegration (Refactored)', () => {
                     },
                 };
 
-                mockPipedriveApi.api.listPersons.mockResolvedValue(mockResponse);
+                mockPipedriveApi.api.listPersons.mockResolvedValue(
+                    mockResponse,
+                );
 
                 const result = await integration.fetchPersonPage({
                     objectType: 'Person',
@@ -150,7 +185,9 @@ describe('PipedriveIntegration (Refactored)', () => {
                     },
                 };
 
-                mockPipedriveApi.api.listPersons.mockResolvedValue(mockResponse);
+                mockPipedriveApi.api.listPersons.mockResolvedValue(
+                    mockResponse,
+                );
 
                 const result = await integration.fetchPersonPage({
                     objectType: 'Person',
@@ -180,7 +217,9 @@ describe('PipedriveIntegration (Refactored)', () => {
                     additional_data: { next_cursor: null },
                 };
 
-                mockPipedriveApi.api.listPersons.mockResolvedValue(mockResponse);
+                mockPipedriveApi.api.listPersons.mockResolvedValue(
+                    mockResponse,
+                );
 
                 await integration.fetchPersonPage({
                     objectType: 'Person',
@@ -192,7 +231,7 @@ describe('PipedriveIntegration (Refactored)', () => {
                 expect(mockPipedriveApi.api.listPersons).toHaveBeenCalledWith(
                     expect.objectContaining({
                         updated_since: '2025-01-01T00:00:00.000Z',
-                    })
+                    }),
                 );
             });
         });
@@ -204,8 +243,16 @@ describe('PipedriveIntegration (Refactored)', () => {
                     first_name: 'John',
                     last_name: 'Doe',
                     emails: [
-                        { value: 'john@example.com', primary: true, label: 'work' },
-                        { value: 'john.doe@personal.com', primary: false, label: 'home' },
+                        {
+                            value: 'john@example.com',
+                            primary: true,
+                            label: 'work',
+                        },
+                        {
+                            value: 'john.doe@personal.com',
+                            primary: false,
+                            label: 'home',
+                        },
                     ],
                     phones: [
                         { value: '555-1234', primary: true, label: 'work' },
@@ -214,7 +261,8 @@ describe('PipedriveIntegration (Refactored)', () => {
                     org_id: { name: 'Acme Corp' },
                 };
 
-                const result = await integration.transformPersonToQuo(pipedrivePerson);
+                const result =
+                    await integration.transformPersonToQuo(pipedrivePerson);
 
                 expect(result).toEqual({
                     externalId: '123',
@@ -225,11 +273,23 @@ describe('PipedriveIntegration (Refactored)', () => {
                         company: 'Acme Corp',
                         phoneNumbers: [
                             { name: 'work', value: '555-1234', primary: true },
-                            { name: 'mobile', value: '555-5678', primary: false },
+                            {
+                                name: 'mobile',
+                                value: '555-5678',
+                                primary: false,
+                            },
                         ],
                         emails: [
-                            { name: 'work', value: 'john@example.com', primary: true },
-                            { name: 'home', value: 'john.doe@personal.com', primary: false },
+                            {
+                                name: 'work',
+                                value: 'john@example.com',
+                                primary: true,
+                            },
+                            {
+                                name: 'home',
+                                value: 'john.doe@personal.com',
+                                primary: false,
+                            },
                         ],
                     },
                     customFields: [],
@@ -245,7 +305,8 @@ describe('PipedriveIntegration (Refactored)', () => {
                     phones: [],
                 };
 
-                const result = await integration.transformPersonToQuo(pipedrivePerson);
+                const result =
+                    await integration.transformPersonToQuo(pipedrivePerson);
 
                 expect(result.defaultFields.company).toBe(null);
             });
@@ -257,7 +318,8 @@ describe('PipedriveIntegration (Refactored)', () => {
                     last_name: 'User',
                 };
 
-                const result = await integration.transformPersonToQuo(minimalPerson);
+                const result =
+                    await integration.transformPersonToQuo(minimalPerson);
 
                 expect(result.externalId).toBe('123');
                 expect(result.defaultFields.phoneNumbers).toEqual([]);
@@ -272,7 +334,9 @@ describe('PipedriveIntegration (Refactored)', () => {
                     data: { id: 123, first_name: 'John', last_name: 'Doe' },
                 };
                 mockPipedriveApi.api.persons.get.mockResolvedValue(mockPerson);
-                mockPipedriveApi.api.activities.create.mockResolvedValue({ data: { id: 456 } });
+                mockPipedriveApi.api.activities.create.mockResolvedValue({
+                    data: { id: 456 },
+                });
 
                 const activity = {
                     contactExternalId: '123',
@@ -283,8 +347,12 @@ describe('PipedriveIntegration (Refactored)', () => {
 
                 await integration.logSMSToActivity(activity);
 
-                expect(mockPipedriveApi.api.persons.get).toHaveBeenCalledWith('123');
-                expect(mockPipedriveApi.api.activities.create).toHaveBeenCalledWith({
+                expect(mockPipedriveApi.api.persons.get).toHaveBeenCalledWith(
+                    '123',
+                );
+                expect(
+                    mockPipedriveApi.api.activities.create,
+                ).toHaveBeenCalledWith({
                     subject: 'SMS: outbound',
                     type: 'sms',
                     done: 1,
@@ -296,7 +364,9 @@ describe('PipedriveIntegration (Refactored)', () => {
             });
 
             it('should handle person not found gracefully', async () => {
-                mockPipedriveApi.api.persons.get.mockResolvedValue({ data: null });
+                mockPipedriveApi.api.persons.get.mockResolvedValue({
+                    data: null,
+                });
 
                 const activity = {
                     contactExternalId: '999',
@@ -305,14 +375,18 @@ describe('PipedriveIntegration (Refactored)', () => {
                     timestamp: '2025-01-10T15:30:00Z',
                 };
 
-                const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'warn')
+                    .mockImplementation();
 
                 await integration.logSMSToActivity(activity);
 
                 expect(consoleSpy).toHaveBeenCalledWith(
-                    'Person not found for SMS logging: 999'
+                    'Person not found for SMS logging: 999',
                 );
-                expect(mockPipedriveApi.api.activities.create).not.toHaveBeenCalled();
+                expect(
+                    mockPipedriveApi.api.activities.create,
+                ).not.toHaveBeenCalled();
 
                 consoleSpy.mockRestore();
             });
@@ -324,7 +398,9 @@ describe('PipedriveIntegration (Refactored)', () => {
                     data: { id: 123, first_name: 'John', last_name: 'Doe' },
                 };
                 mockPipedriveApi.api.persons.get.mockResolvedValue(mockPerson);
-                mockPipedriveApi.api.activities.create.mockResolvedValue({ data: { id: 456 } });
+                mockPipedriveApi.api.activities.create.mockResolvedValue({
+                    data: { id: 456 },
+                });
 
                 const activity = {
                     contactExternalId: '123',
@@ -336,7 +412,9 @@ describe('PipedriveIntegration (Refactored)', () => {
 
                 await integration.logCallToActivity(activity);
 
-                expect(mockPipedriveApi.api.activities.create).toHaveBeenCalledWith({
+                expect(
+                    mockPipedriveApi.api.activities.create,
+                ).toHaveBeenCalledWith({
                     subject: 'Call: outbound (300s)',
                     type: 'call',
                     done: 1,
@@ -352,22 +430,32 @@ describe('PipedriveIntegration (Refactored)', () => {
         describe('setupWebhooks', () => {
             it('should create webhooks for person events', async () => {
                 process.env.BASE_URL = 'https://api.example.com';
-                mockPipedriveApi.api.webhooks.create.mockResolvedValue({ data: { id: 1 } });
+                mockPipedriveApi.api.webhooks.create.mockResolvedValue({
+                    data: { id: 1 },
+                });
 
                 await integration.setupWebhooks();
 
-                expect(mockPipedriveApi.api.webhooks.create).toHaveBeenCalledTimes(3);
-                expect(mockPipedriveApi.api.webhooks.create).toHaveBeenCalledWith({
+                expect(
+                    mockPipedriveApi.api.webhooks.create,
+                ).toHaveBeenCalledTimes(3);
+                expect(
+                    mockPipedriveApi.api.webhooks.create,
+                ).toHaveBeenCalledWith({
                     subscription_url: `https://api.example.com/integrations/${integration.id}/webhook`,
                     event_action: 'added',
                     event_object: 'person',
                 });
-                expect(mockPipedriveApi.api.webhooks.create).toHaveBeenCalledWith({
+                expect(
+                    mockPipedriveApi.api.webhooks.create,
+                ).toHaveBeenCalledWith({
                     subscription_url: `https://api.example.com/integrations/${integration.id}/webhook`,
                     event_action: 'updated',
                     event_object: 'person',
                 });
-                expect(mockPipedriveApi.api.webhooks.create).toHaveBeenCalledWith({
+                expect(
+                    mockPipedriveApi.api.webhooks.create,
+                ).toHaveBeenCalledWith({
                     subscription_url: `https://api.example.com/integrations/${integration.id}/webhook`,
                     event_action: 'deleted',
                     event_object: 'person',
@@ -375,15 +463,19 @@ describe('PipedriveIntegration (Refactored)', () => {
             });
 
             it('should handle webhook setup failure gracefully', async () => {
-                mockPipedriveApi.api.webhooks.create.mockRejectedValue(new Error('Webhook creation failed'));
+                mockPipedriveApi.api.webhooks.create.mockRejectedValue(
+                    new Error('Webhook creation failed'),
+                );
 
-                const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'error')
+                    .mockImplementation();
 
                 await integration.setupWebhooks();
 
                 expect(consoleSpy).toHaveBeenCalledWith(
                     'Failed to setup Pipedrive webhooks:',
-                    expect.any(Error)
+                    expect.any(Error),
                 );
 
                 consoleSpy.mockRestore();
@@ -394,43 +486,65 @@ describe('PipedriveIntegration (Refactored)', () => {
     describe('Backward Compatibility - Existing Events', () => {
         it('should have LIST_PIPEDRIVE_DEALS event', () => {
             expect(integration.events.LIST_PIPEDRIVE_DEALS).toBeDefined();
-            expect(integration.events.LIST_PIPEDRIVE_DEALS.handler).toBeInstanceOf(Function);
+            expect(
+                integration.events.LIST_PIPEDRIVE_DEALS.handler,
+            ).toBeInstanceOf(Function);
         });
 
         it('should have LIST_PIPEDRIVE_PERSONS event', () => {
             expect(integration.events.LIST_PIPEDRIVE_PERSONS).toBeDefined();
-            expect(integration.events.LIST_PIPEDRIVE_PERSONS.handler).toBeInstanceOf(Function);
+            expect(
+                integration.events.LIST_PIPEDRIVE_PERSONS.handler,
+            ).toBeInstanceOf(Function);
         });
 
         it('should have LIST_PIPEDRIVE_ORGANIZATIONS event', () => {
-            expect(integration.events.LIST_PIPEDRIVE_ORGANIZATIONS).toBeDefined();
-            expect(integration.events.LIST_PIPEDRIVE_ORGANIZATIONS.handler).toBeInstanceOf(Function);
+            expect(
+                integration.events.LIST_PIPEDRIVE_ORGANIZATIONS,
+            ).toBeDefined();
+            expect(
+                integration.events.LIST_PIPEDRIVE_ORGANIZATIONS.handler,
+            ).toBeInstanceOf(Function);
         });
 
         it('should have LIST_PIPEDRIVE_ACTIVITIES event', () => {
             expect(integration.events.LIST_PIPEDRIVE_ACTIVITIES).toBeDefined();
-            expect(integration.events.LIST_PIPEDRIVE_ACTIVITIES.handler).toBeInstanceOf(Function);
+            expect(
+                integration.events.LIST_PIPEDRIVE_ACTIVITIES.handler,
+            ).toBeInstanceOf(Function);
         });
     });
 
     describe('Helper Methods', () => {
         describe('fetchPersonById', () => {
             it('should fetch person by ID', async () => {
-                const mockPerson = { id: 123, first_name: 'John', last_name: 'Doe' };
-                mockPipedriveApi.api.persons.get.mockResolvedValue({ data: mockPerson });
+                const mockPerson = {
+                    id: 123,
+                    first_name: 'John',
+                    last_name: 'Doe',
+                };
+                mockPipedriveApi.api.persons.get.mockResolvedValue({
+                    data: mockPerson,
+                });
 
                 const result = await integration.fetchPersonById('123');
 
                 expect(result).toEqual(mockPerson);
-                expect(mockPipedriveApi.api.persons.get).toHaveBeenCalledWith('123');
+                expect(mockPipedriveApi.api.persons.get).toHaveBeenCalledWith(
+                    '123',
+                );
             });
         });
 
         describe('fetchPersonsByIds', () => {
             it('should fetch multiple persons by IDs', async () => {
                 mockPipedriveApi.api.persons.get
-                    .mockResolvedValueOnce({ data: { id: 1, first_name: 'John' } })
-                    .mockResolvedValueOnce({ data: { id: 2, first_name: 'Jane' } });
+                    .mockResolvedValueOnce({
+                        data: { id: 1, first_name: 'John' },
+                    })
+                    .mockResolvedValueOnce({
+                        data: { id: 2, first_name: 'Jane' },
+                    });
 
                 const result = await integration.fetchPersonsByIds(['1', '2']);
 
@@ -441,10 +555,14 @@ describe('PipedriveIntegration (Refactored)', () => {
 
             it('should handle fetch errors gracefully', async () => {
                 mockPipedriveApi.api.persons.get
-                    .mockResolvedValueOnce({ data: { id: 1, first_name: 'John' } })
+                    .mockResolvedValueOnce({
+                        data: { id: 1, first_name: 'John' },
+                    })
                     .mockRejectedValueOnce(new Error('Not found'));
 
-                const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'error')
+                    .mockImplementation();
 
                 const result = await integration.fetchPersonsByIds(['1', '2']);
 
@@ -457,4 +575,3 @@ describe('PipedriveIntegration (Refactored)', () => {
         });
     });
 });
-

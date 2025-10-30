@@ -1,6 +1,6 @@
 /**
  * ProcessManager Service Tests
- * 
+ *
  * Tests the ProcessManager service with mocked use cases.
  * Demonstrates the testing approach for service layer components.
  */
@@ -48,14 +48,24 @@ describe('ProcessManager', () => {
 
     describe('constructor', () => {
         it('should require all use cases', () => {
-            expect(() => new ProcessManager({})).toThrow('createProcessUseCase is required');
+            expect(() => new ProcessManager({})).toThrow(
+                'createProcessUseCase is required',
+            );
         });
 
         it('should initialize with all dependencies', () => {
-            expect(processManager.createProcessUseCase).toBe(mockCreateProcessUseCase);
-            expect(processManager.updateProcessStateUseCase).toBe(mockUpdateProcessStateUseCase);
-            expect(processManager.updateProcessMetricsUseCase).toBe(mockUpdateProcessMetricsUseCase);
-            expect(processManager.getProcessUseCase).toBe(mockGetProcessUseCase);
+            expect(processManager.createProcessUseCase).toBe(
+                mockCreateProcessUseCase,
+            );
+            expect(processManager.updateProcessStateUseCase).toBe(
+                mockUpdateProcessStateUseCase,
+            );
+            expect(processManager.updateProcessMetricsUseCase).toBe(
+                mockUpdateProcessMetricsUseCase,
+            );
+            expect(processManager.getProcessUseCase).toBe(
+                mockGetProcessUseCase,
+            );
         });
     });
 
@@ -111,7 +121,9 @@ describe('ProcessManager', () => {
             });
 
             const callArgs = mockCreateProcessUseCase.execute.mock.calls[0][0];
-            expect(callArgs.context.lastSyncedTimestamp).toBe(lastSyncTime.toISOString());
+            expect(callArgs.context.lastSyncedTimestamp).toBe(
+                lastSyncTime.toISOString(),
+            );
         });
 
         it('should use custom pageSize if provided', async () => {
@@ -134,29 +146,40 @@ describe('ProcessManager', () => {
     describe('updateState', () => {
         it('should update process state', async () => {
             const mockProcess = buildProcessRecord({ state: 'FETCHING_TOTAL' });
-            mockUpdateProcessStateUseCase.execute.mockResolvedValue(mockProcess);
+            mockUpdateProcessStateUseCase.execute.mockResolvedValue(
+                mockProcess,
+            );
 
-            const result = await processManager.updateState('process-123', 'FETCHING_TOTAL');
+            const result = await processManager.updateState(
+                'process-123',
+                'FETCHING_TOTAL',
+            );
 
             expect(mockUpdateProcessStateUseCase.execute).toHaveBeenCalledWith(
                 'process-123',
                 'FETCHING_TOTAL',
-                {}
+                {},
             );
             expect(result).toEqual(mockProcess);
         });
 
         it('should update state with context updates', async () => {
             const mockProcess = buildProcessRecord();
-            mockUpdateProcessStateUseCase.execute.mockResolvedValue(mockProcess);
+            mockUpdateProcessStateUseCase.execute.mockResolvedValue(
+                mockProcess,
+            );
 
             const contextUpdates = { currentPage: 5 };
-            await processManager.updateState('process-123', 'PROCESSING_BATCHES', contextUpdates);
+            await processManager.updateState(
+                'process-123',
+                'PROCESSING_BATCHES',
+                contextUpdates,
+            );
 
             expect(mockUpdateProcessStateUseCase.execute).toHaveBeenCalledWith(
                 'process-123',
                 'PROCESSING_BATCHES',
-                contextUpdates
+                contextUpdates,
             );
         });
     });
@@ -164,7 +187,9 @@ describe('ProcessManager', () => {
     describe('updateMetrics', () => {
         it('should update process metrics', async () => {
             const mockProcess = buildProcessRecord();
-            mockUpdateProcessMetricsUseCase.execute.mockResolvedValue(mockProcess);
+            mockUpdateProcessMetricsUseCase.execute.mockResolvedValue(
+                mockProcess,
+            );
 
             const metricsUpdate = {
                 processed: 100,
@@ -172,12 +197,14 @@ describe('ProcessManager', () => {
                 errors: 5,
             };
 
-            const result = await processManager.updateMetrics('process-123', metricsUpdate);
-
-            expect(mockUpdateProcessMetricsUseCase.execute).toHaveBeenCalledWith(
+            const result = await processManager.updateMetrics(
                 'process-123',
-                metricsUpdate
+                metricsUpdate,
             );
+
+            expect(
+                mockUpdateProcessMetricsUseCase.execute,
+            ).toHaveBeenCalledWith('process-123', metricsUpdate);
             expect(result).toEqual(mockProcess);
         });
     });
@@ -189,7 +216,9 @@ describe('ProcessManager', () => {
 
             const result = await processManager.getProcess('process-123');
 
-            expect(mockGetProcessUseCase.execute).toHaveBeenCalledWith('process-123');
+            expect(mockGetProcessUseCase.execute).toHaveBeenCalledWith(
+                'process-123',
+            );
             expect(result).toEqual(mockProcess);
         });
 
@@ -205,10 +234,15 @@ describe('ProcessManager', () => {
     describe('handleError', () => {
         it('should update process to ERROR state with error details', async () => {
             const mockProcess = buildProcessRecord({ state: 'ERROR' });
-            mockUpdateProcessStateUseCase.execute.mockResolvedValue(mockProcess);
+            mockUpdateProcessStateUseCase.execute.mockResolvedValue(
+                mockProcess,
+            );
 
             const error = new Error('Something went wrong');
-            const result = await processManager.handleError('process-123', error);
+            const result = await processManager.handleError(
+                'process-123',
+                error,
+            );
 
             expect(mockUpdateProcessStateUseCase.execute).toHaveBeenCalledWith(
                 'process-123',
@@ -217,7 +251,7 @@ describe('ProcessManager', () => {
                     error: 'Something went wrong',
                     errorStack: expect.any(String),
                     errorTimestamp: expect.any(String),
-                })
+                }),
             );
             expect(result).toEqual(mockProcess);
         });
@@ -226,7 +260,9 @@ describe('ProcessManager', () => {
     describe('completeProcess', () => {
         it('should mark process as completed with endTime', async () => {
             const mockProcess = buildProcessRecord({ state: 'COMPLETED' });
-            mockUpdateProcessStateUseCase.execute.mockResolvedValue(mockProcess);
+            mockUpdateProcessStateUseCase.execute.mockResolvedValue(
+                mockProcess,
+            );
 
             const result = await processManager.completeProcess('process-123');
 
@@ -235,10 +271,9 @@ describe('ProcessManager', () => {
                 'COMPLETED',
                 expect.objectContaining({
                     endTime: expect.any(String),
-                })
+                }),
             );
             expect(result).toEqual(mockProcess);
         });
     });
 });
-

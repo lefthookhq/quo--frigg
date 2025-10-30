@@ -1,12 +1,12 @@
 /**
  * Integration Test for AttioIntegration
- * 
+ *
  * Tests the complete integration flow for Attio CRM:
  * 1. Get auth requirements for modules
- * 2. Create entities via POST /api/authorize  
+ * 2. Create entities via POST /api/authorize
  * 3. Create integration via POST /api/integrations
  * 4. Test integration features
- * 
+ *
  * @group integration
  * @group attio
  */
@@ -40,7 +40,9 @@ describe('AttioIntegration - End-to-End Integration Test', () => {
 
             expect(authReqs).toBeDefined();
             expect(authReqs.type).toBe('apiKey');
-            expect(authReqs.data.jsonSchema.properties).toHaveProperty('apiKey');
+            expect(authReqs.data.jsonSchema.properties).toHaveProperty(
+                'apiKey',
+            );
         });
 
         it('should get auth requirements for attio module', async () => {
@@ -56,7 +58,7 @@ describe('AttioIntegration - End-to-End Integration Test', () => {
     describe('Step 2: Create Entities via POST /api/authorize', () => {
         it('should create quo entity with API key', async () => {
             const quoApiKey = process.env.QUO_API_KEY;
-            
+
             if (!quoApiKey) {
                 console.warn('QUO_API_KEY not set, skipping entity creation');
                 return;
@@ -65,7 +67,7 @@ describe('AttioIntegration - End-to-End Integration Test', () => {
             const entity = await authenticateModule(
                 'quo',
                 { apiKey: quoApiKey },
-                testUserId
+                testUserId,
             );
 
             expect(entity).toBeDefined();
@@ -76,17 +78,21 @@ describe('AttioIntegration - End-to-End Integration Test', () => {
         it('should create attio entity with OAuth credentials', async () => {
             const attioClientId = process.env.ATTIO_CLIENT_ID;
             const attioClientSecret = process.env.ATTIO_CLIENT_SECRET;
-            
+
             if (!attioClientId || !attioClientSecret) {
-                console.warn('ATTIO credentials not set, skipping entity creation');
+                console.warn(
+                    'ATTIO credentials not set, skipping entity creation',
+                );
                 return;
             }
 
             // Note: Full OAuth flow requires manual intervention
             // In automated tests, we might need to mock or use pre-authorized tokens
-            console.warn('Attio OAuth entity creation requires manual OAuth flow');
+            console.warn(
+                'Attio OAuth entity creation requires manual OAuth flow',
+            );
             console.warn('This test documents the expected behavior');
-            
+
             // For now, skip actual OAuth flow in automated tests
             // In manual/interactive tests, this would complete the OAuth flow
         });
@@ -105,8 +111,12 @@ describe('AttioIntegration - End-to-End Integration Test', () => {
     describe('Step 3: Create Integration via POST /api/integrations', () => {
         it('should create Attio integration when both entities exist', async () => {
             if (!quoEntityId || !attioEntityId) {
-                console.warn('Entities not fully created, skipping integration creation');
-                console.warn('Attio integration requires manual OAuth completion');
+                console.warn(
+                    'Entities not fully created, skipping integration creation',
+                );
+                console.warn(
+                    'Attio integration requires manual OAuth completion',
+                );
                 return;
             }
 
@@ -117,14 +127,14 @@ describe('AttioIntegration - End-to-End Integration Test', () => {
                     attio: attioEntityId,
                 },
                 {},
-                testUserId
+                testUserId,
             );
 
             expect(integration).toBeDefined();
             expect(integration).toHaveProperty('id');
             expect(integration.entities).toHaveProperty('quo');
             expect(integration.entities).toHaveProperty('attio');
-            
+
             integrationId = integration.id;
         });
     });
@@ -137,7 +147,7 @@ describe('AttioIntegration - End-to-End Integration Test', () => {
             // - Workspace discovery
             // - Webhook configuration
             // - Record creation and search
-            
+
             expect(true).toBe(true);
         });
     });
@@ -145,11 +155,10 @@ describe('AttioIntegration - End-to-End Integration Test', () => {
     describe('Backend-to-Backend Auth', () => {
         it('should support x-frigg header authentication for Attio workflow', async () => {
             const uniqueUserId = `attio-x-frigg-${Date.now()}`;
-            
+
             // Verify new user auto-creation via x-frigg headers
             const authReqs = await getAuthRequirements('quo', uniqueUserId);
             expect(authReqs).toBeDefined();
         });
     });
 });
-

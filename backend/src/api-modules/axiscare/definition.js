@@ -1,7 +1,12 @@
 require('dotenv').config();
+const crypto = require('crypto');
 const { Api } = require('./api');
 const { get } = require('@friggframework/core');
 const config = require('./defaultConfig.json');
+
+const hashAccessToken = (accessToken) => {
+    return crypto.createHash('sha256').update(accessToken).digest('hex');
+};
 
 const Definition = {
     API: Api,
@@ -68,46 +73,49 @@ const Definition = {
             tokenResponse,
             userId,
         ) => {
-            try {
-                const userDetails = await api.getCurrentUser();
-                return {
-                    identifiers: {
-                        externalId: userDetails.id || 'axiscare-user',
-                        user: userId,
-                    },
-                    details: {
-                        name:
-                            userDetails.name ||
-                            userDetails.email ||
-                            'AxisCare User',
-                        email: userDetails.email,
-                    },
-                };
-            } catch (error) {
-                // If we can't get user details, use a generic identifier
-                return {
-                    identifiers: { externalId: 'axiscare-user', user: userId },
-                    details: { name: 'AxisCare User' },
-                };
-            }
+            const externalId = hashAccessToken(tokenResponse.access_token);
+
+            return {
+                identifiers: {
+                    externalId,
+                    user: userId,
+                },
+                details: {
+                    name: 'AxisCare Account',
+                    email: null,
+                },
+            };
         },
         apiPropertiesToPersist: {
             credential: ['access_token', 'siteNumber'],
             entity: [],
         },
         getCredentialDetails: async (api, userId) => {
+            const accessToken = api.apiKey || api.access_token;
+
+            if (!accessToken) {
+                throw new Error('Access token is required for AxisCare credential details');
+            }
+
+            const externalId = hashAccessToken(accessToken)
+
             try {
-                const userDetails = await api.getCurrentUser();
+                const credentialTest = await api.listClients();
+
+                if (credentialTest && credentialTest.errors.length > 0) {
+                    throw new Error('Invalid AxisCare credentials');
+                }
+
                 return {
                     identifiers: {
-                        externalId: userDetails.id || 'axiscare-user',
+                        externalId,
                         user: userId,
                     },
                     details: {},
                 };
             } catch (error) {
                 return {
-                    identifiers: { externalId: 'axiscare-user', user: userId },
+                    identifiers: { externalId, user: userId },
                     details: {},
                 };
             }

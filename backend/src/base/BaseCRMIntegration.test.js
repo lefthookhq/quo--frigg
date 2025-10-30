@@ -1,6 +1,6 @@
 /**
  * BaseCRMIntegration Tests
- * 
+ *
  * Tests the base class for CRM integrations with mocked services.
  */
 
@@ -45,7 +45,11 @@ describe('BaseCRMIntegration', () => {
                 return buildPersonPageResponse({
                     data: [
                         { id: 'person-1', firstName: 'John', lastName: 'Doe' },
-                        { id: 'person-2', firstName: 'Jane', lastName: 'Smith' },
+                        {
+                            id: 'person-2',
+                            firstName: 'Jane',
+                            lastName: 'Smith',
+                        },
                     ],
                     total: 100,
                     hasMore: true,
@@ -79,7 +83,11 @@ describe('BaseCRMIntegration', () => {
             }
 
             async fetchPersonsByIds(ids) {
-                return ids.map(id => ({ id, firstName: 'Test', lastName: 'Person' }));
+                return ids.map((id) => ({
+                    id,
+                    firstName: 'Test',
+                    lastName: 'Person',
+                }));
             }
         }
 
@@ -142,8 +150,9 @@ describe('BaseCRMIntegration', () => {
             }
 
             const incomplete = new IncompleteIntegration();
-            await expect(incomplete.fetchPersonPage({}))
-                .rejects.toThrow('fetchPersonPage must be implemented by child class');
+            await expect(incomplete.fetchPersonPage({})).rejects.toThrow(
+                'fetchPersonPage must be implemented by child class',
+            );
         });
 
         it('should throw error for unimplemented transformPersonToQuo', () => {
@@ -152,8 +161,9 @@ describe('BaseCRMIntegration', () => {
             }
 
             const incomplete = new IncompleteIntegration();
-            expect(() => incomplete.transformPersonToQuo({}))
-                .toThrow('transformPersonToQuo must be implemented by child class');
+            expect(() => incomplete.transformPersonToQuo({})).toThrow(
+                'transformPersonToQuo must be implemented by child class',
+            );
         });
 
         it('should throw error for unimplemented logSMSToActivity', async () => {
@@ -162,8 +172,9 @@ describe('BaseCRMIntegration', () => {
             }
 
             const incomplete = new IncompleteIntegration();
-            await expect(incomplete.logSMSToActivity({}))
-                .rejects.toThrow('logSMSToActivity must be implemented by child class');
+            await expect(incomplete.logSMSToActivity({})).rejects.toThrow(
+                'logSMSToActivity must be implemented by child class',
+            );
         });
 
         it('should throw error for unimplemented logCallToActivity', async () => {
@@ -172,8 +183,9 @@ describe('BaseCRMIntegration', () => {
             }
 
             const incomplete = new IncompleteIntegration();
-            await expect(incomplete.logCallToActivity({}))
-                .rejects.toThrow('logCallToActivity must be implemented by child class');
+            await expect(incomplete.logCallToActivity({})).rejects.toThrow(
+                'logCallToActivity must be implemented by child class',
+            );
         });
 
         it('should throw error for unimplemented setupWebhooks', async () => {
@@ -182,16 +194,19 @@ describe('BaseCRMIntegration', () => {
             }
 
             const incomplete = new IncompleteIntegration();
-            await expect(incomplete.setupWebhooks())
-                .rejects.toThrow('setupWebhooks must be implemented by child class');
+            await expect(incomplete.setupWebhooks()).rejects.toThrow(
+                'setupWebhooks must be implemented by child class',
+            );
         });
     });
 
     describe('lifecycle methods', () => {
         it('should handle onCreate with webhook support', async () => {
-            const updateIntegrationStatusSpy = jest.spyOn(integration, 'updateIntegrationStatus', 'get')
+            const updateIntegrationStatusSpy = jest
+                .spyOn(integration, 'updateIntegrationStatus', 'get')
                 .mockReturnValue({ execute: jest.fn() });
-            const checkIfNeedsConfigSpy = jest.spyOn(integration, 'checkIfNeedsConfig')
+            const checkIfNeedsConfigSpy = jest
+                .spyOn(integration, 'checkIfNeedsConfig')
                 .mockResolvedValue(false);
 
             await integration.onCreate({ integrationId: 'integration-123' });
@@ -199,14 +214,16 @@ describe('BaseCRMIntegration', () => {
             expect(checkIfNeedsConfigSpy).toHaveBeenCalled();
             expect(updateIntegrationStatusSpy().execute).toHaveBeenCalledWith(
                 'integration-123',
-                'ENABLED'
+                'ENABLED',
             );
         });
 
         it('should handle onCreate with config needed', async () => {
-            const updateIntegrationStatusSpy = jest.spyOn(integration, 'updateIntegrationStatus', 'get')
+            const updateIntegrationStatusSpy = jest
+                .spyOn(integration, 'updateIntegrationStatus', 'get')
                 .mockReturnValue({ execute: jest.fn() });
-            const checkIfNeedsConfigSpy = jest.spyOn(integration, 'checkIfNeedsConfig')
+            const checkIfNeedsConfigSpy = jest
+                .spyOn(integration, 'checkIfNeedsConfig')
                 .mockResolvedValue(true);
 
             await integration.onCreate({ integrationId: 'integration-123' });
@@ -214,12 +231,13 @@ describe('BaseCRMIntegration', () => {
             expect(checkIfNeedsConfigSpy).toHaveBeenCalled();
             expect(updateIntegrationStatusSpy().execute).toHaveBeenCalledWith(
                 'integration-123',
-                'NEEDS_CONFIG'
+                'NEEDS_CONFIG',
             );
         });
 
         it('should handle onUpdate with triggerInitialSync', async () => {
-            const startInitialSyncSpy = jest.spyOn(integration, 'startInitialSync')
+            const startInitialSyncSpy = jest
+                .spyOn(integration, 'startInitialSync')
                 .mockResolvedValue({ processIds: ['process-1'] });
 
             await integration.onUpdate({
@@ -227,11 +245,16 @@ describe('BaseCRMIntegration', () => {
                 config: { triggerInitialSync: true },
             });
 
-            expect(startInitialSyncSpy).toHaveBeenCalledWith({ integrationId: 'integration-123' });
+            expect(startInitialSyncSpy).toHaveBeenCalledWith({
+                integrationId: 'integration-123',
+            });
         });
 
         it('should not trigger sync if triggerInitialSync is false', async () => {
-            const startInitialSyncSpy = jest.spyOn(integration, 'startInitialSync');
+            const startInitialSyncSpy = jest.spyOn(
+                integration,
+                'startInitialSync',
+            );
 
             await integration.onUpdate({
                 integrationId: 'integration-123',
@@ -248,28 +271,38 @@ describe('BaseCRMIntegration', () => {
                 message: 'Initial sync started',
                 processIds: ['process-1'],
             };
-            mockSyncOrchestrator.startInitialSync.mockResolvedValue(expectedResult);
+            mockSyncOrchestrator.startInitialSync.mockResolvedValue(
+                expectedResult,
+            );
 
-            const result = await integration.startInitialSync({ integrationId: 'integration-123' });
+            const result = await integration.startInitialSync({
+                integrationId: 'integration-123',
+            });
 
             expect(mockSyncOrchestrator.startInitialSync).toHaveBeenCalledWith({
                 integration: integration,
                 integrationId: 'integration-123',
-                personObjectTypes: integration.constructor.CRMConfig.personObjectTypes,
+                personObjectTypes:
+                    integration.constructor.CRMConfig.personObjectTypes,
             });
             expect(result).toEqual(expectedResult);
         });
 
         it('should delegate startOngoingSync to SyncOrchestrator', async () => {
             const expectedResult = { message: 'Ongoing sync started' };
-            mockSyncOrchestrator.startOngoingSync.mockResolvedValue(expectedResult);
+            mockSyncOrchestrator.startOngoingSync.mockResolvedValue(
+                expectedResult,
+            );
 
-            const result = await integration.startOngoingSync({ integrationId: 'integration-123' });
+            const result = await integration.startOngoingSync({
+                integrationId: 'integration-123',
+            });
 
             expect(mockSyncOrchestrator.startOngoingSync).toHaveBeenCalledWith({
                 integration: integration,
                 integrationId: 'integration-123',
-                personObjectTypes: integration.constructor.CRMConfig.personObjectTypes,
+                personObjectTypes:
+                    integration.constructor.CRMConfig.personObjectTypes,
             });
             expect(result).toEqual(expectedResult);
         });
@@ -277,9 +310,13 @@ describe('BaseCRMIntegration', () => {
         it('should delegate handleWebhook to SyncOrchestrator', async () => {
             const webhookData = { id: 'person-1', firstName: 'John' };
             const expectedResult = { status: 'queued', count: 1 };
-            mockSyncOrchestrator.handleWebhook.mockResolvedValue(expectedResult);
+            mockSyncOrchestrator.handleWebhook.mockResolvedValue(
+                expectedResult,
+            );
 
-            const result = await integration.handleWebhook({ data: webhookData });
+            const result = await integration.handleWebhook({
+                data: webhookData,
+            });
 
             expect(mockSyncOrchestrator.handleWebhook).toHaveBeenCalledWith({
                 integration: integration,
@@ -310,14 +347,16 @@ describe('BaseCRMIntegration', () => {
 
                 expect(mockProcessManager.updateState).toHaveBeenCalledWith(
                     'process-123',
-                    'FETCHING_TOTAL'
+                    'FETCHING_TOTAL',
                 );
                 expect(mockProcessManager.updateTotal).toHaveBeenCalledWith(
                     'process-123',
                     100, // total from mock response
-                    1    // totalPages = Math.ceil(100/100)
+                    1, // totalPages = Math.ceil(100/100)
                 );
-                expect(mockQueueManager.queueProcessPersonBatch).toHaveBeenCalledWith({
+                expect(
+                    mockQueueManager.queueProcessPersonBatch,
+                ).toHaveBeenCalledWith({
                     processId: 'process-123',
                     crmPersonIds: ['person-1', 'person-2'],
                     page: 0,
@@ -335,7 +374,7 @@ describe('BaseCRMIntegration', () => {
 
                 // Mock fetchPersonPage to throw error
                 jest.spyOn(integration, 'fetchPersonPage').mockRejectedValue(
-                    new Error('API connection failed')
+                    new Error('API connection failed'),
                 );
 
                 mockProcessManager.handleError.mockResolvedValue();
@@ -344,7 +383,7 @@ describe('BaseCRMIntegration', () => {
 
                 expect(mockProcessManager.handleError).toHaveBeenCalledWith(
                     'process-123',
-                    expect.any(Error)
+                    expect.any(Error),
                 );
             });
         });
@@ -368,7 +407,7 @@ describe('BaseCRMIntegration', () => {
                         success: 2, // Mock bulkUpsertToQuo returns successCount: 2
                         errors: 0,
                         errorDetails: [],
-                    }
+                    },
                 );
             });
 
@@ -381,7 +420,7 @@ describe('BaseCRMIntegration', () => {
 
                 // Mock fetchPersonsByIds to throw error
                 jest.spyOn(integration, 'fetchPersonsByIds').mockRejectedValue(
-                    new Error('CRM API failed')
+                    new Error('CRM API failed'),
                 );
 
                 mockProcessManager.updateMetrics.mockResolvedValue();
@@ -395,7 +434,7 @@ describe('BaseCRMIntegration', () => {
                         success: 0,
                         errors: 2,
                         errorDetails: [{ error: 'CRM API failed', batch: 1 }],
-                    }
+                    },
                 );
             });
         });
@@ -408,7 +447,9 @@ describe('BaseCRMIntegration', () => {
 
                 await integration.completeSyncHandler({ data });
 
-                expect(mockProcessManager.completeProcess).toHaveBeenCalledWith('process-123');
+                expect(mockProcessManager.completeProcess).toHaveBeenCalledWith(
+                    'process-123',
+                );
             });
         });
     });
@@ -422,7 +463,8 @@ describe('BaseCRMIntegration', () => {
                 contactId: 'contact-123',
             };
 
-            const logSMSToActivitySpy = jest.spyOn(integration, 'logSMSToActivity')
+            const logSMSToActivitySpy = jest
+                .spyOn(integration, 'logSMSToActivity')
                 .mockResolvedValue();
 
             await integration.logSMS({ data: smsData });
@@ -445,7 +487,8 @@ describe('BaseCRMIntegration', () => {
                 contactId: 'contact-123',
             };
 
-            const logCallToActivitySpy = jest.spyOn(integration, 'logCallToActivity')
+            const logCallToActivitySpy = jest
+                .spyOn(integration, 'logCallToActivity')
                 .mockResolvedValue();
 
             await integration.logCall({ data: callData });
@@ -471,7 +514,9 @@ describe('BaseCRMIntegration', () => {
 
             await noSMSIntegration.logSMS({ data: {} });
 
-            expect(consoleSpy).toHaveBeenCalledWith('SMS logging not supported');
+            expect(consoleSpy).toHaveBeenCalledWith(
+                'SMS logging not supported',
+            );
             consoleSpy.mockRestore();
         });
     });
@@ -515,7 +560,8 @@ describe('BaseCRMIntegration', () => {
 
             integration.quo = {
                 api: {
-                    upsertContact: jest.fn()
+                    upsertContact: jest
+                        .fn()
                         .mockResolvedValueOnce() // First succeeds
                         .mockRejectedValueOnce(new Error('Quo API error')), // Second fails
                 },
@@ -559,9 +605,23 @@ describe('BaseCRMIntegration', () => {
                 async fetchPersonPage({ cursor, limit }) {
                     // Simulate 3 pages of data
                     const pages = {
-                        null: { data: [...Array(10)].map((_, i) => ({ id: i })), cursor: 'cursor-1', hasMore: true },
-                        'cursor-1': { data: [...Array(10)].map((_, i) => ({ id: i + 10 })), cursor: 'cursor-2', hasMore: true },
-                        'cursor-2': { data: [...Array(5)].map((_, i) => ({ id: i + 20 })), cursor: null, hasMore: false },
+                        null: {
+                            data: [...Array(10)].map((_, i) => ({ id: i })),
+                            cursor: 'cursor-1',
+                            hasMore: true,
+                        },
+                        'cursor-1': {
+                            data: [...Array(10)].map((_, i) => ({
+                                id: i + 10,
+                            })),
+                            cursor: 'cursor-2',
+                            hasMore: true,
+                        },
+                        'cursor-2': {
+                            data: [...Array(5)].map((_, i) => ({ id: i + 20 })),
+                            cursor: null,
+                            hasMore: false,
+                        },
                     };
                     return pages[cursor];
                 }
@@ -573,8 +633,12 @@ describe('BaseCRMIntegration', () => {
                 async logSMSToActivity() {}
                 async logCallToActivity() {}
                 async setupWebhooks() {}
-                async fetchPersonById(id) { return { id }; }
-                async fetchPersonsByIds(ids) { return ids.map(id => ({ id })); }
+                async fetchPersonById(id) {
+                    return { id };
+                }
+                async fetchPersonsByIds(ids) {
+                    return ids.map((id) => ({ id }));
+                }
             }
 
             cursorIntegration = new TestCursorIntegration({
@@ -619,7 +683,12 @@ describe('BaseCRMIntegration', () => {
 
             // Fetch first page (cursor=null)
             await cursorIntegration.fetchPersonPageHandler({
-                data: { processId, personObjectType: 'Contact', cursor: null, limit: 10 }
+                data: {
+                    processId,
+                    personObjectType: 'Contact',
+                    cursor: null,
+                    limit: 10,
+                },
             });
 
             // Verify queued next page with cursor-1
@@ -627,14 +696,19 @@ describe('BaseCRMIntegration', () => {
                 expect.objectContaining({
                     processId,
                     cursor: 'cursor-1',
-                })
+                }),
             );
             expect(mockQueueManager._messages).toHaveLength(1);
             expect(mockQueueManager._messages[0].cursor).toBe('cursor-1');
 
             // Fetch second page (cursor=cursor-1)
             await cursorIntegration.fetchPersonPageHandler({
-                data: { processId, personObjectType: 'Contact', cursor: 'cursor-1', limit: 10 }
+                data: {
+                    processId,
+                    personObjectType: 'Contact',
+                    cursor: 'cursor-1',
+                    limit: 10,
+                },
             });
 
             // Verify queued next page with cursor-2
@@ -642,25 +716,37 @@ describe('BaseCRMIntegration', () => {
                 expect.objectContaining({
                     processId,
                     cursor: 'cursor-2',
-                })
+                }),
             );
             expect(mockQueueManager._messages).toHaveLength(2);
             expect(mockQueueManager._messages[1].cursor).toBe('cursor-2');
 
             // Fetch last page (cursor=cursor-2)
             await cursorIntegration.fetchPersonPageHandler({
-                data: { processId, personObjectType: 'Contact', cursor: 'cursor-2', limit: 10 }
+                data: {
+                    processId,
+                    personObjectType: 'Contact',
+                    cursor: 'cursor-2',
+                    limit: 10,
+                },
             });
 
             // Verify completed (no more pages)
-            expect(mockQueueManager.queueCompleteSync).toHaveBeenCalledWith(processId);
+            expect(mockQueueManager.queueCompleteSync).toHaveBeenCalledWith(
+                processId,
+            );
         });
 
         it('should process records inline without PROCESS_PERSON_BATCH', async () => {
             const processId = 'test-proc';
 
             await cursorIntegration.fetchPersonPageHandler({
-                data: { processId, personObjectType: 'Contact', cursor: null, limit: 10 }
+                data: {
+                    processId,
+                    personObjectType: 'Contact',
+                    cursor: null,
+                    limit: 10,
+                },
             });
 
             // Verify metrics updated (records processed inline)
@@ -669,11 +755,13 @@ describe('BaseCRMIntegration', () => {
                 expect.objectContaining({
                     processed: 10,
                     success: 10,
-                })
+                }),
             );
 
             // Verify Quo API called directly (not queued)
-            expect(cursorIntegration.quo.api.bulkCreateContacts).toHaveBeenCalled();
+            expect(
+                cursorIntegration.quo.api.bulkCreateContacts,
+            ).toHaveBeenCalled();
         });
 
         it('should handle empty first page', async () => {
@@ -695,7 +783,9 @@ describe('BaseCRMIntegration', () => {
                 async logCallToActivity() {}
                 async setupWebhooks() {}
                 async fetchPersonById() {}
-                async fetchPersonsByIds() { return []; }
+                async fetchPersonsByIds() {
+                    return [];
+                }
             }
 
             const emptyIntegration = new EmptyIntegration();
@@ -703,12 +793,23 @@ describe('BaseCRMIntegration', () => {
             emptyIntegration._queueManager = mockQueueManager;
 
             await emptyIntegration.fetchPersonPageHandler({
-                data: { processId: 'test-proc', personObjectType: 'Contact', cursor: null, limit: 10 }
+                data: {
+                    processId: 'test-proc',
+                    personObjectType: 'Contact',
+                    cursor: null,
+                    limit: 10,
+                },
             });
 
             // Verify completed immediately
-            expect(mockProcessManager.updateTotal).toHaveBeenCalledWith('test-proc', 0, 0);
-            expect(mockQueueManager.queueCompleteSync).toHaveBeenCalledWith('test-proc');
+            expect(mockProcessManager.updateTotal).toHaveBeenCalledWith(
+                'test-proc',
+                0,
+                0,
+            );
+            expect(mockQueueManager.queueCompleteSync).toHaveBeenCalledWith(
+                'test-proc',
+            );
         });
 
         it('should continue to next page on processing error', async () => {
@@ -716,11 +817,16 @@ describe('BaseCRMIntegration', () => {
 
             // Mock bulkUpsertToQuo to throw error
             jest.spyOn(cursorIntegration, 'bulkUpsertToQuo').mockRejectedValue(
-                new Error('Quo API failed')
+                new Error('Quo API failed'),
             );
 
             await cursorIntegration.fetchPersonPageHandler({
-                data: { processId, personObjectType: 'Contact', cursor: null, limit: 10 }
+                data: {
+                    processId,
+                    personObjectType: 'Contact',
+                    cursor: null,
+                    limit: 10,
+                },
             });
 
             // Verify error recorded
@@ -731,16 +837,16 @@ describe('BaseCRMIntegration', () => {
                     errorDetails: expect.arrayContaining([
                         expect.objectContaining({
                             error: 'Quo API failed',
-                        })
+                        }),
                     ]),
-                })
+                }),
             );
 
             // Verify next page still queued (continues despite error)
             expect(mockQueueManager.queueFetchPersonPage).toHaveBeenCalledWith(
                 expect.objectContaining({
                     cursor: 'cursor-1',
-                })
+                }),
             );
         });
     });

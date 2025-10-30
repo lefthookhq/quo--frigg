@@ -93,7 +93,6 @@ class BaseCRMIntegration extends IntegrationBase {
      * @property {boolean} syncConfig.reverseChronological - Fetch newest records first
      * @property {number} syncConfig.initialBatchSize - Records per page for initial sync
      * @property {number} syncConfig.ongoingBatchSize - Records per page for delta sync
-     * @property {boolean} syncConfig.supportsWebhooks - Does CRM support webhooks?
      * @property {number} syncConfig.pollIntervalMinutes - Polling interval if no webhooks
      * @property {Object} queueConfig - SQS queue configuration
      * @property {number} queueConfig.maxWorkers - Maximum concurrent queue workers
@@ -111,7 +110,6 @@ class BaseCRMIntegration extends IntegrationBase {
             reverseChronological: true,
             initialBatchSize: 100,
             ongoingBatchSize: 50,
-            supportsWebhooks: false,
             pollIntervalMinutes: 60,
         },
         queueConfig: {
@@ -148,11 +146,6 @@ class BaseCRMIntegration extends IntegrationBase {
             ONGOING_SYNC: {
                 type: 'CRON',
                 handler: this.startOngoingSync.bind(this),
-            },
-
-            // Webhook from CRM
-            WEBHOOK_RECEIVED: {
-                handler: this.handleWebhook.bind(this),
             },
 
             // Process orchestration events (queue handlers)
@@ -298,9 +291,7 @@ class BaseCRMIntegration extends IntegrationBase {
      * @returns {Promise<Array<Object>>} Array of Quo contact objects
      */
     async transformPersonsToQuo(persons) {
-        return Promise.all(
-            persons.map((p) => this.transformPersonToQuo(p))
-        );
+        return Promise.all(persons.map((p) => this.transformPersonToQuo(p)));
     }
 
     /**
@@ -385,7 +376,7 @@ class BaseCRMIntegration extends IntegrationBase {
      */
     async onCreate({ integrationId }) {
         // Setup webhooks immediately (before any sync)
-        if (this.constructor.CRMConfig.syncConfig.supportsWebhooks) {
+        if (this.constructor.Definition?.webhooks?.enabled) {
             try {
                 await this.setupWebhooks();
             } catch (error) {
@@ -505,19 +496,6 @@ class BaseCRMIntegration extends IntegrationBase {
             integration: this,
             integrationId: id,
             personObjectTypes: this.constructor.CRMConfig.personObjectTypes,
-        });
-    }
-
-    /**
-     * Handle webhook from CRM
-     * @param {Object} params
-     * @param {Array|Object} params.data - Webhook data
-     * @returns {Promise<Object>} Webhook handling result
-     */
-    async handleWebhook({ data }) {
-        return await this.syncOrchestrator.handleWebhook({
-            integration: this,
-            data,
         });
     }
 
@@ -676,9 +654,7 @@ class BaseCRMIntegration extends IntegrationBase {
         const syncConfig = this.constructor.CRMConfig.syncConfig;
 
         try {
-            console.log(
-                `[BaseCRM] Cursor-based pagination: cursor=${cursor}`,
-            );
+            console.log(`[BaseCRM] Cursor-based pagination: cursor=${cursor}`);
 
             await this.processManager.updateState(processId, 'FETCHING_PAGE');
 
@@ -708,8 +684,7 @@ class BaseCRMIntegration extends IntegrationBase {
             }
 
             // Update process totals (estimated)
-            const metadata =
-                await this.processManager.getMetadata(processId);
+            const metadata = await this.processManager.getMetadata(processId);
             const totalFetched = (metadata.totalFetched || 0) + persons.length;
             const pageCount = (metadata.pageCount || 0) + 1;
 
@@ -762,7 +737,8 @@ class BaseCRMIntegration extends IntegrationBase {
                     }
 
                     // Transform to Quo format
-                    const quoContacts = await this.transformPersonsToQuo(fullPersons);
+                    const quoContacts =
+                        await this.transformPersonsToQuo(fullPersons);
 
                     // Bulk upsert to Quo
                     const results = await this.bulkUpsertToQuo(quoContacts);
@@ -779,10 +755,7 @@ class BaseCRMIntegration extends IntegrationBase {
                         `[BaseCRM] Synced ${results.successCount}/${persons.length} successfully`,
                     );
                 } catch (error) {
-                    console.error(
-                        `[BaseCRM] Error processing records:`,
-                        error,
-                    );
+                    console.error(`[BaseCRM] Error processing records:`, error);
 
                     // Update metrics with error
                     await this.processManager.updateMetrics(processId, {

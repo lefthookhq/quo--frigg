@@ -93,22 +93,38 @@ describe('ZohoCRMIntegration (Refactored)', () => {
             expect(ZohoCRMIntegration.Definition).toBeDefined();
             expect(ZohoCRMIntegration.Definition.name).toBe('zohocrm');
             expect(ZohoCRMIntegration.Definition.version).toBe('1.0.0');
-            expect(ZohoCRMIntegration.Definition.display.label).toBe('Zoho CRM');
+            expect(ZohoCRMIntegration.Definition.display.label).toBe(
+                'Zoho CRM',
+            );
         });
 
         it('should have correct CRMConfig', () => {
             expect(ZohoCRMIntegration.CRMConfig).toBeDefined();
-            expect(ZohoCRMIntegration.CRMConfig.personObjectTypes).toHaveLength(2);
-            expect(ZohoCRMIntegration.CRMConfig.personObjectTypes[0].crmObjectName).toBe('Contact');
-            expect(ZohoCRMIntegration.CRMConfig.personObjectTypes[1].crmObjectName).toBe('Lead');
-            expect(ZohoCRMIntegration.CRMConfig.syncConfig.reverseChronological).toBe(true);
-            expect(ZohoCRMIntegration.CRMConfig.syncConfig.initialBatchSize).toBe(50);
+            expect(ZohoCRMIntegration.CRMConfig.personObjectTypes).toHaveLength(
+                2,
+            );
+            expect(
+                ZohoCRMIntegration.CRMConfig.personObjectTypes[0].crmObjectName,
+            ).toBe('Contact');
+            expect(
+                ZohoCRMIntegration.CRMConfig.personObjectTypes[1].crmObjectName,
+            ).toBe('Lead');
+            expect(
+                ZohoCRMIntegration.CRMConfig.syncConfig.reverseChronological,
+            ).toBe(true);
+            expect(
+                ZohoCRMIntegration.CRMConfig.syncConfig.initialBatchSize,
+            ).toBe(50);
         });
 
         it('should have queue configuration', () => {
             expect(ZohoCRMIntegration.CRMConfig.queueConfig).toBeDefined();
-            expect(ZohoCRMIntegration.CRMConfig.queueConfig.maxWorkers).toBe(15);
-            expect(ZohoCRMIntegration.CRMConfig.queueConfig.provisioned).toBe(5);
+            expect(ZohoCRMIntegration.CRMConfig.queueConfig.maxWorkers).toBe(
+                15,
+            );
+            expect(ZohoCRMIntegration.CRMConfig.queueConfig.provisioned).toBe(
+                5,
+            );
         });
     });
 
@@ -117,8 +133,18 @@ describe('ZohoCRMIntegration (Refactored)', () => {
             it('should fetch contacts page correctly', async () => {
                 const mockResponse = {
                     data: [
-                        { id: '1', First_Name: 'John', Last_Name: 'Doe', Email: 'john@example.com' },
-                        { id: '2', First_Name: 'Jane', Last_Name: 'Smith', Email: 'jane@example.com' },
+                        {
+                            id: '1',
+                            First_Name: 'John',
+                            Last_Name: 'Doe',
+                            Email: 'john@example.com',
+                        },
+                        {
+                            id: '2',
+                            First_Name: 'Jane',
+                            Last_Name: 'Smith',
+                            Email: 'jane@example.com',
+                        },
                     ],
                     info: { count: 2, more_records: false },
                 };
@@ -194,7 +220,7 @@ describe('ZohoCRMIntegration (Refactored)', () => {
                 expect(mockZohoApi.api.contacts.getAll).toHaveBeenCalledWith(
                     expect.objectContaining({
                         modified_since: '2025-01-01',
-                    })
+                    }),
                 );
             });
         });
@@ -217,7 +243,8 @@ describe('ZohoCRMIntegration (Refactored)', () => {
                     Owner: { name: 'Sales Rep', id: 'owner-123' },
                 };
 
-                const result = await integration.transformPersonToQuo(zohoContact);
+                const result =
+                    await integration.transformPersonToQuo(zohoContact);
 
                 expect(result).toEqual({
                     externalId: 'contact-123',
@@ -274,7 +301,8 @@ describe('ZohoCRMIntegration (Refactored)', () => {
                     Last_Name: 'User',
                 };
 
-                const result = await integration.transformPersonToQuo(minimalContact);
+                const result =
+                    await integration.transformPersonToQuo(minimalContact);
 
                 expect(result.externalId).toBe('minimal-789');
                 expect(result.defaultFields.phoneNumbers).toEqual([]);
@@ -284,9 +312,17 @@ describe('ZohoCRMIntegration (Refactored)', () => {
 
         describe('logSMSToActivity', () => {
             it('should log SMS activity to Zoho', async () => {
-                const mockContact = { id: 'contact-123', First_Name: 'John', Last_Name: 'Doe' };
-                mockZohoApi.api.contacts.get.mockResolvedValue({ data: mockContact });
-                mockZohoApi.api.activities.create.mockResolvedValue({ id: 'activity-123' });
+                const mockContact = {
+                    id: 'contact-123',
+                    First_Name: 'John',
+                    Last_Name: 'Doe',
+                };
+                mockZohoApi.api.contacts.get.mockResolvedValue({
+                    data: mockContact,
+                });
+                mockZohoApi.api.activities.create.mockResolvedValue({
+                    id: 'activity-123',
+                });
 
                 const activity = {
                     contactExternalId: 'contact-123',
@@ -297,7 +333,9 @@ describe('ZohoCRMIntegration (Refactored)', () => {
 
                 await integration.logSMSToActivity(activity);
 
-                expect(mockZohoApi.api.contacts.get).toHaveBeenCalledWith('contact-123');
+                expect(mockZohoApi.api.contacts.get).toHaveBeenCalledWith(
+                    'contact-123',
+                );
                 expect(mockZohoApi.api.activities.create).toHaveBeenCalledWith({
                     Subject: 'SMS: outbound',
                     Description: 'Test SMS message',
@@ -309,10 +347,18 @@ describe('ZohoCRMIntegration (Refactored)', () => {
             });
 
             it('should try lead if contact not found', async () => {
-                const mockLead = { id: 'lead-456', First_Name: 'Jane', Last_Name: 'Smith' };
-                mockZohoApi.api.contacts.get.mockRejectedValue(new Error('Not found'));
+                const mockLead = {
+                    id: 'lead-456',
+                    First_Name: 'Jane',
+                    Last_Name: 'Smith',
+                };
+                mockZohoApi.api.contacts.get.mockRejectedValue(
+                    new Error('Not found'),
+                );
                 mockZohoApi.api.leads.get.mockResolvedValue({ data: mockLead });
-                mockZohoApi.api.activities.create.mockResolvedValue({ id: 'activity-456' });
+                mockZohoApi.api.activities.create.mockResolvedValue({
+                    id: 'activity-456',
+                });
 
                 const activity = {
                     contactExternalId: 'lead-456',
@@ -323,16 +369,26 @@ describe('ZohoCRMIntegration (Refactored)', () => {
 
                 await integration.logSMSToActivity(activity);
 
-                expect(mockZohoApi.api.leads.get).toHaveBeenCalledWith('lead-456');
+                expect(mockZohoApi.api.leads.get).toHaveBeenCalledWith(
+                    'lead-456',
+                );
                 expect(mockZohoApi.api.activities.create).toHaveBeenCalled();
             });
         });
 
         describe('logCallToActivity', () => {
             it('should log call activity to Zoho', async () => {
-                const mockContact = { id: 'contact-123', First_Name: 'John', Last_Name: 'Doe' };
-                mockZohoApi.api.contacts.get.mockResolvedValue({ data: mockContact });
-                mockZohoApi.api.activities.create.mockResolvedValue({ id: 'activity-123' });
+                const mockContact = {
+                    id: 'contact-123',
+                    First_Name: 'John',
+                    Last_Name: 'Doe',
+                };
+                mockZohoApi.api.contacts.get.mockResolvedValue({
+                    data: mockContact,
+                });
+                mockZohoApi.api.activities.create.mockResolvedValue({
+                    id: 'activity-123',
+                });
 
                 const activity = {
                     contactExternalId: 'contact-123',
@@ -358,12 +414,14 @@ describe('ZohoCRMIntegration (Refactored)', () => {
 
         describe('setupWebhooks', () => {
             it('should log that webhooks are not configured', async () => {
-                const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'log')
+                    .mockImplementation();
 
                 await integration.setupWebhooks();
 
                 expect(consoleSpy).toHaveBeenCalledWith(
-                    'Zoho CRM webhooks not configured - using polling fallback'
+                    'Zoho CRM webhooks not configured - using polling fallback',
                 );
 
                 consoleSpy.mockRestore();
@@ -374,22 +432,30 @@ describe('ZohoCRMIntegration (Refactored)', () => {
     describe('Backward Compatibility - Existing Events', () => {
         it('should have LIST_ZOHO_LEADS event', () => {
             expect(integration.events.LIST_ZOHO_LEADS).toBeDefined();
-            expect(integration.events.LIST_ZOHO_LEADS.handler).toBeInstanceOf(Function);
+            expect(integration.events.LIST_ZOHO_LEADS.handler).toBeInstanceOf(
+                Function,
+            );
         });
 
         it('should have LIST_ZOHO_CONTACTS event', () => {
             expect(integration.events.LIST_ZOHO_CONTACTS).toBeDefined();
-            expect(integration.events.LIST_ZOHO_CONTACTS.handler).toBeInstanceOf(Function);
+            expect(
+                integration.events.LIST_ZOHO_CONTACTS.handler,
+            ).toBeInstanceOf(Function);
         });
 
         it('should have LIST_ZOHO_DEALS event', () => {
             expect(integration.events.LIST_ZOHO_DEALS).toBeDefined();
-            expect(integration.events.LIST_ZOHO_DEALS.handler).toBeInstanceOf(Function);
+            expect(integration.events.LIST_ZOHO_DEALS.handler).toBeInstanceOf(
+                Function,
+            );
         });
 
         it('should have LIST_ZOHO_ACCOUNTS event', () => {
             expect(integration.events.LIST_ZOHO_ACCOUNTS).toBeDefined();
-            expect(integration.events.LIST_ZOHO_ACCOUNTS.handler).toBeInstanceOf(Function);
+            expect(
+                integration.events.LIST_ZOHO_ACCOUNTS.handler,
+            ).toBeInstanceOf(Function);
         });
     });
 
@@ -397,17 +463,23 @@ describe('ZohoCRMIntegration (Refactored)', () => {
         describe('fetchPersonById', () => {
             it('should fetch contact by ID', async () => {
                 const mockContact = { id: 'contact-123', First_Name: 'John' };
-                mockZohoApi.api.contacts.get.mockResolvedValue({ data: mockContact });
+                mockZohoApi.api.contacts.get.mockResolvedValue({
+                    data: mockContact,
+                });
 
                 const result = await integration.fetchPersonById('contact-123');
 
                 expect(result).toEqual(mockContact);
-                expect(mockZohoApi.api.contacts.get).toHaveBeenCalledWith('contact-123');
+                expect(mockZohoApi.api.contacts.get).toHaveBeenCalledWith(
+                    'contact-123',
+                );
             });
 
             it('should try lead if contact not found', async () => {
                 const mockLead = { id: 'lead-456', First_Name: 'Jane' };
-                mockZohoApi.api.contacts.get.mockRejectedValue(new Error('Not found'));
+                mockZohoApi.api.contacts.get.mockRejectedValue(
+                    new Error('Not found'),
+                );
                 mockZohoApi.api.leads.get.mockResolvedValue({ data: mockLead });
 
                 const result = await integration.fetchPersonById('lead-456');
@@ -416,14 +488,17 @@ describe('ZohoCRMIntegration (Refactored)', () => {
             });
 
             it('should throw error if neither contact nor lead found', async () => {
-                mockZohoApi.api.contacts.get.mockRejectedValue(new Error('Not found'));
-                mockZohoApi.api.leads.get.mockRejectedValue(new Error('Not found'));
-
-                await expect(integration.fetchPersonById('invalid-id')).rejects.toThrow(
-                    'Person not found: invalid-id'
+                mockZohoApi.api.contacts.get.mockRejectedValue(
+                    new Error('Not found'),
                 );
+                mockZohoApi.api.leads.get.mockRejectedValue(
+                    new Error('Not found'),
+                );
+
+                await expect(
+                    integration.fetchPersonById('invalid-id'),
+                ).rejects.toThrow('Person not found: invalid-id');
             });
         });
     });
 });
-

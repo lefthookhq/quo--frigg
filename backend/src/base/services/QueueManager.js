@@ -1,25 +1,25 @@
 /**
  * QueueManager Service
- * 
+ *
  * Encapsulates queue operations for CRM sync processes.
  * Handles message formatting, batching, and fan-out patterns.
- * 
+ *
  * Design Philosophy:
  * - Abstract away QueuerUtil complexity
  * - Provide CRM-specific queue message structures
  * - Support fan-out pattern for concurrent page processing
  * - Testable through QueuerUtil injection
- * 
+ *
  * Fan-Out Pattern:
  * After fetching first page and determining total pages, this service
  * queues all remaining pages at once for concurrent processing.
- * 
+ *
  * @example
  * const queueManager = new QueueManager({
  *   queuerUtil: QueuerUtil,
  *   queueUrl: process.env.INTEGRATION_QUEUE_URL
  * });
- * 
+ *
  * await queueManager.fanOutPages({
  *   processId: 'proc123',
  *   personObjectType: 'Contact',
@@ -76,7 +76,9 @@ class QueueManager {
                 page,
                 cursor,
                 limit,
-                modifiedSince: modifiedSince ? modifiedSince.toISOString() : null,
+                modifiedSince: modifiedSince
+                    ? modifiedSince.toISOString()
+                    : null,
                 sortDesc,
             },
         };
@@ -134,7 +136,7 @@ class QueueManager {
     /**
      * Fan out: Queue all pages at once for concurrent processing
      * This is the key optimization for fast initial sync
-     * 
+     *
      * @param {Object} params
      * @param {string} params.processId - Process ID
      * @param {string} params.personObjectType - CRM object type
@@ -165,7 +167,9 @@ class QueueManager {
                     personObjectType,
                     page,
                     limit,
-                    modifiedSince: modifiedSince ? modifiedSince.toISOString() : null,
+                    modifiedSince: modifiedSince
+                        ? modifiedSince.toISOString()
+                        : null,
                     sortDesc,
                 },
             });
@@ -212,4 +216,3 @@ class QueueManager {
 }
 
 module.exports = QueueManager;
-

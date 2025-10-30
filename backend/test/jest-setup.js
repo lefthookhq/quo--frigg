@@ -45,9 +45,9 @@ jest.mock('@friggframework/core', () => ({
             this.events = {};
         }
     },
-    Entity: class Entity { },
-    UserModel: class UserModel { },
-    IntegrationModel: class IntegrationModel { },
+    Entity: class Entity {},
+    UserModel: class UserModel {},
+    IntegrationModel: class IntegrationModel {},
     Requester: class Requester {
         constructor(params = {}) {
             this.baseUrl = params.baseUrl || '';
@@ -93,6 +93,14 @@ jest.mock('@friggframework/core', () => ({
             queue: jest.fn().mockResolvedValue(),
         })),
     },
+    createFriggCommands: jest.fn((params) => ({
+        updateIntegrationConfig: jest.fn().mockResolvedValue({}),
+        getIntegration: jest.fn().mockResolvedValue({}),
+        deleteIntegration: jest.fn().mockResolvedValue({}),
+        createMapping: jest.fn().mockResolvedValue({}),
+        updateMapping: jest.fn().mockResolvedValue({}),
+        deleteMapping: jest.fn().mockResolvedValue({}),
+    })),
 }));
 
 // Removed mocks for non-existent modules (@friggframework/api-module-asana, @friggframework/api-module-frontify)
