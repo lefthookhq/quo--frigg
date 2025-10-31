@@ -39,3 +39,10 @@ temp/
 .serverless/
 layers/
 backend/layers/
+
+# Claude AI files
+*.claude
+*.claude-flow
+.claude-flow/
+backend/.claude/
+.claude/
