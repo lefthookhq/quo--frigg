@@ -32,8 +32,8 @@
         "@friggframework/api-module-frigg-scale-test": "^0.2.0-next.3",
         "@friggframework/api-module-pipedrive": "2.1.0-next.1",
         "@friggframework/api-module-zoho-crm": "2.0.0-next.1",
-        "@friggframework/core": "2.0.0--canary.461.849e166.0",
-        "@friggframework/devtools": "2.0.0--canary.461.849e166.0",
+        "@friggframework/core": "2.0.0-next.47",
+        "@friggframework/devtools": "2.0.0-next.47",
         "axios": "^1.6.0",
         "body-parser": "^1.20.3",
         "cors": "^2.8.5",
@@ -43,15 +43,15 @@
         "serverless-http": "^2.7.0"
     },
     "overrides": {
-        "@friggframework/core": "2.0.0--canary.461.849e166.0",
-        "@friggframework/devtools": "2.0.0--canary.461.849e166.0"
+        "@friggframework/core": "2.0.0-next.47",
+        "@friggframework/devtools": "2.0.0-next.47"
     },
     "devDependencies": {
         "@faker-js/faker": "^8.4.1",
-        "@friggframework/eslint-config": "v2.0.0-next.44",
-        "@friggframework/prettier-config": "v2.0.0-next.44",
-        "@friggframework/serverless-plugin": "^2.0.0--canary.461.849e166.0",
-        "@friggframework/test": "v2.0.0-next.44",
+        "@friggframework/eslint-config": "2.0.0-next.47",
+        "@friggframework/prettier-config": "2.0.0-next.47",
+        "@friggframework/serverless-plugin": "2.0.0-next.47",
+        "@friggframework/test": "2.0.0-next.47",
         "@prisma/client": "^6.17.0",
         "@types/node": "^22.1.0",
         "chai": "^4.5.0",

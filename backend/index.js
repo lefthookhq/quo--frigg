@@ -7,6 +7,10 @@ const AxisCareIntegration = require('./src/integrations/AxisCareIntegration');
 const appDefinition = {
     label: 'Quo Integrations',
     name: 'quo-integrations',
+    // Managed mode but with explicit subnet configuration
+    managementMode: 'managed', // Frigg manages all enabled resources
+    vpcIsolation: 'isolated', // Each stage gets separate VPC/Aurora for complete isolation
+
     integrations: [
         ScalingTestIntegration,
         ZohoCRMIntegration,
@@ -26,30 +30,20 @@ const appDefinition = {
         },
     },
     encryption: {
-        fieldLevelEncryptionMethod: 'kms', // Use 'aes' for local dev, 'kms' for production
-        createResourceIfNoneFound: true,
+        fieldLevelEncryptionMethod: 'kms', // KMS encryption for production
     },
     vpc: {
-        enable: true, // Enable VPC for production deployment
-        management: 'discover', // 'create-new' | 'discover' | 'use-existing'
-        subnets: {
-            management: 'discover', // 'create' | 'discover' | 'use-existing'
-        },
-        natGateway: {
-            management: 'createAndManage', // 'createAndManage' | 'discover' | 'useExisting'
-            id: null, // Optional: specific NAT Gateway ID when management is 'useExisting'
-        },
-        selfHeal: true, // Enable automatic fixing of misconfigurations
+        enable: true,
+        enableVPCEndpoints: true,
+        selfHeal: true,
     },
     database: {
         postgres: {
-            enable: true, // Can be enabled for PostgreSQL
-            management: 'create-new', // Create new Aurora Serverless v2 cluster for dev
-            publiclyAccessible: true, // Whether to expose the database publicly (dev only - QA/prod should be false)
-            autoCreateCredentials: true, // Auto-create Secrets Manager secret with secure password
-            database: 'postgres', // Database name
-            minCapacity: 0.5, // Minimum Aurora capacity units (cost optimization for dev)
-            maxCapacity: 1, // Maximum Aurora capacity units
+            enable: true,
+            publiclyAccessible: false, // Use private subnets - Lambda can access via VPC
+            database: 'postgres',
+            minCapacity: 0.5,
+            maxCapacity: 1,
         },
     },
     ssm: {
@@ -63,6 +57,7 @@ const appDefinition = {
         DATABASE_PASSWORD: true,
         REDIRECT_PATH: true,
         HEALTH_API_KEY: true,
+        ADMIN_API_KEY: true,
         // AWS Configuration
         AWS_REGION: true,
         S3_BUCKET_NAME: true,
