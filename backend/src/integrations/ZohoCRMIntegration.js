@@ -18,7 +18,17 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             icon: '',
         },
         modules: {
-            quo: { definition: QuoDefinition },
+            quo: { 
+                definition: {
+                    ...QuoDefinition,
+                    getName: () => 'quo-zohoCrm',
+                    moduleName: 'quo-zohoCrm',
+                    display: {
+                        ...(QuoDefinition.display || {}),
+                        label: 'Quo (Zoho CRM)',
+                    },
+                }
+            },
             zohoCrm: {
                 definition: zohoCrm.Definition,
             },

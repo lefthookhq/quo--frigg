@@ -39,7 +39,7 @@ jest.mock('../base/BaseCRMIntegration', () => {
     };
 });
 
-const ZohoCRMIntegration = require('./ZohoCRMIntegration.refactored');
+const ZohoCRMIntegration = require('./ZohoCRMIntegration');
 
 describe('ZohoCRMIntegration (Refactored)', () => {
     let integration;
@@ -96,6 +96,20 @@ describe('ZohoCRMIntegration (Refactored)', () => {
             expect(ZohoCRMIntegration.Definition.display.label).toBe(
                 'Zoho CRM',
             );
+        });
+
+        it('should have quo module with correct name and label overrides', () => {
+            expect(ZohoCRMIntegration.Definition.modules.quo).toBeDefined();
+            expect(ZohoCRMIntegration.Definition.modules.quo.definition).toBeDefined();
+            
+            // Test name override
+            expect(ZohoCRMIntegration.Definition.modules.quo.definition.getName()).toBe('quo-zohoCrm');
+            expect(ZohoCRMIntegration.Definition.modules.quo.definition.moduleName).toBe('quo-zohoCrm');
+            
+            // Test label override (if display property exists)
+            if (ZohoCRMIntegration.Definition.modules.quo.definition.display) {
+                expect(ZohoCRMIntegration.Definition.modules.quo.definition.display.label).toBe('Quo (Zoho CRM)');
+            }
         });
 
         it('should have correct CRMConfig', () => {

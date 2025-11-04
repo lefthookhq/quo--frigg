@@ -24,7 +24,17 @@ class ScalingTestIntegration extends BaseCRMIntegration {
             icon: '',
         },
         modules: {
-            quo: { definition: QuoDefinition },
+            quo: { 
+                definition: {
+                    ...QuoDefinition,
+                    getName: () => 'quo-scalingtest',
+                    moduleName: 'quo-scalingtest',
+                    display: {
+                        ...(QuoDefinition.display || {}),
+                        label: 'Quo (Scaling Test)',
+                    },
+                }
+            },
             'scale-test': {
                 definition: crmScaleTest.Definition,
             },

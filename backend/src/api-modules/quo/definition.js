@@ -7,7 +7,7 @@ const Definition = {
     API: Api,
     getName: () => config.name,
     moduleName: config.name,
-    modelName: 'OpenPhone',
+    modelName: 'Quo',
     requiredAuthMethods: {
         getAuthorizationRequirements: (api) => {
             return {

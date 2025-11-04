@@ -80,6 +80,20 @@ describe('AttioIntegration (Refactored)', () => {
             expect(AttioIntegration.Definition.display.label).toBe('Attio');
         });
 
+        it('should have quo module with correct name and label overrides', () => {
+            expect(AttioIntegration.Definition.modules.quo).toBeDefined();
+            expect(AttioIntegration.Definition.modules.quo.definition).toBeDefined();
+            
+            // Test name override
+            expect(AttioIntegration.Definition.modules.quo.definition.getName()).toBe('quo-attio');
+            expect(AttioIntegration.Definition.modules.quo.definition.moduleName).toBe('quo-attio');
+            
+            // Test label override (if display property exists)
+            if (AttioIntegration.Definition.modules.quo.definition.display) {
+                expect(AttioIntegration.Definition.modules.quo.definition.display.label).toBe('Quo (Attio)');
+            }
+        });
+
         it('should have correct CRMConfig', () => {
             expect(AttioIntegration.CRMConfig).toBeDefined();
             expect(AttioIntegration.CRMConfig.personObjectTypes).toHaveLength(
