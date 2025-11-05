@@ -83,6 +83,20 @@ describe('PipedriveIntegration (Refactored)', () => {
             );
         });
 
+        it('should have quo module with correct name and label overrides', () => {
+            expect(PipedriveIntegration.Definition.modules.quo).toBeDefined();
+            expect(PipedriveIntegration.Definition.modules.quo.definition).toBeDefined();
+            
+            // Test name override
+            expect(PipedriveIntegration.Definition.modules.quo.definition.getName()).toBe('quo-pipedrive');
+            expect(PipedriveIntegration.Definition.modules.quo.definition.moduleName).toBe('quo-pipedrive');
+            
+            // Test label override (if display property exists)
+            if (PipedriveIntegration.Definition.modules.quo.definition.display) {
+                expect(PipedriveIntegration.Definition.modules.quo.definition.display.label).toBe('Quo (Pipedrive)');
+            }
+        });
+
         it('should have correct CRMConfig', () => {
             expect(PipedriveIntegration.CRMConfig).toBeDefined();
             expect(

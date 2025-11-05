@@ -1,6 +1,6 @@
 {
     "name": "quo",
-    "baseUrl": "https://api.openphone.com",
+    "baseUrl": "https://api.quo.com",
     "authType": "api-key",
     "description": "Quo API integration for calls, messages, contacts, and phone number management"
 }

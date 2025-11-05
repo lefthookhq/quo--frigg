@@ -26,7 +26,17 @@ class PipedriveIntegration extends BaseCRMIntegration {
         },
         modules: {
             pipedrive: { definition: pipedrive.Definition },
-            quo: { definition: quo.Definition },
+            quo: { 
+                definition: {
+                    ...quo.Definition,
+                    getName: () => 'quo-pipedrive',
+                    moduleName: 'quo-pipedrive',
+                    display: {
+                        ...(quo.Definition.display || {}),
+                        label: 'Quo (Pipedrive)',
+                    },
+                }
+            },
         },
         webhooks: {
             enabled: true,

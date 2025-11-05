@@ -28,7 +28,17 @@ class AttioIntegration extends BaseCRMIntegration {
         },
         modules: {
             attio: { definition: attio.Definition },
-            quo: { definition: quo.Definition },
+            quo: {
+                definition: {
+                    ...quo.Definition,
+                    getName: () => 'quo-attio',
+                    moduleName: 'quo-attio',
+                    display: {
+                        ...(quo.Definition.display || {}),
+                        label: 'Quo (Attio)',
+                    },
+                }
+            },
         },
         routes: [
             {
@@ -315,7 +325,7 @@ class AttioIntegration extends BaseCRMIntegration {
         if (!process.env.BASE_URL) {
             throw new Error(
                 'BASE_URL environment variable is required for webhook setup. ' +
-                    'Please configure this in your deployment environment before enabling webhooks.',
+                'Please configure this in your deployment environment before enabling webhooks.',
             );
         }
 
@@ -635,7 +645,7 @@ class AttioIntegration extends BaseCRMIntegration {
 
             console.log(
                 `[Attio] Fetched ${persons.length} ${objectType} at offset ${cursor || 0}, ` +
-                    `hasMore=${!!nextCursor}`,
+                `hasMore=${!!nextCursor}`,
             );
 
             return {
@@ -1902,7 +1912,7 @@ Received:
             if (contacts.length === 0) {
                 throw new Error(
                     `No Attio contact found with phone number ${phoneNumber} (normalized: ${normalizedPhone}). ` +
-                        `Contact must exist in Attio to log activities.`,
+                    `Contact must exist in Attio to log activities.`,
                 );
             }
 
@@ -1923,7 +1933,7 @@ Received:
 
             throw new Error(
                 `Found ${contacts.length} contact(s) with phone ${normalizedPhone} in Attio, ` +
-                    `but none were synced from Attio to Quo. Only synced contacts can receive activity logs.`,
+                `but none were synced from Attio to Quo. Only synced contacts can receive activity logs.`,
             );
         } catch (error) {
             console.error(

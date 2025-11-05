@@ -99,6 +99,20 @@ describe('AxisCareIntegration', () => {
             );
         });
 
+        it('should have quo module with correct name and label overrides', () => {
+            expect(AxisCareIntegration.Definition.modules.quo).toBeDefined();
+            expect(AxisCareIntegration.Definition.modules.quo.definition).toBeDefined();
+            
+            // Test name override
+            expect(AxisCareIntegration.Definition.modules.quo.definition.getName()).toBe('quo-axisCare');
+            expect(AxisCareIntegration.Definition.modules.quo.definition.moduleName).toBe('quo-axisCare');
+            
+            // Test label override (if display property exists)
+            if (AxisCareIntegration.Definition.modules.quo.definition.display) {
+                expect(AxisCareIntegration.Definition.modules.quo.definition.display.label).toBe('Quo (AxisCare)');
+            }
+        });
+
         it('should have correct CRMConfig', () => {
             expect(
                 AxisCareIntegration.CRMConfig.personObjectTypes,
