@@ -46,3 +46,5 @@ backend/layers/
 .claude-flow/
 backend/.claude/
 .claude/
+/backend/.claude-flow
+backend/.frigg-infrastructure-cache.json
