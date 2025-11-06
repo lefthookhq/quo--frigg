@@ -157,6 +157,19 @@ class PipedriveIntegration extends BaseCRMIntegration {
         };
     }
 
+    /**
+     * Override onCreate to trigger initial sync after integration creation
+     * @param {Object} params
+     * @param {string} params.integrationId - Integration ID
+     */
+    async onCreate({ integrationId }) {
+        // Call parent onCreate (handles webhook setup and status)
+        await super.onCreate({ integrationId });
+
+        // Trigger initial sync automatically after setup
+        await this.startInitialSync({ integrationId });
+    }
+
     // ============================================================================
     // WEBHOOK INFRASTRUCTURE - Private Helper Methods
     // ============================================================================
