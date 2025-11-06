@@ -94,6 +94,7 @@ class BaseCRMIntegration extends IntegrationBase {
      * @property {number} syncConfig.initialBatchSize - Records per page for initial sync
      * @property {number} syncConfig.ongoingBatchSize - Records per page for delta sync
      * @property {number} syncConfig.pollIntervalMinutes - Polling interval if no webhooks
+     * @property {number} [onCreateDelaySeconds=35] - Delay before webhook setup and initial sync (for API key propagation)
      * @property {Object} queueConfig - SQS queue configuration
      * @property {number} queueConfig.maxWorkers - Maximum concurrent queue workers
      * @property {number} queueConfig.provisioned - Provisioned concurrency for Lambda
@@ -112,6 +113,7 @@ class BaseCRMIntegration extends IntegrationBase {
             ongoingBatchSize: 50,
             pollIntervalMinutes: 60,
         },
+        onCreateDelaySeconds: 35, // Default delay for Quo API key propagation
         queueConfig: {
             maxWorkers: 5,
             provisioned: 0,
@@ -132,6 +134,12 @@ class BaseCRMIntegration extends IntegrationBase {
         // Auto-generate CRM-specific events
         this.events = {
             ...this.events,
+
+            // Post-creation setup: webhook registration and initial sync
+            // Delayed to handle Quo API key propagation (~30 seconds)
+            POST_CREATE_SETUP: {
+                handler: this.handlePostCreateSetup.bind(this),
+            },
 
             // User-triggered initial sync
             INITIAL_SYNC: {
@@ -371,35 +379,56 @@ class BaseCRMIntegration extends IntegrationBase {
     /**
      * Called when integration is created
      * Override to customize behavior
+     * 
+     * IMPORTANT: This method handles Quo (OpenPhone) API key propagation delay (~30 seconds).
+     * Webhook setup and initial sync are delayed by 35 seconds to ensure API key is active.
+     * 
      * @param {Object} params
      * @param {string} params.integrationId - Integration ID
      */
     async onCreate({ integrationId }) {
-        // Setup webhooks immediately (before any sync)
-        if (this.constructor.Definition?.webhooks?.enabled) {
-            try {
-                await this.setupWebhooks();
-            } catch (error) {
-                console.error('Failed to setup webhooks:', error);
-                // Non-fatal, continue with polling fallback
-            }
+        const integrationName = this.constructor.Definition?.name;
+        if (!integrationName) {
+            throw new Error('Integration Definition.name is required but not defined');
         }
-
+        
+        console.log(`[${integrationName}] onCreate called for ${integrationId}`);
+        
         // Check if we need user configuration
         const needsConfig = await this.checkIfNeedsConfig();
 
         if (needsConfig) {
+            console.log(`[${integrationName}] Integration ${integrationId} needs configuration`);
             await this.updateIntegrationStatus.execute(
                 integrationId,
                 'NEEDS_CONFIG',
             );
-        } else {
-            await this.updateIntegrationStatus.execute(
+            return;
+        }
+
+        // Update status to ENABLED immediately
+        console.log(`[${integrationName}] Marking integration ${integrationId} as ENABLED`);
+        await this.updateIntegrationStatus.execute(
+            integrationId,
+            'ENABLED',
+        );
+
+        // Queue delayed webhook setup + initial sync to allow Quo API key propagation
+        // Quo (OpenPhone) API keys take ~30 seconds to activate after creation
+        // This is a workaround until the propagation delay is fixed (Dec/Jan timeline)
+        const delaySeconds = this.constructor.CRMConfig?.onCreateDelaySeconds || 35;
+        console.log(`[${integrationName}] Queueing delayed webhook setup + initial sync for ${integrationId} (${delaySeconds} second delay)`);
+        
+        try {
+            await this.queueManager.queueMessage({
+                action: 'POST_CREATE_SETUP',
                 integrationId,
-                'ENABLED',
-            );
-            // Optionally trigger initial sync automatically
-            // await this.startInitialSync({ integrationId });
+                delaySeconds,
+            });
+            console.log(`[${integrationName}] Delayed webhook setup + initial sync queued successfully for ${integrationId}`);
+        } catch (error) {
+            console.error(`[${integrationName}] Failed to queue delayed webhook setup for ${integrationId}:`, error);
+            // Non-fatal - webhooks and sync can be triggered manually later
         }
     }
 
@@ -451,6 +480,62 @@ class BaseCRMIntegration extends IntegrationBase {
         if (config && config.triggerInitialSync) {
             await this.startInitialSync({ integrationId });
         }
+    }
+
+    /**
+     * Handle post-creation setup: webhook registration and initial sync
+     * This is triggered by the POST_CREATE_SETUP queue message from onCreate
+     * 
+     * Runs after a delay (default 35 seconds) to handle Quo API key propagation (~30 seconds).
+     * By the time this runs, the API key should be active.
+     * 
+     * @param {Object} event - Queue event with integrationId
+     * @returns {Promise<Object>} Setup result with webhooks and initialSync status
+     */
+    async handlePostCreateSetup(event) {
+        const { integrationId } = event;
+        const integrationName = this.constructor.Definition?.name;
+        if (!integrationName) {
+            throw new Error('Integration Definition.name is required but not defined');
+        }
+        
+        console.log(`[${integrationName}] Starting post-create setup (webhook + sync) for ${integrationId}`);
+        
+        const results = {
+            webhooks: null,
+            initialSync: null,
+        };
+
+        if (this.constructor.Definition?.webhooks?.enabled) {
+            try {
+                results.webhooks = await this.setupWebhooks();
+                console.log(`[${integrationName}] Webhook setup completed for ${integrationId}:`, results.webhooks);
+            } catch (error) {
+                console.error(`[${integrationName}] Webhook setup failed for ${integrationId}:`, error);
+                results.webhooks = {
+                    status: 'failed',
+                    error: error.message,
+                };
+                // Continue to try initial sync even if webhooks fail
+            }
+        } else {
+            console.log(`[${integrationName}] Webhooks not enabled, skipping webhook setup`);
+            results.webhooks = { status: 'skipped', message: 'Webhooks not enabled' };
+        }
+
+        try {
+            console.log(`[${integrationName}] Starting initial sync for ${integrationId}`);
+            results.initialSync = await this.startInitialSync({ integrationId });
+            console.log(`[${integrationName}] Initial sync started for ${integrationId}:`, results.initialSync);
+        } catch (error) {
+            console.error(`[${integrationName}] Failed to start initial sync for ${integrationId}:`, error);
+            results.initialSync = {
+                status: 'failed',
+                error: error.message,
+            };
+        }
+
+        return results;
     }
 
     // ============================================================================
