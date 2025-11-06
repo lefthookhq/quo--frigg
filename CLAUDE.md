@@ -245,3 +245,144 @@ REDIRECT_PATH=/api/[integration]/auth/redirect
 - Implement mapping logic in handler methods
 - Consider batch operations for performance
 - Handle errors and implement retry logic
+
+## Authentication Methods
+
+The Frigg framework supports multiple authentication methods for accessing the Management API. Configure which methods are enabled in `backend/index.js` under `user.authModes`.
+
+### 1. Frigg Native Token (JWT)
+
+**Use Case**: Web UI login, user-facing applications
+
+**Configuration**: Enabled by default (`friggToken: true`)
+
+**How to Use**:
+1. Create user: `POST /user/create` with `{username, password}`
+2. Login: `POST /user/login` with credentials
+3. Use returned JWT in header: `Authorization: Bearer <token>`
+
+**Example**:
+```bash
+# Create or login to get token
+curl -X POST "http://localhost:3001/user/login" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "user@example.com", "password": "securePassword123"}'
+
+# Use token in requests
+curl -X GET "http://localhost:3001/api/integrations" \
+  -H "Authorization: Bearer <jwt-token>"
+```
+
+### 2. Shared Secret (x-frigg-api-key)
+
+**Use Case**: Backend-to-backend integration, OAuth redirect handlers, automated services
+
+**Configuration**: Enable in `backend/index.js`:
+```javascript
+user: {
+    authModes: {
+        sharedSecret: true,  // Enable x-frigg-api-key authentication
+    }
+}
+```
+
+**Required Environment Variables**:
+- `FRIGG_API_KEY` - Shared secret (must match on both client and server)
+
+**Required Headers**:
+```bash
+x-frigg-api-key: <FRIGG_API_KEY>        # Shared secret for authentication
+x-frigg-appUserId: <user-identifier>     # Application's user ID (required)
+```
+
+**How It Works**:
+1. Client sends `x-frigg-api-key` header with shared secret
+2. Backend validates against `process.env.FRIGG_API_KEY`
+3. Client provides `x-frigg-appUserId` to identify the user
+4. Backend auto-creates user if doesn't exist
+5. Request proceeds with user context
+
+**Example**:
+```bash
+# Set up environment variable in backend/.env
+FRIGG_API_KEY=test-backend-api-key-2024
+
+# Make authenticated request
+curl -X GET "http://localhost:3001/api/integrations" \
+  -H "Content-Type: application/json" \
+  -H "x-frigg-api-key: test-backend-api-key-2024" \
+  -H "x-frigg-appUserId: test-user-oauth"
+```
+
+**Use in OAuth Redirect Handler**:
+```javascript
+// backend/auth-server/server.js example
+const headers = {
+    'Content-Type': 'application/json',
+    'x-frigg-api-key': process.env.FRIGG_API_KEY,
+    'x-frigg-appUserId': 'test-user-oauth'
+};
+
+const response = await fetch(`${BACKEND_URL}/api/authorize`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+        entityType: 'attio',
+        data: { code: oauthCode }
+    })
+});
+```
+
+**Benefits**:
+- No user login required
+- Automatic user provisioning
+- Perfect for server-to-server communication
+- Simplifies OAuth callback handlers
+
+**Security Notes**:
+- Keep `FRIGG_API_KEY` secret and never commit to version control
+- Use different keys for dev/staging/prod environments
+- Rotate keys periodically
+- API key must match exactly (case-sensitive, no trimming)
+
+### 3. Adopter JWT (Custom JWT)
+
+**Use Case**: External applications with their own JWT tokens
+
+**Configuration**: Enable in `backend/index.js`:
+```javascript
+user: {
+    authModes: {
+        adopterJwt: true,  // Enable custom JWT authentication
+    }
+}
+```
+
+**How to Use**: Provide your custom JWT token in Authorization header
+
+### Authentication Priority Order
+
+When multiple auth modes are enabled, the framework checks in this order:
+
+1. **Shared Secret** (Priority 1) - Checks for `x-frigg-api-key` header
+2. **Adopter JWT** (Priority 2) - Checks for JWT format token in Authorization header
+3. **Frigg Native Token** (Priority 3) - Validates Frigg-issued JWT
+
+### Configuring Auth Modes
+
+**Location**: `backend/index.js`
+
+```javascript
+const appDefinition = {
+    user: {
+        usePassword: true,
+        authModes: {
+            friggToken: true,     // Frigg native JWT (default: true)
+            sharedSecret: true,   // x-frigg-api-key (default: false)
+            adopterJwt: false,    // Custom JWT (default: false)
+        },
+    },
+};
+```
+
+**Best Practice**: Enable only the auth methods you need for better security.

@@ -4,7 +4,8 @@ const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 5173;
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
-const FRIGG_JWT_TOKEN = process.env.FRIGG_JWT_TOKEN || '';
+const FRIGG_API_KEY = process.env.FRIGG_API_KEY || '';
+const FRIGG_APP_USER_ID = process.env.FRIGG_APP_USER_ID || 'test-user-oauth';
 
 // Handle OAuth redirect callback
 app.get('/redirect/:appId', async (req, res) => {
@@ -38,13 +39,15 @@ app.get('/redirect/:appId', async (req, res) => {
             data: { code: code.substring(0, 20) + '...' },
         });
 
-        // Exchange code for tokens via backend
+        // Exchange code for tokens via backend using x-frigg-api-key authentication
         const headers = {
             'Content-Type': 'application/json',
         };
 
-        if (FRIGG_JWT_TOKEN) {
-            headers['Authorization'] = `Bearer ${FRIGG_JWT_TOKEN}`;
+        if (FRIGG_API_KEY) {
+            console.log(`Using x-frigg-api-key header for authentication`);
+            headers['x-frigg-api-key'] = FRIGG_API_KEY;
+            headers['x-frigg-appUserId'] = FRIGG_APP_USER_ID;
         }
 
         const response = await fetch(`${BACKEND_URL}/api/authorize`, {
@@ -84,7 +87,8 @@ app.listen(PORT, () => {
     console.log(`📍 Redirect URL: http://localhost:${PORT}/redirect/attio`);
     console.log(`🔗 Backend URL: ${BACKEND_URL}`);
     console.log(
-        `🔑 FRIGG JWT Token: ${FRIGG_JWT_TOKEN ? 'Configured ✓' : 'Not set ✗'}`,
+        `🔑 FRIGG API Key: ${FRIGG_API_KEY ? 'Configured ✓' : 'Not set ✗'}`,
     );
+    console.log(`👤 App User ID: ${FRIGG_APP_USER_ID}`);
     console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
 });
