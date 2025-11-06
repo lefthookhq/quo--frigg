@@ -122,6 +122,19 @@ class AxisCareIntegration extends BaseCRMIntegration {
     }
 
     /**
+     * Override onCreate to trigger initial sync after integration creation
+     * @param {Object} params
+     * @param {string} params.integrationId - Integration ID
+     */
+    async onCreate({ integrationId }) {
+        // Call parent onCreate (handles webhook setup and status)
+        await super.onCreate({ integrationId });
+
+        // Trigger initial sync automatically after setup
+        await this.startInitialSync({ integrationId });
+    }
+
+    /**
      * Fetch a page of persons from AxisCare (Clients, Leads, Caregivers, or Applicants)
      * @param {Object} params
      * @param {string} params.objectType - CRM object type (Client, Lead, Caregiver, or Applicant)

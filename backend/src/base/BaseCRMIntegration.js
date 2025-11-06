@@ -398,8 +398,8 @@ class BaseCRMIntegration extends IntegrationBase {
                 integrationId,
                 'ENABLED',
             );
-            // Trigger initial sync automatically on integration creation
-            await this.startInitialSync({ integrationId });
+            // Optionally trigger initial sync automatically
+            // await this.startInitialSync({ integrationId });
         }
     }
 
