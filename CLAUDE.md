@@ -245,3 +245,289 @@ REDIRECT_PATH=/api/[integration]/auth/redirect
 - Implement mapping logic in handler methods
 - Consider batch operations for performance
 - Handle errors and implement retry logic
+
+## Management API Reference
+
+Complete reference for all Frigg Management API endpoints. For detailed workflow examples with curl commands, see `frigg-management-api.md`.
+
+### Base URL Setup
+
+```bash
+# Local development
+export FRIGG_URL="http://localhost:3001"
+
+# Production/Deployed
+export FRIGG_URL="https://your-frigg-instance.execute-api.us-east-1.amazonaws.com"
+```
+
+### Authentication Methods
+
+The Frigg framework supports multiple authentication methods:
+
+**1. Bearer Token (JWT)** - Most common for user operations
+```bash
+Authorization: Bearer <jwt-token>
+```
+
+**2. X-Frigg Headers** - Custom user identification
+```bash
+x-frigg-user-id: <user-id>
+x-frigg-app-user-id: <app-user-id>
+x-frigg-organization-user-id: <org-user-id>  # Optional
+```
+
+**3. Admin API Key** - For health and migration endpoints
+```bash
+x-frigg-admin-api-key: <admin-api-key>
+```
+
+**4. Health API Key** - For health check endpoints
+```bash
+x-frigg-health-api-key: <health-api-key>
+```
+
+### User Management
+
+**POST /user/create** - Create new user account
+```bash
+curl -X POST "${FRIGG_URL}/user/create" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "user@example.com", "password": "securePassword123"}'
+```
+Response: `{ "token": "jwt-token-string" }`
+
+**POST /user/login** - Authenticate and receive JWT
+```bash
+curl -X POST "${FRIGG_URL}/user/login" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "user@example.com", "password": "securePassword123"}'
+```
+Response: `{ "token": "jwt-token-string" }`
+
+### Integration Management
+
+**GET /api/integrations** - List all integrations for authenticated user
+- Returns: `{ entities: {...}, integrations: [...] }`
+- Auth: Bearer token required
+
+**POST /api/integrations** - Create new integration
+```bash
+curl -X POST "${FRIGG_URL}/api/integrations" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "entities": ["entity-id-1", "entity-id-2"],
+    "config": {"type": "attio"}
+  }'
+```
+Response: Integration object with id, entities, status, config
+
+**GET /api/integrations/:integrationId** - Get integration details
+- Auth: Bearer token required
+
+**PATCH /api/integrations/:integrationId** - Update integration config
+- Body: `{ "config": { "updatedField": "newValue" } }`
+- Auth: Bearer token required
+
+**DELETE /api/integrations/:integrationId** - Delete integration
+- Returns: 204 No Content
+- Auth: Bearer token required
+
+**GET /api/integrations/:integrationId/config/options** - Get dynamic form fields for configuration
+- Auth: Bearer token required
+
+**POST /api/integrations/:integrationId/config/options/refresh** - Refresh config options based on selection
+- Auth: Bearer token required
+
+**ALL /api/integrations/:integrationId/actions** - List available user actions
+- Returns: `{ actions: [{ id: "INITIAL_SYNC", label: "...", type: "USER_ACTION" }] }`
+- Auth: Bearer token required
+
+**POST /api/integrations/:integrationId/actions/:actionId** - Execute user action
+```bash
+curl -X POST "${FRIGG_URL}/api/integrations/${INTEGRATION_ID}/actions/INITIAL_SYNC" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+Common actions: `INITIAL_SYNC`, `TRIGGER_SYNC`, `PAUSE_SYNC`, `RESUME_SYNC`
+
+**GET /api/integrations/:integrationId/test-auth** - Test authentication for all entities
+- Returns: `{ status: "ok" }` or error details
+- Auth: Bearer token required
+
+### Entity & Credential Management
+
+**GET /api/authorize?entityType=\{type\}** - Get OAuth authorization requirements
+```bash
+curl -X GET "${FRIGG_URL}/api/authorize?entityType=quo" \
+  -H "Authorization: Bearer ${TOKEN}"
+```
+Returns: For API key modules: `{ type: "apiKey", jsonSchema: {...} }`
+Returns: For OAuth modules: `{ type: "oauth2", url: "https://..." }`
+
+**POST /api/authorize** - Submit credentials to create entity
+```bash
+curl -X POST "${FRIGG_URL}/api/authorize" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "entityType": "quo",
+    "data": {"apiKey": "your-api-key"}
+  }'
+```
+Response: `{ entity_id: "7", credential_id: "12", entityType: "quo" }`
+
+**POST /api/entity** - Create entity from existing credential
+- Body: `{ entityType: "...", data: { credential_id: "..." } }`
+- Auth: Bearer token required
+
+**GET /api/entity/options/:credentialId?entityType=\{type\}** - Get entity options
+- Auth: Bearer token required
+
+**GET /api/entities/:entityId** - Get entity details
+- Auth: Bearer token required
+
+**GET /api/entities/:entityId/test-auth** - Test entity authentication
+- Auth: Bearer token required
+
+**POST /api/entities/:entityId/options** - Get entity-specific options (workspaces, projects)
+- Auth: Bearer token required
+
+### Health & Monitoring
+
+**GET /health** - Basic health check (public endpoint)
+```bash
+curl -X GET "${FRIGG_URL}/health"
+```
+Response: `{ status: "ok", timestamp: "...", service: "frigg-core-api" }`
+
+**GET /health/detailed** - Comprehensive health check
+- Checks: network, KMS, database, encryption, external APIs, integrations
+- Auth: `x-frigg-health-api-key` required
+- Returns: 200 OK (healthy) or 503 Service Unavailable (unhealthy)
+
+**GET /health/live** - Liveness probe for Kubernetes/ECS
+- Auth: `x-frigg-health-api-key` required
+
+**GET /health/ready** - Readiness probe (checks database and modules)
+- Auth: `x-frigg-health-api-key` required
+
+### Database Migration (Admin)
+
+**GET /db-migrate/status?stage=\{stage\}** - Check migration status
+```bash
+curl -X GET "${FRIGG_URL}/db-migrate/status?stage=production" \
+  -H "x-frigg-admin-api-key: ${ADMIN_API_KEY}"
+```
+Response: `{ upToDate: false, pendingMigrations: 3, recommendation: "..." }`
+
+**POST /db-migrate** - Trigger database migration (async via SQS)
+```bash
+curl -X POST "${FRIGG_URL}/db-migrate" \
+  -H "x-frigg-admin-api-key: ${ADMIN_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"stage": "production"}'
+```
+Response: `{ success: true, processId: "...", statusUrl: "/db-migrate/..." }`
+
+**GET /db-migrate/:migrationId** - Get migration status
+- Auth: `x-frigg-admin-api-key` required
+
+### WebSocket Events
+
+**Pattern**: `wss://${WEBSOCKET_API_ENDPOINT}`
+
+- **CONNECT** - Establish WebSocket connection
+- **DISCONNECT** - Close WebSocket connection
+- **MESSAGE** - Handle incoming message: `{ action: "message-type", data: {...} }`
+
+### Integration-Specific Routes (Dynamic)
+
+**Pattern**: `/api/{integration-name}-integration/{custom-path}`
+
+Each integration can define custom routes in `static Definition.routes[]`. These routes are dynamically generated and map to integration event handlers.
+
+Example for HubSpot integration:
+- `GET /api/hubspot-integration/workspaces` → `LIST_WORKSPACES` event
+- `POST /api/hubspot-integration/sync` → `TRIGGER_SYNC` event
+- `GET /api/hubspot-integration/status` → `GET_STATUS` event
+
+Auth: Bearer token required for all integration-specific routes
+
+### Webhook Endpoints
+
+**POST /api/{integration-name}-integration/webhooks** - Generic webhook receiver
+- No integration ID required
+- Integration handles routing based on payload
+- Auth: Integration-specific signature headers (e.g., `X-Hub-Signature-256`)
+
+**POST /api/{integration-name}-integration/webhooks/:integrationId** - Integration-specific webhook
+- Routes to specific integration instance
+- Auth: Integration-specific signature headers
+
+Examples:
+- `POST /api/hubspot-integration/webhooks`
+- `POST /api/salesforce-integration/webhooks/abc123`
+
+### OAuth Redirect Handler
+
+**GET /api/integrations/redirect/:appId** - OAuth callback handler
+- Handles OAuth redirects from external services
+- Forwards query params (code, state, error) to frontend
+- Redirects to: `${FRONTEND_URI}/redirect/${appId}?${queryParams}`
+
+### Common Error Responses
+
+```json
+{
+  "statusCode": 400,
+  "error": "Bad Request",
+  "message": "Missing Parameter: entityType is required."
+}
+```
+
+**Status Codes**:
+- `400` Bad Request - Invalid parameters or validation errors
+- `401` Unauthorized - Missing or invalid authentication
+- `403` Forbidden - User doesn't have access
+- `404` Not Found - Resource doesn't exist
+- `500` Internal Server Error - Server-side error
+- `503` Service Unavailable - Service unhealthy
+
+### Required Environment Variables
+
+```bash
+# Database
+MONGO_URI=mongodb://...
+DATABASE_URL=postgresql://...  # Auto-set by infrastructure
+DB_TYPE=postgresql  # or 'mongodb'
+
+# AWS
+AWS_REGION=us-east-1
+KMS_KEY_ARN=arn:aws:kms:...  # For encryption
+S3_BUCKET_NAME=...  # For migration status
+
+# API Configuration
+FRONTEND_URI=https://your-frontend.com  # OAuth redirects
+WEBSOCKET_API_ENDPOINT=wss://...  # WebSocket connections
+
+# Authentication
+HEALTH_API_KEY=secret-health-key
+ADMIN_API_KEY=secret-admin-key
+
+# Stage
+STAGE=production  # 'local' bypasses encryption
+```
+
+### Integration Config Types
+
+The `config.type` field determines which integration class is used:
+
+| Type           | API Modules     | Description                      |
+| -------------- | --------------- | -------------------------------- |
+| `axiscare`     | quo + axiscare  | AxisCare to Quo client sync      |
+| `attio`        | quo + attio     | Attio to Quo person/company sync |
+| `pipedrive`    | quo + pipedrive | PipeDrive to Quo sync            |
+| `zoho-crm`     | quo + zoho-crm  | Zoho CRM to Quo sync             |
+| `scaling-test` | quo + scaletest | Development/testing integration  |
