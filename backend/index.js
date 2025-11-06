@@ -25,7 +25,7 @@ const appDefinition = {
         organizationUserRequired: false,
         authModes: {
             friggToken: true, // Support web UI login
-            xFriggHeaders: true, // Enable backend-to-backend API communication
+            sharedSecret: true, // Enable backend-to-backend API communication with x-frigg-api-key
             adopterJwt: false, // Not using custom JWT
         },
     },
@@ -55,9 +55,11 @@ const appDefinition = {
         DATABASE_URL: true,
         DATABASE_USER: true,
         DATABASE_PASSWORD: true,
-        REDIRECT_PATH: true,
+        REDIRECT_URI: true,
         HEALTH_API_KEY: true,
         ADMIN_API_KEY: true,
+        FRIGG_API_KEY: true, // Backend-to-backend authentication
+        FRIGG_APP_USER_ID: true,
         // AWS Configuration
         AWS_REGION: true,
         S3_BUCKET_NAME: true,
