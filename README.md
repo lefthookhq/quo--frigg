@@ -224,6 +224,118 @@ When creating new integrations:
 5. **Add Tests**: Create comprehensive tests for new functionality
 6. **Update Documentation**: Add integration to this README
 
+## 🔗 Testing Authentication with a Hosted Environment
+
+This guide helps developers test OAuth authentication flows and integration creation against a hosted Frigg instance. Use the Management API with shared secret authentication to test entity authentication and integration workflows.
+
+### Prerequisites: Start the Local Auth Server
+
+For testing OAuth-based integrations, run the local auth server to handle OAuth redirects.
+
+1. Navigate to the auth server directory:
+```bash
+cd backend/auth-server
+```
+
+2. Install dependencies:
+```bash
+npm install
+```
+
+3. Configure environment variables in `backend/auth-server/.env`:
+
+> **Note:** These credentials should be provided by the system administrator who deployed the Frigg instance to the hosted environment.
+
+```bash
+BACKEND_URL=<your-hosted-frigg-url>
+FRIGG_API_KEY=<your-shared-secret-key>
+FRIGG_APP_USER_ID=<your-user-identifier>
+```
+
+4. Start the server:
+```bash
+npm run start
+```
+
+The server will start on `http://localhost:5173` and handle OAuth redirects. Keep this running during your testing session.
+
+### Authentication Headers
+
+All requests to the hosted environment use shared secret authentication:
+
+```bash
+x-frigg-api-key: <FRIGG_API_KEY>
+x-frigg-appuserid: <FRIGG_APP_USER_ID>
+```
+
+### Test Authenticating with Quo-Attio (API Key)
+
+1. Get authorization requirements:
+```bash
+curl -s "<HOSTED_URL>/api/authorize?entityType=quo-attio" \
+  -H "Content-Type: application/json" \
+  -H "x-frigg-api-key: <FRIGG_API_KEY>" \
+  -H "x-frigg-appuserid: <FRIGG_APP_USER_ID>" | jq .
+```
+
+2. Authenticate with Quo API key:
+```bash
+curl -s -X POST "<HOSTED_URL>/api/authorize" \
+  -H "Content-Type: application/json" \
+  -H "x-frigg-api-key: <FRIGG_API_KEY>" \
+  -H "x-frigg-appuserid: <FRIGG_APP_USER_ID>" \
+  -d '{
+    "entityType": "quo-attio",
+    "data": {
+      "apiKey": "<YOUR_QUO_API_KEY>"
+    }
+  }' | jq .
+```
+
+### Test Authenticating with Attio (OAuth2)
+
+1. Ensure `http://localhost:5173/redirect/attio` is added to your Attio app configuration in the Attio Developer Hub.
+
+2. Get OAuth authorization URL:
+```bash
+curl -s "<HOSTED_URL>/api/authorize?entityType=attio" \
+  -H "Content-Type: application/json" \
+  -H "x-frigg-api-key: <FRIGG_API_KEY>" \
+  -H "x-frigg-appuserid: <FRIGG_APP_USER_ID>" | jq .
+```
+
+3. Open the returned URL in your browser to complete OAuth authorization.
+
+### Test Creating an Integration
+
+After authenticating both services, test creating an integration:
+
+```bash
+curl -s -X POST "<HOSTED_URL>/api/integrations" \
+  -H "Content-Type: application/json" \
+  -H "x-frigg-api-key: <FRIGG_API_KEY>" \
+  -H "x-frigg-appuserid: <FRIGG_APP_USER_ID>" \
+  -d '{
+    "entities": ["<QUO_ENTITY_ID>", "<ATTIO_ENTITY_ID>"],
+    "config": {
+      "type": "attio"
+    }
+  }' | jq .
+```
+
+### Test Listing Integrations
+
+Verify your integrations were created:
+
+```bash
+curl -s "<HOSTED_URL>/api/integrations" \
+  -H "Content-Type: application/json" \
+  -H "x-frigg-api-key: <FRIGG_API_KEY>" \
+  -H "x-frigg-appuserid: <FRIGG_APP_USER_ID>" | jq .
+```
+
+**For detailed testing examples with actual values and credentials, see [`local-dev-auth.md`](./local-dev-auth.md).**
+
 ## 🧪 Testing
 
 Run integration tests:
