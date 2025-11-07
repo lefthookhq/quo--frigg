@@ -1,5 +1,4 @@
 const { IntegrationBase } = require('@friggframework/core');
-const { QueuerUtil } = require('@friggframework/core');
 const {
     CreateProcess,
     UpdateProcessState,
@@ -13,6 +12,7 @@ const {
 const ProcessManager = require('./services/ProcessManager');
 const QueueManager = require('./services/QueueManager');
 const SyncOrchestrator = require('./services/SyncOrchestrator');
+const { QueuerUtilWrapper } = require('./services/QueuerUtilWrapper');
 
 /**
  * BaseCRMIntegration
@@ -236,7 +236,7 @@ class BaseCRMIntegration extends IntegrationBase {
      */
     _createQueueManager() {
         return new QueueManager({
-            queuerUtil: QueuerUtil,
+            queuerUtil: QueuerUtilWrapper,
             queueUrl: this.getQueueUrl(),
         });
     }
