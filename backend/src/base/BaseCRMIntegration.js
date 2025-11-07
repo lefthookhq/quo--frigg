@@ -391,9 +391,9 @@ class BaseCRMIntegration extends IntegrationBase {
         if (!integrationName) {
             throw new Error('Integration Definition.name is required but not defined');
         }
-        
+
         console.log(`[${integrationName}] onCreate called for ${integrationId}`);
-        
+
         // Check if we need user configuration
         const needsConfig = await this.checkIfNeedsConfig();
 
@@ -418,7 +418,7 @@ class BaseCRMIntegration extends IntegrationBase {
         // This is a workaround until the propagation delay is fixed (Dec/Jan timeline)
         const delaySeconds = this.constructor.CRMConfig?.onCreateDelaySeconds || 35;
         console.log(`[${integrationName}] Queueing delayed webhook setup + initial sync for ${integrationId} (${delaySeconds} second delay)`);
-        
+
         try {
             await this.queueManager.queueMessage({
                 action: 'POST_CREATE_SETUP',
@@ -489,7 +489,18 @@ class BaseCRMIntegration extends IntegrationBase {
      * Runs after a delay (default 35 seconds) to handle Quo API key propagation (~30 seconds).
      * By the time this runs, the API key should be active.
      * 
+     * IMPORTANT: This handler is called from a queue worker context where the integration
+     * instance is NOT hydrated (no entities, userId, or API instances). The integration
+     * is passed through as integrationId only, which the caller must use to hydrate if needed.
+     * 
+     * For POST_CREATE_SETUP, we rely on the integrationId parameter being passed to
+     * startInitialSync, which handles its own hydration through SyncOrchestrator.
+     * setupWebhooks() should also handle integration lookup internally if it needs
+     * the full integration record.
+     * 
      * @param {Object} event - Queue event with integrationId
+     * @param {Object} event.data - Event data
+     * @param {string} event.data.integrationId - Integration ID to setup
      * @returns {Promise<Object>} Setup result with webhooks and initialSync status
      */
     async handlePostCreateSetup({ data }) {
@@ -498,9 +509,9 @@ class BaseCRMIntegration extends IntegrationBase {
         if (!integrationName) {
             throw new Error('Integration Definition.name is required but not defined');
         }
-        
+
         console.log(`[${integrationName}] Starting post-create setup (webhook + sync) for ${integrationId}`);
-        
+
         const results = {
             webhooks: null,
             initialSync: null,
@@ -508,7 +519,8 @@ class BaseCRMIntegration extends IntegrationBase {
 
         if (this.constructor.Definition?.webhooks?.enabled) {
             try {
-                results.webhooks = await this.setupWebhooks();
+                // Pass integrationId to setupWebhooks so it can hydrate if needed
+                results.webhooks = await this.setupWebhooks({ integrationId });
                 console.log(`[${integrationName}] Webhook setup completed for ${integrationId}:`, results.webhooks);
             } catch (error) {
                 console.error(`[${integrationName}] Webhook setup failed for ${integrationId}:`, error);
