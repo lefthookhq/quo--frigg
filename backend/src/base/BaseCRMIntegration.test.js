@@ -24,6 +24,14 @@ describe('BaseCRMIntegration', () => {
     beforeEach(() => {
         // Create a concrete test class that extends BaseCRMIntegration
         class TestCRMIntegration extends BaseCRMIntegration {
+            static Definition = {
+                name: 'test-crm',
+                version: '1.0.0',
+                webhooks: {
+                    enabled: true,
+                },
+            };
+
             static CRMConfig = {
                 personObjectTypes: [
                     { crmObjectName: 'Contact', quoContactType: 'contact' },
@@ -233,6 +241,33 @@ describe('BaseCRMIntegration', () => {
                 'integration-123',
                 'NEEDS_CONFIG',
             );
+        });
+
+        it('should handle handlePostCreateSetup with correct data destructuring', async () => {
+            // Mock the setupWebhooks and startInitialSync methods
+            const setupWebhooksSpy = jest
+                .spyOn(integration, 'setupWebhooks')
+                .mockResolvedValue({ status: 'success', webhooks: ['webhook-1'] });
+            const startInitialSyncSpy = jest
+                .spyOn(integration, 'startInitialSync')
+                .mockResolvedValue({ processIds: ['process-123'] });
+
+            // Call handlePostCreateSetup with data wrapped in event object
+            const result = await integration.handlePostCreateSetup({
+                data: { integrationId: 'integration-456' },
+            });
+
+            // Verify integrationId was correctly extracted from data
+            expect(setupWebhooksSpy).toHaveBeenCalled();
+            expect(startInitialSyncSpy).toHaveBeenCalledWith({
+                integrationId: 'integration-456',
+            });
+
+            // Verify the result structure
+            expect(result).toEqual({
+                webhooks: { status: 'success', webhooks: ['webhook-1'] },
+                initialSync: { processIds: ['process-123'] },
+            });
         });
 
         it('should handle onUpdate with triggerInitialSync', async () => {
