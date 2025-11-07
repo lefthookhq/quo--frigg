@@ -492,8 +492,8 @@ class BaseCRMIntegration extends IntegrationBase {
      * @param {Object} event - Queue event with integrationId
      * @returns {Promise<Object>} Setup result with webhooks and initialSync status
      */
-    async handlePostCreateSetup(event) {
-        const { integrationId } = event;
+    async handlePostCreateSetup({ data }) {
+        const { integrationId } = data;
         const integrationName = this.constructor.Definition?.name;
         if (!integrationName) {
             throw new Error('Integration Definition.name is required but not defined');
