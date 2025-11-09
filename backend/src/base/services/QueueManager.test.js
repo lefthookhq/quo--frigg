@@ -60,6 +60,7 @@ describe('QueueManager', () => {
                             processId: 'process-123',
                             personObjectType: 'Contact',
                             page: 5,
+                            cursor: null,
                             limit: 100,
                             modifiedSince: '2024-01-01T10:00:00.000Z',
                             sortDesc: true,
@@ -89,6 +90,7 @@ describe('QueueManager', () => {
                             processId: 'process-123',
                             personObjectType: 'Contact',
                             page: 0,
+                            cursor: null,
                             limit: 50,
                             modifiedSince: null,
                             sortDesc: false,
@@ -117,6 +119,7 @@ describe('QueueManager', () => {
                             processId: 'process-123',
                             personObjectType: 'Contact',
                             page: 2,
+                            cursor: null,
                             limit: 75,
                             modifiedSince: null,
                             sortDesc: true, // default value
@@ -174,7 +177,7 @@ describe('QueueManager', () => {
                             processId: 'process-456',
                             crmPersonIds: ['person-4'],
                             page: null,
-                            totalInPage: 1,
+                            totalInPage: null,
                             isWebhook: true,
                         },
                     },
@@ -199,7 +202,7 @@ describe('QueueManager', () => {
                             processId: 'process-123',
                             crmPersonIds: ['person-1', 'person-2'],
                             page: null,
-                            totalInPage: 2,
+                            totalInPage: null,
                             isWebhook: false,
                         },
                     },
@@ -284,10 +287,7 @@ describe('QueueManager', () => {
 
             await queueManager.fanOutPages(params);
 
-            expect(mockQueuerUtil.batchSend).toHaveBeenCalledWith(
-                [],
-                'https://sqs.test.com/queue',
-            );
+            expect(mockQueuerUtil.batchSend).not.toHaveBeenCalled();
         });
 
         it('should handle default values', async () => {
@@ -319,10 +319,7 @@ describe('QueueManager', () => {
 
             await queueManager.fanOutPages(params);
 
-            expect(mockQueuerUtil.batchSend).toHaveBeenCalledWith(
-                [],
-                'https://sqs.test.com/queue',
-            );
+            expect(mockQueuerUtil.batchSend).not.toHaveBeenCalled();
         });
     });
 
@@ -389,10 +386,7 @@ describe('QueueManager', () => {
         it('should handle empty batches array', async () => {
             await queueManager.queueMultipleBatches([]);
 
-            expect(mockQueuerUtil.batchSend).toHaveBeenCalledWith(
-                [],
-                'https://sqs.test.com/queue',
-            );
+            expect(mockQueuerUtil.batchSend).not.toHaveBeenCalled();
         });
 
         it('should use default values for missing properties', async () => {
@@ -430,6 +424,141 @@ describe('QueueManager', () => {
         });
     });
 
+    describe('queueMessage', () => {
+        it('should queue a generic message with custom event type', async () => {
+            const params = {
+                action: 'POST_CREATE_SETUP',
+                integrationId: 'integration-123',
+            };
+
+            await queueManager.queueMessage(params);
+
+            expect(mockQueuerUtil.batchSend).toHaveBeenCalledWith(
+                [
+                    {
+                        event: 'POST_CREATE_SETUP',
+                        data: {
+                            integrationId: 'integration-123',
+                        },
+                    },
+                ],
+                'https://sqs.test.com/queue',
+            );
+        });
+
+        it('should handle messages with delay', async () => {
+            const params = {
+                action: 'POST_CREATE_SETUP',
+                integrationId: 'integration-456',
+                delaySeconds: 35,
+            };
+
+            await queueManager.queueMessage(params);
+
+            expect(mockQueuerUtil.batchSend).toHaveBeenCalledWith(
+                [
+                    {
+                        event: 'POST_CREATE_SETUP',
+                        data: {
+                            integrationId: 'integration-456',
+                        },
+                        delaySeconds: 35,
+                    },
+                ],
+                'https://sqs.test.com/queue',
+            );
+        });
+
+        it('should queue message with only action field', async () => {
+            const params = {
+                action: 'CUSTOM_EVENT',
+            };
+
+            await queueManager.queueMessage(params);
+
+            expect(mockQueuerUtil.batchSend).toHaveBeenCalledWith(
+                [
+                    {
+                        event: 'CUSTOM_EVENT',
+                        data: {},
+                    },
+                ],
+                'https://sqs.test.com/queue',
+            );
+        });
+
+        it('should queue message with multiple data fields', async () => {
+            const params = {
+                action: 'COMPLEX_EVENT',
+                integrationId: 'integration-789',
+                userId: 'user-123',
+                metadata: { foo: 'bar' },
+            };
+
+            await queueManager.queueMessage(params);
+
+            expect(mockQueuerUtil.batchSend).toHaveBeenCalledWith(
+                [
+                    {
+                        event: 'COMPLEX_EVENT',
+                        data: {
+                            integrationId: 'integration-789',
+                            userId: 'user-123',
+                            metadata: { foo: 'bar' },
+                        },
+                    },
+                ],
+                'https://sqs.test.com/queue',
+            );
+        });
+
+        it('should not include delaySeconds in data payload', async () => {
+            const params = {
+                action: 'DELAYED_EVENT',
+                processId: 'process-999',
+                delaySeconds: 60,
+            };
+
+            await queueManager.queueMessage(params);
+
+            const call = mockQueuerUtil.batchSend.mock.calls[0][0][0];
+            expect(call.data).toEqual({ processId: 'process-999' });
+            expect(call.data.delaySeconds).toBeUndefined();
+            expect(call.delaySeconds).toBe(60);
+        });
+
+        it('should throw error if action is missing', async () => {
+            await expect(
+                queueManager.queueMessage({
+                    integrationId: 'integration-123',
+                }),
+            ).rejects.toThrow('action is required for queueMessage');
+        });
+
+        it('should handle zero delay', async () => {
+            const params = {
+                action: 'IMMEDIATE_EVENT',
+                data: 'test',
+                delaySeconds: 0,
+            };
+
+            await queueManager.queueMessage(params);
+
+            expect(mockQueuerUtil.batchSend).toHaveBeenCalledWith(
+                [
+                    {
+                        event: 'IMMEDIATE_EVENT',
+                        data: {
+                            data: 'test',
+                        },
+                        delaySeconds: 0,
+                    },
+                ],
+                'https://sqs.test.com/queue',
+            );
+        });
+    });
+
     describe('error handling', () => {
         it('should propagate QueuerUtil errors', async () => {
             const queuerError = new Error('SQS send failed');
@@ -441,6 +570,18 @@ describe('QueueManager', () => {
                     personObjectType: 'Contact',
                     page: 0,
                     limit: 100,
+                }),
+            ).rejects.toThrow('SQS send failed');
+        });
+
+        it('should propagate QueuerUtil errors from queueMessage', async () => {
+            const queuerError = new Error('SQS send failed');
+            mockQueuerUtil.batchSend.mockRejectedValue(queuerError);
+
+            await expect(
+                queueManager.queueMessage({
+                    action: 'TEST_EVENT',
+                    data: 'test',
                 }),
             ).rejects.toThrow('SQS send failed');
         });

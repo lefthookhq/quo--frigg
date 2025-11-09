@@ -537,14 +537,14 @@ describe('PipedriveIntegration (Refactored)', () => {
                     first_name: 'John',
                     last_name: 'Doe',
                 };
-                mockPipedriveApi.api.persons.get.mockResolvedValue({
+                mockPipedriveApi.api.getPerson.mockResolvedValue({
                     data: mockPerson,
                 });
 
                 const result = await integration.fetchPersonById('123');
 
                 expect(result).toEqual(mockPerson);
-                expect(mockPipedriveApi.api.persons.get).toHaveBeenCalledWith(
+                expect(mockPipedriveApi.api.getPerson).toHaveBeenCalledWith(
                     '123',
                 );
             });
@@ -552,7 +552,7 @@ describe('PipedriveIntegration (Refactored)', () => {
 
         describe('fetchPersonsByIds', () => {
             it('should fetch multiple persons by IDs', async () => {
-                mockPipedriveApi.api.persons.get
+                mockPipedriveApi.api.getPerson
                     .mockResolvedValueOnce({
                         data: { id: 1, first_name: 'John' },
                     })
@@ -568,7 +568,7 @@ describe('PipedriveIntegration (Refactored)', () => {
             });
 
             it('should handle fetch errors gracefully', async () => {
-                mockPipedriveApi.api.persons.get
+                mockPipedriveApi.api.getPerson
                     .mockResolvedValueOnce({
                         data: { id: 1, first_name: 'John' },
                     })

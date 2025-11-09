@@ -1,5 +1,4 @@
 const { IntegrationBase } = require('@friggframework/core');
-const { QueuerUtil } = require('@friggframework/core');
 const {
     CreateProcess,
     UpdateProcessState,
@@ -13,6 +12,7 @@ const {
 const ProcessManager = require('./services/ProcessManager');
 const QueueManager = require('./services/QueueManager');
 const SyncOrchestrator = require('./services/SyncOrchestrator');
+const { QueuerUtilWrapper } = require('./services/QueuerUtilWrapper');
 
 /**
  * BaseCRMIntegration
@@ -94,7 +94,7 @@ class BaseCRMIntegration extends IntegrationBase {
      * @property {number} syncConfig.initialBatchSize - Records per page for initial sync
      * @property {number} syncConfig.ongoingBatchSize - Records per page for delta sync
      * @property {number} syncConfig.pollIntervalMinutes - Polling interval if no webhooks
-     * @property {number} [onCreateDelaySeconds=35] - Delay before webhook setup and initial sync (for API key propagation)
+     * @property {number} [onCreateDelaySeconds=35] - Delay before webhook setup and initial sync (TEMPORARY: works around Quo API key propagation delay, will be removed once Quo fixes this)
      * @property {Object} queueConfig - SQS queue configuration
      * @property {number} queueConfig.maxWorkers - Maximum concurrent queue workers
      * @property {number} queueConfig.provisioned - Provisioned concurrency for Lambda
@@ -113,7 +113,7 @@ class BaseCRMIntegration extends IntegrationBase {
             ongoingBatchSize: 50,
             pollIntervalMinutes: 60,
         },
-        onCreateDelaySeconds: 35, // Default delay for Quo API key propagation
+        onCreateDelaySeconds: 35, // TEMPORARY: Default delay for Quo API key propagation - remove once Quo fixes this
         queueConfig: {
             maxWorkers: 5,
             provisioned: 0,
@@ -236,7 +236,7 @@ class BaseCRMIntegration extends IntegrationBase {
      */
     _createQueueManager() {
         return new QueueManager({
-            queuerUtil: QueuerUtil,
+            queuerUtil: QueuerUtilWrapper,
             queueUrl: this.getQueueUrl(),
         });
     }
@@ -391,9 +391,9 @@ class BaseCRMIntegration extends IntegrationBase {
         if (!integrationName) {
             throw new Error('Integration Definition.name is required but not defined');
         }
-        
+
         console.log(`[${integrationName}] onCreate called for ${integrationId}`);
-        
+
         // Check if we need user configuration
         const needsConfig = await this.checkIfNeedsConfig();
 
@@ -413,12 +413,14 @@ class BaseCRMIntegration extends IntegrationBase {
             'ENABLED',
         );
 
+        // ⚠️ TEMPORARY WORKAROUND - SCHEDULED FOR REMOVAL ⚠️
         // Queue delayed webhook setup + initial sync to allow Quo API key propagation
         // Quo (OpenPhone) API keys take ~30 seconds to activate after creation
-        // This is a workaround until the propagation delay is fixed (Dec/Jan timeline)
+        // Without this delay, webhook creation fails with 401/403 errors
+        // TODO: Remove this delay mechanism (and QueuerUtilWrapper) once Quo implements instant API key propagation
         const delaySeconds = this.constructor.CRMConfig?.onCreateDelaySeconds || 35;
-        console.log(`[${integrationName}] Queueing delayed webhook setup + initial sync for ${integrationId} (${delaySeconds} second delay)`);
-        
+        console.log(`[${integrationName}] Queueing delayed webhook setup + initial sync for ${integrationId} (${delaySeconds} second delay for Quo API key propagation)`);
+
         try {
             await this.queueManager.queueMessage({
                 action: 'POST_CREATE_SETUP',
@@ -489,18 +491,29 @@ class BaseCRMIntegration extends IntegrationBase {
      * Runs after a delay (default 35 seconds) to handle Quo API key propagation (~30 seconds).
      * By the time this runs, the API key should be active.
      * 
+     * IMPORTANT: This handler is called from a queue worker context where the integration
+     * instance is NOT hydrated (no entities, userId, or API instances). The integration
+     * is passed through as integrationId only, which the caller must use to hydrate if needed.
+     * 
+     * For POST_CREATE_SETUP, we rely on the integrationId parameter being passed to
+     * startInitialSync, which handles its own hydration through SyncOrchestrator.
+     * setupWebhooks() should also handle integration lookup internally if it needs
+     * the full integration record.
+     * 
      * @param {Object} event - Queue event with integrationId
+     * @param {Object} event.data - Event data
+     * @param {string} event.data.integrationId - Integration ID to setup
      * @returns {Promise<Object>} Setup result with webhooks and initialSync status
      */
-    async handlePostCreateSetup(event) {
-        const { integrationId } = event;
+    async handlePostCreateSetup({ data }) {
+        const { integrationId } = data;
         const integrationName = this.constructor.Definition?.name;
         if (!integrationName) {
             throw new Error('Integration Definition.name is required but not defined');
         }
-        
+
         console.log(`[${integrationName}] Starting post-create setup (webhook + sync) for ${integrationId}`);
-        
+
         const results = {
             webhooks: null,
             initialSync: null,
@@ -508,7 +521,8 @@ class BaseCRMIntegration extends IntegrationBase {
 
         if (this.constructor.Definition?.webhooks?.enabled) {
             try {
-                results.webhooks = await this.setupWebhooks();
+                // Pass integrationId to setupWebhooks so it can hydrate if needed
+                results.webhooks = await this.setupWebhooks({ integrationId });
                 console.log(`[${integrationName}] Webhook setup completed for ${integrationId}:`, results.webhooks);
             } catch (error) {
                 console.error(`[${integrationName}] Webhook setup failed for ${integrationId}:`, error);

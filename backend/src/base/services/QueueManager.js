@@ -207,6 +207,65 @@ class QueueManager {
     }
 
     /**
+     * Queue a generic message with custom action/event type
+     * Supports delayed message delivery for scenarios like API key propagation
+     * 
+     * ⚠️ TEMPORARY: The delaySeconds feature is a workaround for Quo API key propagation
+     * delay and will be removed once Quo implements instant API key validation.
+     * 
+     * This method provides a flexible interface for queueing any custom event type,
+     * making it extensible for new integration lifecycle events without modifying
+     * the QueueManager service (Open/Closed Principle).
+     * 
+     * Design Decision: Separates `action` and `delaySeconds` from domain data.
+     * The `action` becomes the event type, `delaySeconds` is SQS infrastructure concern,
+     * and everything else is domain data. This separation follows hexagonal architecture
+     * by keeping infrastructure concerns (SQS delays) separate from domain logic.
+     * 
+     * @param {Object} params - Message parameters (action is required, delaySeconds is optional, all other fields become data payload)
+     * @param {string} params.action - Event type (required, e.g., 'POST_CREATE_SETUP')
+     * @param {number} [params.delaySeconds] - Optional SQS message delay (0-900 seconds) - TEMPORARY workaround
+     * @returns {Promise<void>}
+     * @throws {Error} If action is missing
+     * 
+     * @example
+     * // Queue immediate webhook setup
+     * await queueManager.queueMessage({
+     *   action: 'SETUP_WEBHOOKS',
+     *   integrationId: '123'
+     * });
+     * 
+     * @example
+     * // Queue delayed post-creation setup (for API key propagation)
+     * await queueManager.queueMessage({
+     *   action: 'POST_CREATE_SETUP',
+     *   integrationId: '456',
+     *   delaySeconds: 35
+     * });
+     */
+    async queueMessage(params) {
+        if (!params || !params.action) {
+            throw new Error('action is required for queueMessage');
+        }
+
+        const { action, delaySeconds, ...data } = params;
+
+        // Build message structure following existing pattern
+        const message = {
+            event: action,
+            data,
+        };
+
+        // Add delay if specified (SQS infrastructure concern)
+        // This will be handled by the QueuerUtil wrapper
+        if (delaySeconds !== undefined) {
+            message.delaySeconds = delaySeconds;
+        }
+
+        await this.queuerUtil.batchSend([message], this.queueUrl);
+    }
+
+    /**
      * Get queue URL (for debugging/logging)
      * @returns {string} Queue URL
      */
