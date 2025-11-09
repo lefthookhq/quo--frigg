@@ -1008,9 +1008,18 @@ class BaseCRMIntegration extends IntegrationBase {
     // ============================================================================
 
     /**
-     * Bulk upsert contacts to Quo
+     * Bulk upsert contacts to Quo and create mappings
+     *
+     * Phase 1 Fix: Creates mappings after successful bulk contact creation
+     *
+     * Process:
+     * 1. Call bulk create (returns 202 Accepted, async processing)
+     * 2. Wait briefly for async processing to complete
+     * 3. Fetch created contacts by externalIds
+     * 4. Create mappings for each successfully created contact
+     *
      * @param {Array} contacts - Array of Quo contact objects
-     * @returns {Promise<Object>} Upsert results
+     * @returns {Promise<Object>} Upsert results with successCount, errorCount, errors
      */
     async bulkUpsertToQuo(contacts) {
         let successCount = 0;
@@ -1019,7 +1028,51 @@ class BaseCRMIntegration extends IntegrationBase {
 
         try {
             await this.quo.api.bulkCreateContacts(contacts);
-            successCount = contacts.length;
+
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            const externalIds = contacts.map(c => c.externalId);
+            const fetchedContacts = await this.quo.api.listContacts({
+                externalIds: externalIds,
+                maxResults: contacts.length
+            });
+
+            if (fetchedContacts?.data) {
+                for (const createdContact of fetchedContacts.data) {
+                    try {
+                        await this.upsertMapping(createdContact.externalId, {
+                            externalId: createdContact.externalId,
+                            quoContactId: createdContact.id,
+                            entityType: 'people',
+                            lastSyncedAt: new Date().toISOString(),
+                            syncMethod: 'bulk',
+                            action: 'created',
+                        });
+                        successCount++;
+                    } catch (mappingError) {
+                        console.error(`Failed to create mapping for ${createdContact.externalId}:`, mappingError);
+                        errorCount++;
+                        errors.push({
+                            error: mappingError.message,
+                            externalId: createdContact.externalId,
+                        });
+                    }
+                }
+            }
+
+            if (fetchedContacts?.data?.length < contacts.length) {
+                const createdExternalIds = new Set(fetchedContacts.data.map(c => c.externalId));
+                const failedContacts = contacts.filter(c => !createdExternalIds.has(c.externalId));
+
+                errorCount += failedContacts.length;
+                failedContacts.forEach(c => {
+                    errors.push({
+                        error: 'Contact not found after bulk create',
+                        externalId: c.externalId,
+                    });
+                });
+            }
+
         } catch (error) {
             errorCount = contacts.length;
             console.error('Bulk upsert error:', error);

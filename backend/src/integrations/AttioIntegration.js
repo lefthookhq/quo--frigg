@@ -440,14 +440,6 @@ class AttioIntegration extends BaseCRMIntegration {
                     );
             }
 
-            await this.upsertMapping(record_id, {
-                externalId: record_id,
-                entityType: object_type,
-                lastSyncedAt: new Date().toISOString(),
-                syncMethod: 'webhook',
-                action: 'created',
-            });
-
             console.log(
                 `[Attio Webhook] ✓ Synced ${object_type} ${record_id} to Quo`,
             );
@@ -1983,6 +1975,8 @@ Received:
      * Sync Attio person record to Quo
      * Transforms Attio person data to Quo contact format
      *
+     * Phase 2 Fix: Handles 409 conflicts by fetching existing contact and creating mapping
+     *
      * @private
      * @param {Object} attioRecord - Attio person record
      * @param {string} action - created or updated
@@ -2002,18 +1996,59 @@ Received:
             }
 
             if (action === 'created') {
-                const createResponse =
-                    await this.quo.api.createContact(quoContact);
+                try {
+                    const createResponse =
+                        await this.quo.api.createContact(quoContact);
 
-                if (!createResponse?.data) {
-                    throw new Error(
-                        `Create contact failed: Invalid response from Quo API`,
+                    if (!createResponse?.data) {
+                        throw new Error(
+                            `Create contact failed: Invalid response from Quo API`,
+                        );
+                    }
+
+                    await this.upsertMapping(quoContact.externalId, {
+                        externalId: quoContact.externalId,
+                        quoContactId: createResponse.data.id,
+                        entityType: 'people',
+                        lastSyncedAt: new Date().toISOString(),
+                        syncMethod: 'webhook',
+                        action: 'created',
+                    });
+
+                    console.log(
+                        `[Attio] ✓ Contact ${createResponse.data.id} created in Quo (externalId: ${quoContact.externalId})`,
                     );
-                }
+                } catch (error) {
+                    if (error.status === 409 || error.code === '0800409') {
+                        console.log(
+                            `[Attio] Contact already exists in Quo, fetching and creating mapping`,
+                        );
 
-                console.log(
-                    `[Attio] ✓ Contact ${createResponse.data.id} created in Quo (externalId: ${quoContact.externalId})`,
-                );
+                        const existingContacts = await this.quo.api.listContacts({
+                            externalIds: [quoContact.externalId],
+                            maxResults: 1,
+                        });
+
+                        if (existingContacts?.data?.[0]) {
+                            const existingContact = existingContacts.data[0];
+
+                            await this.upsertMapping(quoContact.externalId, {
+                                externalId: quoContact.externalId,
+                                quoContactId: existingContact.id,
+                                entityType: 'people',
+                                lastSyncedAt: new Date().toISOString(),
+                                syncMethod: 'webhook',
+                                action: 'conflict_resolved',
+                            });
+
+                            console.log(
+                                `[Attio] ✓ Mapping created for existing contact ${existingContact.id}`,
+                            );
+                            return;
+                        }
+                    }
+                    throw error;
+                }
             } else {
                 const existingContacts = await this.quo.api.listContacts({
                     externalIds: [quoContact.externalId],
