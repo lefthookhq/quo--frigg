@@ -1405,15 +1405,6 @@ View in Quo: ${deepLink}`;
             return results;
         } catch (error) {
             console.error('[Webhook Setup] Failed:', error);
-
-            await this.updateIntegrationMessages.execute(
-                this.id,
-                'errors',
-                'Webhook Setup Failed',
-                `Failed to setup webhooks: ${error.message}`,
-                Date.now(),
-            );
-
             throw error;
         }
     }
@@ -1653,14 +1644,6 @@ View in Quo: ${deepLink}`;
                     }
                 }
             }
-
-            await this.updateIntegrationMessages.execute(
-                this.id,
-                'errors',
-                'Quo Webhook Setup Failed',
-                `Could not register webhooks with Quo: ${error.message}. Integration requires both message and call webhooks to function properly.`,
-                Date.now(),
-            );
 
             return {
                 status: 'failed',

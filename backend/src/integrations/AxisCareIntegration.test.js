@@ -135,7 +135,7 @@ describe('AxisCareIntegration', () => {
             ).toBe('Applicant');
             expect(
                 AxisCareIntegration.CRMConfig.syncConfig.supportsWebhooks,
-            ).toBe(false);
+            ).toBe(true);
         });
     });
 
@@ -183,7 +183,7 @@ describe('AxisCareIntegration', () => {
 
                 const result = await integration.transformPersonToQuo(client);
 
-                expect(result.externalId).toBe('123_1640000000000');
+                expect(result.externalId).toBe('123');
                 expect(result.source).toBe('axiscare');
                 expect(result.defaultFields.firstName).toBe('John');
                 expect(result.defaultFields.lastName).toBe('Doe');
@@ -202,18 +202,53 @@ describe('AxisCareIntegration', () => {
         });
 
         describe('setupWebhooks', () => {
-            it('should log webhook fallback message', async () => {
-                const consoleSpy = jest
-                    .spyOn(console, 'log')
-                    .mockImplementation();
+            it('should setup Quo webhooks', async () => {
+                // Mock the Quo API webhook creation
+                mockQuoApi.api.createMessageWebhook = jest
+                    .fn()
+                    .mockResolvedValue({
+                        data: {
+                            id: 'message-webhook-123',
+                            key: 'message-webhook-key',
+                        },
+                    });
+                mockQuoApi.api.createCallWebhook = jest
+                    .fn()
+                    .mockResolvedValue({
+                        data: {
+                            id: 'call-webhook-123',
+                            key: 'call-webhook-key',
+                        },
+                    });
+                mockQuoApi.api.createCallSummaryWebhook = jest
+                    .fn()
+                    .mockResolvedValue({
+                        data: {
+                            id: 'callsummary-webhook-123',
+                            key: 'callsummary-webhook-key',
+                        },
+                    });
 
-                await integration.setupWebhooks();
+                // Mock commands.updateIntegrationConfig
+                integration.commands.updateIntegrationConfig = jest
+                    .fn()
+                    .mockResolvedValue({});
 
-                expect(consoleSpy).toHaveBeenCalledWith(
-                    'AxisCare webhooks not configured - using polling fallback',
-                );
+                // Set BASE_URL for webhook URL generation
+                process.env.BASE_URL = 'https://test.com';
 
-                consoleSpy.mockRestore();
+                const result = await integration.setupWebhooks();
+
+                expect(result.overallStatus).toBe('success');
+                expect(result.quo.status).toBe('configured');
+                expect(mockQuoApi.api.createMessageWebhook).toHaveBeenCalled();
+                expect(mockQuoApi.api.createCallWebhook).toHaveBeenCalled();
+                expect(
+                    mockQuoApi.api.createCallSummaryWebhook,
+                ).toHaveBeenCalled();
+
+                // Cleanup
+                delete process.env.BASE_URL;
             });
         });
     });

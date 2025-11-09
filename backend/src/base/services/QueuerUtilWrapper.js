@@ -1,20 +1,28 @@
 /**
  * QueuerUtilWrapper
  * 
- * Enhanced wrapper around @friggframework/core QueuerUtil that adds support
- * for SQS message delays (DelaySeconds parameter).
+ * ⚠️ TEMPORARY WORKAROUND - SCHEDULED FOR REMOVAL ⚠️
+ * 
+ * This wrapper exists ONLY to support delayed message delivery to work around
+ * Quo API's key validation propagation delay (~30-35 seconds). When integrations
+ * are created, webhook setup must be delayed to allow Quo's systems to propagate
+ * the API key before we attempt to create webhooks.
+ * 
+ * **This will be removed once Quo resolves their API key propagation delay.**
+ * 
+ * Technical Implementation:
+ * - Wraps @friggframework/core QueuerUtil to add SQS DelaySeconds support
+ * - Extracts `delaySeconds` from message data and applies it as SQS parameter
+ * - Without this, delays would be in message body (no actual delay occurs)
+ * - With this, SQS holds the message for X seconds before Lambda receives it
  * 
  * Design Philosophy (Hexagonal Architecture / Adapter Pattern):
  * - Wraps external infrastructure concern (SQS) with domain-appropriate interface
  * - Maintains backward compatibility with existing QueuerUtil API
- * - Extends functionality without modifying the original (Open/Closed Principle)
  * - Separates infrastructure concerns (SQS DelaySeconds) from domain logic
  * 
- * This adapter exists because @friggframework/core QueuerUtil doesn't support
- * message delays yet. Once the upstream package adds support, this wrapper
- * can be removed and replaced with the original QueuerUtil.
- * 
  * @see https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/clients/client-sqs/interfaces/sendmessagebatchcommandinput.html
+ * @todo Remove this wrapper once Quo API key propagation is instant
  */
 
 const { v4: uuid } = require('uuid');

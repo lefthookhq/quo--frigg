@@ -94,7 +94,7 @@ class BaseCRMIntegration extends IntegrationBase {
      * @property {number} syncConfig.initialBatchSize - Records per page for initial sync
      * @property {number} syncConfig.ongoingBatchSize - Records per page for delta sync
      * @property {number} syncConfig.pollIntervalMinutes - Polling interval if no webhooks
-     * @property {number} [onCreateDelaySeconds=35] - Delay before webhook setup and initial sync (for API key propagation)
+     * @property {number} [onCreateDelaySeconds=35] - Delay before webhook setup and initial sync (TEMPORARY: works around Quo API key propagation delay, will be removed once Quo fixes this)
      * @property {Object} queueConfig - SQS queue configuration
      * @property {number} queueConfig.maxWorkers - Maximum concurrent queue workers
      * @property {number} queueConfig.provisioned - Provisioned concurrency for Lambda
@@ -113,7 +113,7 @@ class BaseCRMIntegration extends IntegrationBase {
             ongoingBatchSize: 50,
             pollIntervalMinutes: 60,
         },
-        onCreateDelaySeconds: 35, // Default delay for Quo API key propagation
+        onCreateDelaySeconds: 35, // TEMPORARY: Default delay for Quo API key propagation - remove once Quo fixes this
         queueConfig: {
             maxWorkers: 5,
             provisioned: 0,
@@ -413,11 +413,13 @@ class BaseCRMIntegration extends IntegrationBase {
             'ENABLED',
         );
 
+        // ⚠️ TEMPORARY WORKAROUND - SCHEDULED FOR REMOVAL ⚠️
         // Queue delayed webhook setup + initial sync to allow Quo API key propagation
         // Quo (OpenPhone) API keys take ~30 seconds to activate after creation
-        // This is a workaround until the propagation delay is fixed (Dec/Jan timeline)
+        // Without this delay, webhook creation fails with 401/403 errors
+        // TODO: Remove this delay mechanism (and QueuerUtilWrapper) once Quo implements instant API key propagation
         const delaySeconds = this.constructor.CRMConfig?.onCreateDelaySeconds || 35;
-        console.log(`[${integrationName}] Queueing delayed webhook setup + initial sync for ${integrationId} (${delaySeconds} second delay)`);
+        console.log(`[${integrationName}] Queueing delayed webhook setup + initial sync for ${integrationId} (${delaySeconds} second delay for Quo API key propagation)`);
 
         try {
             await this.queueManager.queueMessage({

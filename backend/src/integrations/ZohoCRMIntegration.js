@@ -526,14 +526,6 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             };
         } catch (error) {
             console.error('[Zoho CRM] Failed to setup notifications:', error);
-
-            await this.updateIntegrationMessages.execute(
-                this.id,
-                'errors',
-                'Notification Setup Failed',
-                `Could not register notification channel with Zoho CRM: ${error.message}. Please ensure OAuth scopes include notification permissions (ZohoCRM.notifications.CREATE, READ, DELETE).`,
-                Date.now(),
-            );
             throw error;
         }
     }

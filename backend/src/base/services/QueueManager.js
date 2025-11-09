@@ -210,6 +210,9 @@ class QueueManager {
      * Queue a generic message with custom action/event type
      * Supports delayed message delivery for scenarios like API key propagation
      * 
+     * ⚠️ TEMPORARY: The delaySeconds feature is a workaround for Quo API key propagation
+     * delay and will be removed once Quo implements instant API key validation.
+     * 
      * This method provides a flexible interface for queueing any custom event type,
      * making it extensible for new integration lifecycle events without modifying
      * the QueueManager service (Open/Closed Principle).
@@ -221,7 +224,7 @@ class QueueManager {
      * 
      * @param {Object} params - Message parameters (action is required, delaySeconds is optional, all other fields become data payload)
      * @param {string} params.action - Event type (required, e.g., 'POST_CREATE_SETUP')
-     * @param {number} [params.delaySeconds] - Optional SQS message delay (0-900 seconds)
+     * @param {number} [params.delaySeconds] - Optional SQS message delay (0-900 seconds) - TEMPORARY workaround
      * @returns {Promise<void>}
      * @throws {Error} If action is missing
      * 
