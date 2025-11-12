@@ -1274,21 +1274,11 @@ class AttioIntegration extends BaseCRMIntegration {
 
     /**
      * Setup webhooks with both Attio and Quo
-     * Called during onCreate lifecycle (BaseCRMIntegration) or from handlePostCreateSetup queue handler
+     * Called during onCreate lifecycle (BaseCRMIntegration)
      * Orchestrates webhook setup for both services - BOTH required for success
-     * 
-     * @param {Object} [params] - Optional parameters
-     * @param {string} [params.integrationId] - Integration ID (required when called from queue context)
      * @returns {Promise<Object>} Setup result
      */
-    async setupWebhooks({ integrationId } = {}) {
-        // Use provided integrationId or fall back to this.id
-        const effectiveIntegrationId = integrationId || this.id;
-
-        if (!effectiveIntegrationId) {
-            throw new Error('Integration ID is required for webhook setup');
-        }
-
+    async setupWebhooks() {
         const results = {
             attio: null,
             quo: null,
@@ -1296,11 +1286,11 @@ class AttioIntegration extends BaseCRMIntegration {
         };
 
         try {
-            // Setup Attio webhook (pass integrationId for queue context)
-            results.attio = await this.setupAttioWebhook({ integrationId: effectiveIntegrationId });
+            // Setup Attio webhook
+            results.attio = await this.setupAttioWebhook();
 
-            // Setup Quo webhooks (pass integrationId for queue context)
-            results.quo = await this.setupQuoWebhook({ integrationId: effectiveIntegrationId });
+            // Setup Quo webhooks
+            results.quo = await this.setupQuoWebhook();
 
             // BOTH required - fail if either fails
             if (
@@ -1326,7 +1316,7 @@ class AttioIntegration extends BaseCRMIntegration {
             console.error('[Webhook Setup] Failed:', error);
 
             await this.updateIntegrationMessages.execute(
-                effectiveIntegrationId,
+                this.id,
                 'errors',
                 'Webhook Setup Failed',
                 `Failed to setup webhooks: ${error.message}`,
