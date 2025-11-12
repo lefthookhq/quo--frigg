@@ -1094,6 +1094,60 @@ class BaseCRMIntegration extends IntegrationBase {
         const integrationName = this.constructor.Definition.name;
         return process.env[`${integrationName.toUpperCase()}_QUEUE_URL`];
     }
+
+    // ============================================================================
+    // WEBHOOK LOOKUP OPTIMIZATION (Mapping-First Pattern)
+    // ============================================================================
+
+    /**
+     * Get external CRM ID from mapping (for webhook → CRM lookup)
+     *
+     * This enables O(1) lookup when Quo webhooks provide quoContactId.
+     * Falls back to phone-based search if no mapping exists.
+     *
+     * @param {string} quoContactId - Quo contact ID from webhook
+     * @returns {Promise<string|null>} External CRM ID or null if not found
+     */
+    async _getExternalIdFromMapping(quoContactId) {
+        try {
+            const Entity = this.modules.entity || this.Entity;
+            const mapping = await Entity.findOne({
+                'config.quoContactId': quoContactId,
+            });
+
+            if (mapping?.config?.externalId) {
+                console.log(`[Mapping Lookup] ✓ Found externalId: ${mapping.config.externalId} for quoContactId: ${quoContactId}`);
+                return mapping.config.externalId;
+            }
+
+            console.log(`[Mapping Lookup] ✗ No mapping found for quoContactId: ${quoContactId}`);
+            return null;
+        } catch (error) {
+            console.error(`[Mapping Lookup] Error: ${error.message}`);
+            return null;
+        }
+    }
+
+    /**
+     * Find external contact by phone number (OVERRIDE IN CHILD CLASSES)
+     *
+     * Default implementation throws error. Integrations that support
+     * phone-based contact lookup should override this method.
+     *
+     * Examples:
+     * - Attio: Implements phone search via queryRecords API
+     * - AxisCare: Does NOT support phone search, throws error
+     *
+     * @param {string} phoneNumber - Phone number to search
+     * @returns {Promise<string>} External CRM ID
+     * @throws {Error} If contact not found or search not supported
+     */
+    async _findContactByPhone(phoneNumber) {
+        throw new Error(
+            `${this.constructor.name} does not support phone-based contact lookup for ${phoneNumber}. ` +
+            `Contact mapping is required for webhook activity logging.`
+        );
+    }
 }
 
 module.exports = { BaseCRMIntegration };
