@@ -52,12 +52,12 @@ class Api extends ApiKeyRequester {
             userById: (userId) => `/v1/users/${userId}`,
 
             // Webhook endpoints
-            webhooks: '/v1/webhooks',
-            webhookById: (id) => `/v1/webhooks/${id}`,
-            webhookCalls: '/v1/webhooks/calls',
-            webhookMessages: '/v1/webhooks/messages',
-            webhookCallSummaries: '/v1/webhooks/call-summaries',
-            webhookCallTranscripts: '/v1/webhooks/call-transcripts',
+            webhooks: '/v2/webhooks',
+            webhookById: (id) => `/v2/webhooks/${id}`,
+            webhookCalls: '/v2/webhooks/calls',
+            webhookMessages: '/v2/webhooks/messages',
+            webhookCallSummaries: '/v2/webhooks/call-summaries',
+            webhookCallTranscripts: '/v2/webhooks/call-transcripts',
         };
     }
 
@@ -107,10 +107,27 @@ class Api extends ApiKeyRequester {
 
     // Contact Management
     async listContacts(params = {}) {
-        const options = {
-            url: this.baseUrl + this.URLs.contacts,
-            query: params,
-        };
+        // Build URL with proper array handling for externalIds[] and phoneNumbers[]
+        let url = this.baseUrl + this.URLs.contacts;
+
+        const queryParts = [];
+        for (const [key, value] of Object.entries(params)) {
+            if (Array.isArray(value)) {
+                // Handle arrays with bracket notation: key[]=val1&key[]=val2
+                value.forEach(item => {
+                    queryParts.push(`${encodeURIComponent(key)}[]=${encodeURIComponent(item)}`);
+                });
+            } else {
+                // Handle regular params
+                queryParts.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+            }
+        }
+
+        if (queryParts.length > 0) {
+            url += '?' + queryParts.join('&');
+        }
+
+        const options = { url };
         return this._get(options);
     }
 

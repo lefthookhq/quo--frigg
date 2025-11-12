@@ -321,84 +321,134 @@ async function testWebhookEndpoints() {
 async function testWebhookV2CreateDelete() {
     console.log('\n🧪 Testing v2 Webhook Create & Delete\n');
 
-    let createdWebhookId = null;
+    let createdMessageWebhookId = null;
+    let createdCallWebhookId = null;
 
     try {
-        // Step 1: Create webhook on v2
-        console.log('--- Step 1: Creating webhook on v2 endpoint ---');
-        const webhookPayload = {
-            url: 'https://test-webhook-endpoint.example.com/test',
+        // Step 1: Create MESSAGE webhook on v2
+        console.log('--- Step 1: Creating MESSAGE webhook on v2/webhooks/messages ---');
+        const messageWebhookPayload = {
+            url: 'https://test-webhook-endpoint.example.com/test-messages',
             events: ['message.received', 'message.delivered'],
-            label: 'Test Webhook v2',
+            label: 'Test Message Webhook v2',
             status: 'enabled'
         };
 
-        const createResult = await makeRequest('POST', '/v2/webhooks', webhookPayload);
+        const createMessageResult = await makeRequest('POST', '/v2/webhooks/messages', messageWebhookPayload);
 
-        if (createResult.status === 201 && createResult.data?.id) {
-            createdWebhookId = createResult.data.id;
-            console.log(`\n✅ Webhook created successfully!`);
-            console.log(`   ID: ${createdWebhookId}`);
-            console.log(`   URL: ${createResult.data.url}`);
-            console.log(`   Status: ${createResult.data.status}`);
+        if (createMessageResult.status === 201 && createMessageResult.data?.data?.id) {
+            createdMessageWebhookId = createMessageResult.data.data.id;
+            console.log(`\n✅ Message webhook created successfully!`);
+            console.log(`   ID: ${createdMessageWebhookId}`);
+            console.log(`   URL: ${createMessageResult.data.data.url}`);
+            console.log(`   Events: ${createMessageResult.data.data.events?.join(', ')}`);
         } else {
-            console.log(`\n❌ Webhook creation failed`);
-            console.log(`   Status: ${createResult.status}`);
-            return { success: false, step: 'create', result: createResult };
+            console.log(`\n❌ Message webhook creation failed`);
+            console.log(`   Status: ${createMessageResult.status}`);
+            return { success: false, step: 'create-message', result: createMessageResult };
         }
 
-        // Step 2: Verify webhook exists
-        console.log('\n--- Step 2: Verifying webhook exists ---');
+        // Step 2: Create CALL webhook on v2
+        console.log('\n--- Step 2: Creating CALL webhook on v2/webhooks/calls ---');
+        const callWebhookPayload = {
+            url: 'https://test-webhook-endpoint.example.com/test-calls',
+            events: ['call.completed'],
+            label: 'Test Call Webhook v2',
+            status: 'enabled'
+        };
+
+        const createCallResult = await makeRequest('POST', '/v2/webhooks/calls', callWebhookPayload);
+
+        if (createCallResult.status === 201 && createCallResult.data?.id) {
+            createdCallWebhookId = createCallResult.data.id;
+            console.log(`\n✅ Call webhook created successfully!`);
+            console.log(`   ID: ${createdCallWebhookId}`);
+            console.log(`   URL: ${createCallResult.data.url}`);
+            console.log(`   Events: ${createCallResult.data.events?.join(', ')}`);
+        } else {
+            console.log(`\n❌ Call webhook creation failed`);
+            console.log(`   Status: ${createCallResult.status}`);
+            return { success: false, step: 'create-call', result: createCallResult };
+        }
+
+        // Step 3: List all v2 webhooks to verify
+        console.log('\n--- Step 3: Listing v2 webhooks ---');
         const listResult = await makeRequest('GET', '/v2/webhooks');
 
         if (listResult.status === 200) {
-            const webhook = listResult.data?.data?.find(w => w.id === createdWebhookId);
-            if (webhook) {
-                console.log(`\n✅ Webhook found in list`);
+            const messageWebhook = listResult.data?.data?.find(w => w.id === createdMessageWebhookId);
+            const callWebhook = listResult.data?.data?.find(w => w.id === createdCallWebhookId);
+
+            if (messageWebhook) console.log(`✅ Message webhook found in list`);
+            if (callWebhook) console.log(`✅ Call webhook found in list`);
+        }
+
+        // Step 4: Delete message webhook (uses unified /v2/webhooks/{id} endpoint)
+        if (createdMessageWebhookId) {
+            console.log('\n--- Step 4: Deleting message webhook ---');
+            const deleteMessageResult = await makeRequest('DELETE', `/v2/webhooks/${createdMessageWebhookId}`);
+
+            if (deleteMessageResult.status === 204 || deleteMessageResult.status === 200) {
+                console.log(`✅ Message webhook deleted successfully! (Status: ${deleteMessageResult.status})`);
             } else {
-                console.log(`\n⚠️  Webhook not found in list (may be async)`);
+                console.log(`⚠️  Message webhook deletion status: ${deleteMessageResult.status}`);
             }
         }
 
-        // Step 3: Delete webhook
-        console.log('\n--- Step 3: Deleting webhook ---');
-        const deleteResult = await makeRequest('DELETE', `/v2/webhooks/${createdWebhookId}`);
+        // Step 5: Delete call webhook (uses unified /v2/webhooks/{id} endpoint)
+        if (createdCallWebhookId) {
+            console.log('\n--- Step 5: Deleting call webhook ---');
+            const deleteCallResult = await makeRequest('DELETE', `/v2/webhooks/${createdCallWebhookId}`);
 
-        if (deleteResult.status === 204 || deleteResult.status === 200) {
-            console.log(`\n✅ Webhook deleted successfully!`);
-        } else {
-            console.log(`\n❌ Webhook deletion failed`);
-            console.log(`   Status: ${deleteResult.status}`);
+            if (deleteCallResult.status === 204 || deleteCallResult.status === 200) {
+                console.log(`✅ Call webhook deleted successfully! (Status: ${deleteCallResult.status})`);
+            } else {
+                console.log(`⚠️  Call webhook deletion status: ${deleteCallResult.status}`);
+            }
         }
 
-        // Step 4: Verify deletion
-        console.log('\n--- Step 4: Verifying deletion ---');
+        // Step 6: Verify deletion
+        console.log('\n--- Step 6: Verifying deletion ---');
         const verifyResult = await makeRequest('GET', '/v2/webhooks');
 
         if (verifyResult.status === 200) {
-            const webhook = verifyResult.data?.data?.find(w => w.id === createdWebhookId);
-            if (!webhook) {
-                console.log(`\n✅ Webhook successfully removed from list`);
-            } else {
-                console.log(`\n⚠️  Webhook still in list (may be soft delete)`);
-            }
+            const messageWebhook = verifyResult.data?.data?.find(w => w.id === createdMessageWebhookId);
+            const callWebhook = verifyResult.data?.data?.find(w => w.id === createdCallWebhookId);
+
+            if (!messageWebhook && createdMessageWebhookId) console.log(`✅ Message webhook removed from list`);
+            if (!callWebhook && createdCallWebhookId) console.log(`✅ Call webhook removed from list`);
         }
 
-        console.log('\n🎯 Result: v2 webhook endpoints WORK!');
-        return { success: true };
+        console.log('\n🎯 Result: v2 webhook endpoints ' + (createdMessageWebhookId || createdCallWebhookId ? 'WORK!' : 'DO NOT WORK'));
+        return {
+            success: Boolean(createdMessageWebhookId || createdCallWebhookId),
+            messageWebhookId: createdMessageWebhookId,
+            callWebhookId: createdCallWebhookId
+        };
 
     } catch (error) {
         console.error('\n❌ Test failed:', error.message);
 
-        // Cleanup: Try to delete webhook if it was created
-        if (createdWebhookId) {
-            console.log('\n🧹 Attempting cleanup...');
+        // Cleanup: Try to delete webhooks if they were created
+        if (createdMessageWebhookId) {
+            console.log('\n🧹 Attempting cleanup of message webhook...');
             try {
-                await makeRequest('DELETE', `/v2/webhooks/${createdWebhookId}`);
-                console.log('✅ Cleanup successful');
+                await makeRequest('DELETE', `/v2/webhooks/${createdMessageWebhookId}`);
+                console.log('✅ Message webhook cleanup successful');
             } catch (cleanupError) {
                 console.error('⚠️  Cleanup failed:', cleanupError.message);
-                console.error(`⚠️  Manual cleanup needed: DELETE /v2/webhooks/${createdWebhookId}`);
+                console.error(`⚠️  Manual cleanup needed: DELETE /v2/webhooks/${createdMessageWebhookId}`);
+            }
+        }
+
+        if (createdCallWebhookId) {
+            console.log('\n🧹 Attempting cleanup of call webhook...');
+            try {
+                await makeRequest('DELETE', `/v2/webhooks/${createdCallWebhookId}`);
+                console.log('✅ Call webhook cleanup successful');
+            } catch (cleanupError) {
+                console.error('⚠️  Cleanup failed:', cleanupError.message);
+                console.error(`⚠️  Manual cleanup needed: DELETE /v2/webhooks/${createdCallWebhookId}`);
             }
         }
 
