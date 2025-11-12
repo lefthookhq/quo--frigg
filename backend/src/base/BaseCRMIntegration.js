@@ -1040,14 +1040,25 @@ class BaseCRMIntegration extends IntegrationBase {
             if (fetchedContacts?.data) {
                 for (const createdContact of fetchedContacts.data) {
                     try {
-                        await this.upsertMapping(createdContact.externalId, {
+                        const mappingData = {
                             externalId: createdContact.externalId,
                             quoContactId: createdContact.id,
                             entityType: 'people',
                             lastSyncedAt: new Date().toISOString(),
                             syncMethod: 'bulk',
                             action: 'created',
-                        });
+                        };
+
+                        // Create mapping by externalId
+                        await this.upsertMapping(createdContact.externalId, mappingData);
+
+                        // Also create mapping by phone number for webhook lookups
+                        const phoneNumber = createdContact.defaultFields?.phoneNumbers?.[0]?.value;
+                        if (phoneNumber) {
+                            mappingData.phoneNumber = phoneNumber;
+                            await this.upsertMapping(phoneNumber, mappingData);
+                        }
+
                         successCount++;
                     } catch (mappingError) {
                         console.error(`Failed to create mapping for ${createdContact.externalId}:`, mappingError);
@@ -1100,27 +1111,29 @@ class BaseCRMIntegration extends IntegrationBase {
     // ============================================================================
 
     /**
-     * Get external CRM ID from mapping (for webhook → CRM lookup)
+     * Get external CRM ID from mapping by phone number (for webhook → CRM lookup)
      *
-     * This enables O(1) lookup when Quo webhooks provide quoContactId.
-     * Falls back to phone-based search if no mapping exists.
+     * Uses Frigg's integrationMappingRepository for O(1) lookup.
+     * Quo webhooks provide phone numbers, not contact IDs, so we use phone as the lookup key.
      *
-     * @param {string} quoContactId - Quo contact ID from webhook
+     * @param {string} phoneNumber - Normalized phone number from Quo webhook
      * @returns {Promise<string|null>} External CRM ID or null if not found
      */
-    async _getExternalIdFromMapping(quoContactId) {
+    async _getExternalIdFromMappingByPhone(phoneNumber) {
         try {
-            const Entity = this.modules.entity || this.Entity;
-            const mapping = await Entity.findOne({
-                'config.quoContactId': quoContactId,
-            });
+            // Use Frigg's mapping repository with phone number as sourceId
+            const mapping = await this.getMapping(phoneNumber);
 
-            if (mapping?.config?.externalId) {
-                console.log(`[Mapping Lookup] ✓ Found externalId: ${mapping.config.externalId} for quoContactId: ${quoContactId}`);
-                return mapping.config.externalId;
+            if (mapping?.externalId) {
+                console.log(
+                    `[Mapping Lookup] ✓ Found externalId: ${mapping.externalId} for phone: ${phoneNumber}`
+                );
+                return mapping.externalId;
             }
 
-            console.log(`[Mapping Lookup] ✗ No mapping found for quoContactId: ${quoContactId}`);
+            console.log(
+                `[Mapping Lookup] ✗ No mapping found for phone: ${phoneNumber}`
+            );
             return null;
         } catch (error) {
             console.error(`[Mapping Lookup] Error: ${error.message}`);

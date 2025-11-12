@@ -21,7 +21,7 @@ const BASE_URL = USE_DEV ? 'https://dev-public-api.openphone.dev/v1' : 'https://
 
 if (!API_KEY) {
     console.error('Usage: node test-quo-api.js <API_KEY> [operation]');
-    console.error('Operations: bulk-create, list-contacts, single-create, create-duplicate, duplicate-externalid, test-webhooks');
+    console.error('Operations: bulk-create, list-contacts, single-create, create-duplicate, duplicate-externalid, test-webhooks, test-webhook-v2');
     process.exit(1);
 }
 
@@ -318,6 +318,94 @@ async function testWebhookEndpoints() {
     return results;
 }
 
+async function testWebhookV2CreateDelete() {
+    console.log('\n🧪 Testing v2 Webhook Create & Delete\n');
+
+    let createdWebhookId = null;
+
+    try {
+        // Step 1: Create webhook on v2
+        console.log('--- Step 1: Creating webhook on v2 endpoint ---');
+        const webhookPayload = {
+            url: 'https://test-webhook-endpoint.example.com/test',
+            events: ['message.received', 'message.delivered'],
+            label: 'Test Webhook v2',
+            status: 'enabled'
+        };
+
+        const createResult = await makeRequest('POST', '/v2/webhooks', webhookPayload);
+
+        if (createResult.status === 201 && createResult.data?.id) {
+            createdWebhookId = createResult.data.id;
+            console.log(`\n✅ Webhook created successfully!`);
+            console.log(`   ID: ${createdWebhookId}`);
+            console.log(`   URL: ${createResult.data.url}`);
+            console.log(`   Status: ${createResult.data.status}`);
+        } else {
+            console.log(`\n❌ Webhook creation failed`);
+            console.log(`   Status: ${createResult.status}`);
+            return { success: false, step: 'create', result: createResult };
+        }
+
+        // Step 2: Verify webhook exists
+        console.log('\n--- Step 2: Verifying webhook exists ---');
+        const listResult = await makeRequest('GET', '/v2/webhooks');
+
+        if (listResult.status === 200) {
+            const webhook = listResult.data?.data?.find(w => w.id === createdWebhookId);
+            if (webhook) {
+                console.log(`\n✅ Webhook found in list`);
+            } else {
+                console.log(`\n⚠️  Webhook not found in list (may be async)`);
+            }
+        }
+
+        // Step 3: Delete webhook
+        console.log('\n--- Step 3: Deleting webhook ---');
+        const deleteResult = await makeRequest('DELETE', `/v2/webhooks/${createdWebhookId}`);
+
+        if (deleteResult.status === 204 || deleteResult.status === 200) {
+            console.log(`\n✅ Webhook deleted successfully!`);
+        } else {
+            console.log(`\n❌ Webhook deletion failed`);
+            console.log(`   Status: ${deleteResult.status}`);
+        }
+
+        // Step 4: Verify deletion
+        console.log('\n--- Step 4: Verifying deletion ---');
+        const verifyResult = await makeRequest('GET', '/v2/webhooks');
+
+        if (verifyResult.status === 200) {
+            const webhook = verifyResult.data?.data?.find(w => w.id === createdWebhookId);
+            if (!webhook) {
+                console.log(`\n✅ Webhook successfully removed from list`);
+            } else {
+                console.log(`\n⚠️  Webhook still in list (may be soft delete)`);
+            }
+        }
+
+        console.log('\n🎯 Result: v2 webhook endpoints WORK!');
+        return { success: true };
+
+    } catch (error) {
+        console.error('\n❌ Test failed:', error.message);
+
+        // Cleanup: Try to delete webhook if it was created
+        if (createdWebhookId) {
+            console.log('\n🧹 Attempting cleanup...');
+            try {
+                await makeRequest('DELETE', `/v2/webhooks/${createdWebhookId}`);
+                console.log('✅ Cleanup successful');
+            } catch (cleanupError) {
+                console.error('⚠️  Cleanup failed:', cleanupError.message);
+                console.error(`⚠️  Manual cleanup needed: DELETE /v2/webhooks/${createdWebhookId}`);
+            }
+        }
+
+        return { success: false, error: error.message };
+    }
+}
+
 // Main execution
 (async () => {
     try {
@@ -344,6 +432,9 @@ async function testWebhookEndpoints() {
                 break;
             case 'test-webhooks':
                 await testWebhookEndpoints();
+                break;
+            case 'test-webhook-v2':
+                await testWebhookV2CreateDelete();
                 break;
             default:
                 console.error('Unknown operation:', OPERATION);

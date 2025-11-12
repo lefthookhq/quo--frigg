@@ -2,51 +2,43 @@ const { BaseCRMIntegration } = require('../src/base/BaseCRMIntegration');
 
 describe('BaseCRMIntegration - Mapping Lookup Methods', () => {
     let integration;
-    let mockEntity;
 
     beforeEach(() => {
-        // Create mock Entity model
-        mockEntity = {
-            findOne: jest.fn(),
-        };
-
         // Create minimal integration instance
         integration = new BaseCRMIntegration({});
-        integration.modules = { entity: mockEntity };
+
+        // Mock getMapping method (from Frigg framework)
+        integration.getMapping = jest.fn();
     });
 
-    describe('_getExternalIdFromMapping', () => {
+    describe('_getExternalIdFromMappingByPhone', () => {
         it('should return externalId when mapping exists', async () => {
             // Arrange
-            const quoContactId = 'quo-123';
+            const phoneNumber = '+12125551234';
             const expectedExternalId = 'attio-456';
 
-            mockEntity.findOne.mockResolvedValue({
-                config: {
-                    externalId: expectedExternalId,
-                    quoContactId: quoContactId,
-                },
+            integration.getMapping.mockResolvedValue({
+                externalId: expectedExternalId,
+                phoneNumber: phoneNumber,
             });
 
             // Act
-            const result = await integration._getExternalIdFromMapping(
-                quoContactId,
+            const result = await integration._getExternalIdFromMappingByPhone(
+                phoneNumber,
             );
 
             // Assert
             expect(result).toBe(expectedExternalId);
-            expect(mockEntity.findOne).toHaveBeenCalledWith({
-                'config.quoContactId': quoContactId,
-            });
+            expect(integration.getMapping).toHaveBeenCalledWith(phoneNumber);
         });
 
         it('should return null when mapping does not exist', async () => {
             // Arrange
-            mockEntity.findOne.mockResolvedValue(null);
+            integration.getMapping.mockResolvedValue(null);
 
             // Act
-            const result = await integration._getExternalIdFromMapping(
-                'unknown-id',
+            const result = await integration._getExternalIdFromMappingByPhone(
+                '+19175551234',
             );
 
             // Assert
@@ -55,16 +47,14 @@ describe('BaseCRMIntegration - Mapping Lookup Methods', () => {
 
         it('should return null when mapping exists but has no externalId', async () => {
             // Arrange
-            mockEntity.findOne.mockResolvedValue({
-                config: {
-                    quoContactId: 'quo-123',
-                    // externalId missing
-                },
+            integration.getMapping.mockResolvedValue({
+                phoneNumber: '+12125551234',
+                // externalId missing
             });
 
             // Act
-            const result = await integration._getExternalIdFromMapping(
-                'quo-123',
+            const result = await integration._getExternalIdFromMappingByPhone(
+                '+12125551234',
             );
 
             // Assert
@@ -73,13 +63,13 @@ describe('BaseCRMIntegration - Mapping Lookup Methods', () => {
 
         it('should return null on database error', async () => {
             // Arrange
-            mockEntity.findOne.mockRejectedValue(
+            integration.getMapping.mockRejectedValue(
                 new Error('Database connection failed'),
             );
 
             // Act
-            const result = await integration._getExternalIdFromMapping(
-                'quo-123',
+            const result = await integration._getExternalIdFromMappingByPhone(
+                '+12125551234',
             );
 
             // Assert

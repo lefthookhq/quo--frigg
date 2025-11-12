@@ -1636,32 +1636,10 @@ class AttioIntegration extends BaseCRMIntegration {
                 ? participants[1]
                 : participants[0];
 
-        // Fetch Quo contact to get contactId for mapping lookup
-        let attioRecordId;
-        try {
-            const quoContacts = await this.quo.api.listContacts({
-                phoneNumbers: [contactPhone],
-                maxResults: 1,
-            });
-
-            if (quoContacts?.data?.[0]) {
-                // Use mapping-first strategy with Quo contact
-                attioRecordId = await this._findAttioContactFromQuoWebhook(
-                    quoContacts.data[0],
-                );
-            } else {
-                // No Quo contact found, fallback to direct phone search
-                console.log(
-                    `[Quo Webhook] No Quo contact found for ${contactPhone}, using phone search`,
-                );
-                attioRecordId = await this._findContactByPhone(contactPhone);
-            }
-        } catch (error) {
-            console.error(
-                `[Quo Webhook] Contact lookup failed: ${error.message}`,
-            );
-            throw error;
-        }
+        // Use mapping-first strategy: phone → Attio record ID
+        const attioRecordId = await this._findAttioContactFromQuoWebhook(
+            contactPhone,
+        );
 
         const deepLink = webhookData.data.deepLink || '#';
 
@@ -1760,32 +1738,10 @@ ${statusDescription}`;
             `[Quo Webhook] Message direction: ${messageObject.direction}, contact: ${contactPhone}`,
         );
 
-        // Fetch Quo contact to get contactId for mapping lookup
-        let attioRecordId;
-        try {
-            const quoContacts = await this.quo.api.listContacts({
-                phoneNumbers: [contactPhone],
-                maxResults: 1,
-            });
-
-            if (quoContacts?.data?.[0]) {
-                // Use mapping-first strategy with Quo contact
-                attioRecordId = await this._findAttioContactFromQuoWebhook(
-                    quoContacts.data[0],
-                );
-            } else {
-                // No Quo contact found, fallback to direct phone search
-                console.log(
-                    `[Quo Webhook] No Quo contact found for ${contactPhone}, using phone search`,
-                );
-                attioRecordId = await this._findContactByPhone(contactPhone);
-            }
-        } catch (error) {
-            console.error(
-                `[Quo Webhook] Contact lookup failed: ${error.message}`,
-            );
-            throw error;
-        }
+        // Use mapping-first strategy: phone → Attio record ID
+        const attioRecordId = await this._findAttioContactFromQuoWebhook(
+            contactPhone,
+        );
 
         const phoneNumberDetails = await this.quo.api.getPhoneNumber(
             messageObject.phoneNumberId,
@@ -1999,22 +1955,69 @@ Received:
     }
 
     /**
+     * Create bidirectional mappings for a contact
+     * Stores mappings by both externalId AND phone number for efficient lookups
+     *
+     * @param {string} externalId - Attio record ID
+     * @param {string} phoneNumber - Contact phone number (will be normalized)
+     * @param {Object} additionalData - Additional mapping data (quoContactId, etc)
+     */
+    async _createBidirectionalMappings(
+        externalId,
+        phoneNumber,
+        additionalData = {},
+    ) {
+        const baseMapping = {
+            externalId,
+            phoneNumber,
+            entityType: 'people',
+            lastSyncedAt: new Date().toISOString(),
+            ...additionalData,
+        };
+
+        // Mapping 1: By externalId (for Attio → Quo sync)
+        await this.upsertMapping(externalId, baseMapping);
+
+        // Mapping 2: By phone number (for Quo webhook → Attio lookup)
+        if (phoneNumber) {
+            const normalizedPhone = this._normalizePhoneNumber(phoneNumber);
+            await this.upsertMapping(normalizedPhone, baseMapping);
+            console.log(
+                `[Mapping] Created bidirectional mappings: ${externalId} ↔ ${normalizedPhone}`,
+            );
+        } else {
+            console.log(`[Mapping] Created single mapping: ${externalId}`);
+        }
+    }
+
+    /**
      * Find Attio contact using mapping-first strategy (webhook optimization)
      *
      * Strategy:
-     * 1. Try O(1) mapping lookup by quoContactId (fast path)
-     * 2. Fallback to O(n) phone search (slow path)
+     * 1. Normalize phone number
+     * 2. Try O(1) mapping lookup by phone number (fast path)
+     * 3. Fallback to O(n) Attio API phone search (slow path)
+     * 4. Store mapping by phone number for future fast lookups
      *
-     * @param {Object} quoContact - Quo contact object from webhook
+     * @param {string} phoneNumber - Phone number from Quo webhook
      * @returns {Promise<string>} Attio record ID
      * @throws {Error} If contact not found
      */
-    async _findAttioContactFromQuoWebhook(quoContact) {
-        const quoContactId = quoContact.id;
-        const phoneNumber = quoContact.defaultFields?.phoneNumbers?.[0]?.value;
+    async _findAttioContactFromQuoWebhook(phoneNumber) {
+        if (!phoneNumber) {
+            throw new Error('Phone number is required for webhook lookup');
+        }
 
-        // STRATEGY 1: Try mapping lookup (O(1) - fast!)
-        const externalId = await this._getExternalIdFromMapping(quoContactId);
+        // Normalize phone number for consistent lookups
+        const normalizedPhone = this._normalizePhoneNumber(phoneNumber);
+        console.log(
+            `[Webhook Optimization] Looking up contact for ${phoneNumber} (normalized: ${normalizedPhone})`,
+        );
+
+        // STRATEGY 1: Try mapping lookup by phone number (O(1) - fast!)
+        const externalId = await this._getExternalIdFromMappingByPhone(
+            normalizedPhone,
+        );
         if (externalId) {
             console.log(
                 `[Webhook Optimization] ✓ Found via mapping cache: ${externalId}`,
@@ -2022,29 +2025,24 @@ Received:
             return externalId;
         }
 
-        // STRATEGY 2: Fallback to phone search (O(n) - slow)
-        if (!phoneNumber) {
-            throw new Error(
-                `Cannot find Attio contact: No mapping for Quo contact ${quoContactId} and no phone number available for search`,
-            );
-        }
-
+        // STRATEGY 2: Fallback to Attio API phone search (O(n) - slow)
         console.log(
-            `[Webhook Optimization] ✗ No mapping found, falling back to phone search for ${phoneNumber}`,
+            `[Webhook Optimization] ✗ No mapping found, falling back to Attio API search`,
         );
 
         try {
-            const attioRecordId = await this._findContactByPhone(phoneNumber);
-
-            // Create mapping for future fast lookups
-            console.log(
-                `[Webhook Optimization] Creating mapping for future lookups: ${attioRecordId} ↔ ${quoContactId}`,
+            const attioRecordId = await this._findContactByPhone(
+                normalizedPhone,
             );
-            await this.upsertMapping(attioRecordId, {
+
+            // STRATEGY 3: Store mapping by phone number for future fast lookups
+            console.log(
+                `[Webhook Optimization] Creating phone mapping for future lookups: ${normalizedPhone} → ${attioRecordId}`,
+            );
+            await this.upsertMapping(normalizedPhone, {
                 externalId: attioRecordId,
-                quoContactId: quoContactId,
+                phoneNumber: normalizedPhone,
                 entityType: 'people',
-                phoneNumber: phoneNumber,
                 lastSyncedAt: new Date().toISOString(),
                 syncMethod: 'webhook',
                 action: 'backfill',
@@ -2129,14 +2127,19 @@ Received:
                         );
                     }
 
-                    await this.upsertMapping(quoContact.externalId, {
-                        externalId: quoContact.externalId,
-                        quoContactId: createResponse.data.id,
-                        entityType: 'people',
-                        lastSyncedAt: new Date().toISOString(),
-                        syncMethod: 'webhook',
-                        action: 'created',
-                    });
+                    // Create bidirectional mappings (by externalId AND phone)
+                    const phoneNumber =
+                        createResponse.data.defaultFields.phoneNumbers?.[0]
+                            ?.value;
+                    await this._createBidirectionalMappings(
+                        quoContact.externalId,
+                        phoneNumber,
+                        {
+                            quoContactId: createResponse.data.id,
+                            syncMethod: 'webhook',
+                            action: 'created',
+                        },
+                    );
 
                     console.log(
                         `[Attio] ✓ Contact ${createResponse.data.id} created in Quo (externalId: ${quoContact.externalId})`,
@@ -2164,18 +2167,19 @@ Received:
                             `[Attio] Found existing contact: ${existingContact.id}`,
                         );
 
-                        // Step 2: Create mapping
-                        await this.upsertMapping(quoContact.externalId, {
-                            externalId: quoContact.externalId,
-                            quoContactId: existingContact.id,
-                            entityType: 'people',
-                            phoneNumber:
-                                existingContact.defaultFields.phoneNumbers?.[0]
-                                    ?.value,
-                            lastSyncedAt: new Date().toISOString(),
-                            syncMethod: 'webhook',
-                            action: 'conflict_resolved',
-                        });
+                        // Step 2: Create bidirectional mappings
+                        const phoneNumber =
+                            existingContact.defaultFields.phoneNumbers?.[0]
+                                ?.value;
+                        await this._createBidirectionalMappings(
+                            quoContact.externalId,
+                            phoneNumber,
+                            {
+                                quoContactId: existingContact.id,
+                                syncMethod: 'webhook',
+                                action: 'conflict_resolved',
+                            },
+                        );
 
                         // Step 3: PATCH existing contact with new data
                         const { externalId, ...updateData } = quoContact;
