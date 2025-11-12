@@ -1955,39 +1955,45 @@ Received:
     }
 
     /**
-     * Create bidirectional mappings for a contact
-     * Stores mappings by both externalId AND phone number for efficient lookups
+     * Create or update mapping for a contact (stored by phone number)
+     *
+     * Phone number is the key, mapping contains both externalId and quoContactId.
+     * Retrieves existing mapping first to avoid overwriting fields.
      *
      * @param {string} externalId - Attio record ID
      * @param {string} phoneNumber - Contact phone number (will be normalized)
      * @param {Object} additionalData - Additional mapping data (quoContactId, etc)
      */
-    async _createBidirectionalMappings(
+    async _upsertContactMapping(
         externalId,
         phoneNumber,
         additionalData = {},
     ) {
-        const baseMapping = {
-            externalId,
-            phoneNumber,
+        if (!phoneNumber) {
+            console.warn(
+                `[Mapping] No phone number provided for ${externalId}, skipping mapping`,
+            );
+            return;
+        }
+
+        const normalizedPhone = this._normalizePhoneNumber(phoneNumber);
+
+        // Retrieve existing mapping to merge (avoid overwriting)
+        const existingMapping = await this.getMapping(normalizedPhone);
+
+        const updatedMapping = {
+            ...(existingMapping || {}), // Preserve existing fields
+            externalId, // Always update externalId
+            phoneNumber: normalizedPhone, // Always update phone
             entityType: 'people',
             lastSyncedAt: new Date().toISOString(),
-            ...additionalData,
+            ...additionalData, // Merge in new data (quoContactId, etc)
         };
 
-        // Mapping 1: By externalId (for Attio → Quo sync)
-        await this.upsertMapping(externalId, baseMapping);
-
-        // Mapping 2: By phone number (for Quo webhook → Attio lookup)
-        if (phoneNumber) {
-            const normalizedPhone = this._normalizePhoneNumber(phoneNumber);
-            await this.upsertMapping(normalizedPhone, baseMapping);
-            console.log(
-                `[Mapping] Created bidirectional mappings: ${externalId} ↔ ${normalizedPhone}`,
-            );
-        } else {
-            console.log(`[Mapping] Created single mapping: ${externalId}`);
-        }
+        await this.upsertMapping(normalizedPhone, updatedMapping);
+        console.log(
+            `[Mapping] Updated mapping for ${normalizedPhone}: externalId=${externalId}, quoContactId=${updatedMapping.quoContactId || 'N/A'}`,
+        );
     }
 
     /**
@@ -2127,11 +2133,11 @@ Received:
                         );
                     }
 
-                    // Create bidirectional mappings (by externalId AND phone)
+                    // Create mapping by phone number
                     const phoneNumber =
                         createResponse.data.defaultFields.phoneNumbers?.[0]
                             ?.value;
-                    await this._createBidirectionalMappings(
+                    await this._upsertContactMapping(
                         quoContact.externalId,
                         phoneNumber,
                         {
@@ -2167,11 +2173,11 @@ Received:
                             `[Attio] Found existing contact: ${existingContact.id}`,
                         );
 
-                        // Step 2: Create bidirectional mappings
+                        // Step 2: Create mapping by phone number
                         const phoneNumber =
                             existingContact.defaultFields.phoneNumbers?.[0]
                                 ?.value;
-                        await this._createBidirectionalMappings(
+                        await this._upsertContactMapping(
                             quoContact.externalId,
                             phoneNumber,
                             {

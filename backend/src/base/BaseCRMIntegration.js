@@ -1040,26 +1040,30 @@ class BaseCRMIntegration extends IntegrationBase {
             if (fetchedContacts?.data) {
                 for (const createdContact of fetchedContacts.data) {
                     try {
-                        const mappingData = {
-                            externalId: createdContact.externalId,
-                            quoContactId: createdContact.id,
-                            entityType: 'people',
-                            lastSyncedAt: new Date().toISOString(),
-                            syncMethod: 'bulk',
-                            action: 'created',
-                        };
-
-                        // Create mapping by externalId
-                        await this.upsertMapping(createdContact.externalId, mappingData);
-
-                        // Also create mapping by phone number for webhook lookups
                         const phoneNumber = createdContact.defaultFields?.phoneNumbers?.[0]?.value;
-                        if (phoneNumber) {
-                            mappingData.phoneNumber = phoneNumber;
-                            await this.upsertMapping(phoneNumber, mappingData);
-                        }
 
-                        successCount++;
+                        if (phoneNumber) {
+                            // Store mapping by phone number (contains both IDs)
+                            const mappingData = {
+                                externalId: createdContact.externalId,
+                                quoContactId: createdContact.id,
+                                phoneNumber: phoneNumber,
+                                entityType: 'people',
+                                lastSyncedAt: new Date().toISOString(),
+                                syncMethod: 'bulk',
+                                action: 'created',
+                            };
+
+                            await this.upsertMapping(phoneNumber, mappingData);
+                            successCount++;
+                        } else {
+                            console.warn(`No phone number for ${createdContact.externalId}, skipping mapping`);
+                            errorCount++;
+                            errors.push({
+                                error: 'No phone number available',
+                                externalId: createdContact.externalId,
+                            });
+                        }
                     } catch (mappingError) {
                         console.error(`Failed to create mapping for ${createdContact.externalId}:`, mappingError);
                         errorCount++;
