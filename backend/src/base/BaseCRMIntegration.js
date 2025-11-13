@@ -1010,14 +1010,6 @@ class BaseCRMIntegration extends IntegrationBase {
     /**
      * Bulk upsert contacts to Quo and create mappings
      *
-     * Phase 1 Fix: Creates mappings after successful bulk contact creation
-     *
-     * Process:
-     * 1. Call bulk create (returns 202 Accepted, async processing)
-     * 2. Wait briefly for async processing to complete
-     * 3. Fetch created contacts by externalIds
-     * 4. Create mappings for each successfully created contact
-     *
      * @param {Array} contacts - Array of Quo contact objects
      * @returns {Promise<Object>} Upsert results with successCount, errorCount, errors
      */
