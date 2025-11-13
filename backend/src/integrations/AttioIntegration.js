@@ -1931,12 +1931,6 @@ Received:
     /**
      * Find Attio contact using mapping-first strategy (webhook optimization)
      *
-     * Strategy:
-     * 1. Normalize phone number
-     * 2. Try O(1) mapping lookup by phone number (fast path)
-     * 3. Fallback to O(n) Attio API phone search (slow path)
-     * 4. Store mapping by phone number for future fast lookups
-     *
      * @param {string} phoneNumber - Phone number from Quo webhook
      * @returns {Promise<string>} Attio record ID
      * @throws {Error} If contact not found
