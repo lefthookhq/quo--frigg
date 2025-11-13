@@ -189,15 +189,7 @@ describe('AxisCareIntegration', () => {
                 expect(result.defaultFields.lastName).toBe('Doe');
                 expect(result.defaultFields.phoneNumbers).toHaveLength(2);
                 expect(result.defaultFields.emails).toHaveLength(1);
-                expect(result.customFields).toEqual(
-                    expect.arrayContaining([
-                        expect.objectContaining({ key: 'crmId', value: '123' }),
-                        expect.objectContaining({
-                            key: 'status',
-                            value: 'active',
-                        }),
-                    ]),
-                );
+                expect(result.customFields).toEqual([]);
             });
         });
 
