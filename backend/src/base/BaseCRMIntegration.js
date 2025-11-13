@@ -1382,6 +1382,124 @@ class BaseCRMIntegration extends IntegrationBase {
 
         return true;
     }
+
+    /**
+     * Handle integration configuration updates
+     * This is called by Frigg framework's ON_UPDATE event
+     *
+     * Implements PATCH semantics:
+     * - Preserves fields not referenced in update
+     * - Updates fields that ARE referenced
+     * - Detects enabledPhoneIds changes and updates webhook subscriptions
+     *
+     * @param {Object} params - Update parameters
+     * @param {Object} params.config - New configuration (partial update)
+     * @returns {Promise<Object>} Validation result
+     */
+    async onUpdate(params) {
+        const updateConfig = params?.config || {};
+
+        console.log('[Config Update] Processing configuration update');
+
+        // PATCH semantics: Merge update into existing config (deep merge for nested objects)
+        const patchedConfig = this._deepMerge(this.config, updateConfig);
+
+        // Check if enabledPhoneIds changed (before updating config)
+        const oldPhoneIds = this.config?.enabledPhoneIds || [];
+        const newPhoneIds = patchedConfig?.enabledPhoneIds || [];
+        const phoneIdsChanged =
+            JSON.stringify([...oldPhoneIds].sort()) !==
+            JSON.stringify([...newPhoneIds].sort());
+
+        // Update integration config in database
+        await this.commands.updateIntegrationConfig({
+            integrationId: this.id,
+            config: patchedConfig,
+        });
+
+        // Update local config
+        this.config = patchedConfig;
+
+        console.log('[Config Update] ✓ Configuration patched and persisted');
+
+        // If phone IDs changed, update webhook subscriptions
+        if (phoneIdsChanged) {
+            if (!this.quo?.api) {
+                console.warn(
+                    '[Config Update] Phone IDs changed but Quo API not configured, skipping webhook update'
+                );
+            } else {
+                console.log('[Config Update] Phone IDs changed, updating webhooks');
+                try {
+                    // Pass old and new phone IDs directly to avoid re-reading config
+                    const messageWebhookId = this.config?.quoMessageWebhookId;
+                    const callWebhookId = this.config?.quoCallWebhookId;
+                    const callSummaryWebhookId = this.config?.quoCallSummaryWebhookId;
+
+                    if (!messageWebhookId || !callWebhookId || !callSummaryWebhookId) {
+                        throw new Error(
+                            'Webhooks not configured - cannot update phone number subscriptions'
+                        );
+                    }
+
+                    const updateData = {
+                        resourceIds: newPhoneIds,
+                    };
+
+                    await Promise.all([
+                        this.quo.api.updateWebhook(messageWebhookId, updateData),
+                        this.quo.api.updateWebhook(callWebhookId, updateData),
+                        this.quo.api.updateWebhook(callSummaryWebhookId, updateData),
+                    ]);
+
+                    console.log('[Config Update] ✓ Webhooks updated successfully');
+                } catch (error) {
+                    console.error('[Config Update] Failed to update webhooks:', error);
+                    throw error;
+                }
+            }
+        }
+
+        // Validate the patched config
+        const validationResult = await this.validateConfig();
+
+        console.log('[Config Update] ✓ Update complete');
+
+        return validationResult;
+    }
+
+    /**
+     * Deep merge two objects (helper for PATCH semantics)
+     * @private
+     * @param {Object} target - Target object (existing config)
+     * @param {Object} source - Source object (update config)
+     * @returns {Object} Merged object
+     */
+    _deepMerge(target, source) {
+        const output = { ...target };
+
+        if (!source) {
+            return output;
+        }
+
+        for (const key in source) {
+            if (source.hasOwnProperty(key)) {
+                if (
+                    source[key] &&
+                    typeof source[key] === 'object' &&
+                    !Array.isArray(source[key])
+                ) {
+                    // Recursively merge nested objects
+                    output[key] = this._deepMerge(target[key] || {}, source[key]);
+                } else {
+                    // Overwrite primitives and arrays
+                    output[key] = source[key];
+                }
+            }
+        }
+
+        return output;
+    }
 }
 
 module.exports = { BaseCRMIntegration };
