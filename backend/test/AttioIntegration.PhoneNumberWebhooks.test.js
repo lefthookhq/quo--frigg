@@ -1,6 +1,6 @@
 const AttioIntegration = require('../src/integrations/AttioIntegration');
 
-describe('AttioIntegration - Phone Number ID Webhook Subscriptions', () => {
+describe('BaseCRMIntegration - Phone Number ID Webhook Subscriptions', () => {
     let integration;
     let mockQuoApi;
     let mockCommands;
@@ -20,7 +20,7 @@ describe('AttioIntegration - Phone Number ID Webhook Subscriptions', () => {
             updateIntegrationConfig: jest.fn().mockResolvedValue({}),
         };
 
-        // Create integration instance
+        // Create integration instance (testing via AttioIntegration which extends BaseCRMIntegration)
         integration = new AttioIntegration({});
         integration.quo = { api: mockQuoApi };
         integration.commands = mockCommands;
