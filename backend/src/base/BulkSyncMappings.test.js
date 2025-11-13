@@ -85,12 +85,18 @@ describe('Bulk Sync Mapping Creation', () => {
                                 externalId: 'attio-person-1',
                                 source: 'test-crm',
                                 createdAt: new Date().toISOString(),
+                                defaultFields: {
+                                    phoneNumbers: [{ value: '+15551111111' }]
+                                }
                             },
                             {
                                 id: 'quo-contact-2',
                                 externalId: 'attio-person-2',
                                 source: 'test-crm',
                                 createdAt: new Date().toISOString(),
+                                defaultFields: {
+                                    phoneNumbers: [{ value: '+15552222222' }]
+                                }
                             },
                         ],
                         totalItems: 2,
@@ -110,22 +116,22 @@ describe('Bulk Sync Mapping Creation', () => {
             });
 
             expect(integration.upsertMapping).toHaveBeenCalledTimes(2);
-            expect(integration.upsertMapping).toHaveBeenCalledWith('attio-person-1', {
+            expect(integration.upsertMapping).toHaveBeenCalledWith('+15551111111', expect.objectContaining({
                 externalId: 'attio-person-1',
                 quoContactId: 'quo-contact-1',
+                phoneNumber: '+15551111111',
                 entityType: 'people',
-                lastSyncedAt: expect.any(String),
                 syncMethod: 'bulk',
                 action: 'created',
-            });
-            expect(integration.upsertMapping).toHaveBeenCalledWith('attio-person-2', {
+            }));
+            expect(integration.upsertMapping).toHaveBeenCalledWith('+15552222222', expect.objectContaining({
                 externalId: 'attio-person-2',
                 quoContactId: 'quo-contact-2',
+                phoneNumber: '+15552222222',
                 entityType: 'people',
-                lastSyncedAt: expect.any(String),
                 syncMethod: 'bulk',
                 action: 'created',
-            });
+            }));
 
             expect(result).toEqual({
                 successCount: 2,
@@ -150,6 +156,9 @@ describe('Bulk Sync Mapping Creation', () => {
                                 id: 'quo-contact-1',
                                 externalId: 'attio-person-1',
                                 source: 'test-crm',
+                                defaultFields: {
+                                    phoneNumbers: [{ value: '+15551111111' }]
+                                }
                             },
                         ],
                         totalItems: 1,
@@ -187,8 +196,16 @@ describe('Bulk Sync Mapping Creation', () => {
                     bulkCreateContacts: jest.fn().mockResolvedValue({ status: 202 }),
                     listContacts: jest.fn().mockResolvedValue({
                         data: [
-                            { id: 'quo-contact-1', externalId: 'attio-person-1' },
-                            { id: 'quo-contact-2', externalId: 'attio-person-2' },
+                            {
+                                id: 'quo-contact-1',
+                                externalId: 'attio-person-1',
+                                defaultFields: { phoneNumbers: [{ value: '+15551111111' }] }
+                            },
+                            {
+                                id: 'quo-contact-2',
+                                externalId: 'attio-person-2',
+                                defaultFields: { phoneNumbers: [{ value: '+15552222222' }] }
+                            },
                         ],
                         totalItems: 2,
                     }),
