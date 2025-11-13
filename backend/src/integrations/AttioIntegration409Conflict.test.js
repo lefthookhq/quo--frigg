@@ -1,16 +1,6 @@
-/**
- * AttioIntegration 409 Conflict Handling Tests
- *
- * Tests for Phase 2 bug fix:
- * - Handle 409 conflicts when webhook attempts to create contact that already exists
- * - Create mappings for existing contacts to allow activity logging
- *
- * References: https://github.com/lefthookhq/quo--frigg/issues/18
- */
-
 const AttioIntegration = require('./AttioIntegration');
 
-describe('AttioIntegration - 409 Conflict Handling (Issue #18 Phase 2)', () => {
+describe('AttioIntegration - 409 Conflict Handling', () => {
     let integration;
 
     beforeEach(() => {

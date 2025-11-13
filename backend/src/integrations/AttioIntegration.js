@@ -995,13 +995,15 @@ class AttioIntegration extends BaseCRMIntegration {
             console.error('[Attio] Failed to setup webhook:', error);
 
             // Non-fatal error handling
-            await this.updateIntegrationMessages.execute(
-                this.id,
-                'errors',
-                'Attio Webhook Setup Failed',
-                `Could not register webhook with Attio: ${error.message}. Automatic sync disabled. Please check OAuth scopes include 'webhook:read-write' and try again.`,
-                Date.now(),
-            );
+            if (this.id) {
+                await this.updateIntegrationMessages.execute(
+                    this.id,
+                    'errors',
+                    'Attio Webhook Setup Failed',
+                    `Could not register webhook with Attio: ${error.message}. Automatic sync disabled. Please check OAuth scopes include 'webhook:read-write' and try again.`,
+                    Date.now(),
+                );
+            }
 
             return {
                 status: 'failed',
@@ -1178,13 +1180,15 @@ class AttioIntegration extends BaseCRMIntegration {
             }
 
             // Fatal error - both webhooks required
-            await this.updateIntegrationMessages.execute(
-                this.id,
-                'errors',
-                'Quo Webhook Setup Failed',
-                `Could not register webhooks with Quo: ${error.message}. Integration requires both message and call webhooks to function properly.`,
-                Date.now(),
-            );
+            if (this.id) {
+                await this.updateIntegrationMessages.execute(
+                    this.id,
+                    'errors',
+                    'Quo Webhook Setup Failed',
+                    `Could not register webhooks with Quo: ${error.message}. Integration requires both message and call webhooks to function properly.`,
+                    Date.now(),
+                );
+            }
 
             return {
                 status: 'failed',
@@ -1207,10 +1211,7 @@ class AttioIntegration extends BaseCRMIntegration {
         };
 
         try {
-            // Setup Attio webhook
             results.attio = await this.setupAttioWebhook();
-
-            // Setup Quo webhooks
             results.quo = await this.setupQuoWebhook();
 
             // BOTH required - fail if either fails
@@ -1236,15 +1237,17 @@ class AttioIntegration extends BaseCRMIntegration {
         } catch (error) {
             console.error('[Webhook Setup] Failed:', error);
 
-            await this.updateIntegrationMessages.execute(
-                this.id,
-                'errors',
-                'Webhook Setup Failed',
-                `Failed to setup webhooks: ${error.message}`,
-                Date.now(),
-            );
+            if (this.id) {
+                await this.updateIntegrationMessages.execute(
+                    this.id,
+                    'errors',
+                    'Webhook Setup Failed',
+                    `Failed to setup webhooks: ${error.message}`,
+                    Date.now(),
+                );
+            }
 
-            throw error; // Re-throw since both are required
+            throw error;
         }
     }
 
@@ -1470,16 +1473,16 @@ class AttioIntegration extends BaseCRMIntegration {
         } catch (error) {
             console.error('[Attio Webhook] Processing error:', error);
 
-            // Log error to integration messages
-            await this.updateIntegrationMessages.execute(
-                this.id,
-                'errors',
-                'Attio Webhook Processing Error',
-                `Failed to process Attio webhook: ${error.message}`,
-                Date.now(),
-            );
+            if (this.id) {
+                await this.updateIntegrationMessages.execute(
+                    this.id,
+                    'errors',
+                    'Attio Webhook Processing Error',
+                    `Failed to process Attio webhook: ${error.message}`,
+                    Date.now(),
+                );
+            }
 
-            // Re-throw for SQS retry and DLQ
             throw error;
         }
     }
@@ -1525,15 +1528,17 @@ class AttioIntegration extends BaseCRMIntegration {
         } catch (error) {
             console.error('[Quo Webhook] Processing error:', error);
 
-            await this.updateIntegrationMessages.execute(
-                this.id,
-                'errors',
-                'Quo Webhook Processing Error',
-                `Failed to process ${eventType}: ${error.message}`,
-                Date.now(),
-            );
+            if (this.id) {
+                await this.updateIntegrationMessages.execute(
+                    this.id,
+                    'errors',
+                    'Quo Webhook Processing Error',
+                    `Failed to process ${eventType}: ${error.message}`,
+                    Date.now(),
+                );
+            }
 
-            throw error; // Re-throw for SQS retry
+            throw error;
         }
     }
 
@@ -1565,7 +1570,6 @@ class AttioIntegration extends BaseCRMIntegration {
                 ? participants[1]
                 : participants[0];
 
-        // Use mapping-first strategy: phone → Attio record ID
         const attioRecordId = await this._findAttioContactFromQuoWebhook(
             contactPhone,
         );
@@ -1667,7 +1671,6 @@ ${statusDescription}`;
             `[Quo Webhook] Message direction: ${messageObject.direction}, contact: ${contactPhone}`,
         );
 
-        // Use mapping-first strategy: phone → Attio record ID
         const attioRecordId = await this._findAttioContactFromQuoWebhook(
             contactPhone,
         );

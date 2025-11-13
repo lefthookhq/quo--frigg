@@ -1,13 +1,3 @@
-/**
- * Bulk Sync Mapping Tests
- *
- * Tests for Phase 1 & 2 bug fixes:
- * - Phase 1: Bulk sync should create mappings after successful contact creation
- * - Phase 2: Webhook sync should handle 409 conflicts by creating mappings
- *
- * References: https://github.com/lefthookhq/quo--frigg/issues/18
- */
-
 const { BaseCRMIntegration } = require('./BaseCRMIntegration');
 const {
     createMockProcessManager,
@@ -16,7 +6,7 @@ const {
     buildQuoContact,
 } = require('./__tests__/helpers');
 
-describe('Bulk Sync Mapping Creation (Issue #18)', () => {
+describe('Bulk Sync Mapping Creation', () => {
     let integration;
     let mockProcessManager;
     let mockQueueManager;
