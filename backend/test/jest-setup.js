@@ -48,6 +48,17 @@ jest.mock('@friggframework/core', () => ({
     Entity: class Entity {},
     UserModel: class UserModel {},
     IntegrationModel: class IntegrationModel {},
+    get: (obj, path) => {
+        // Simple lodash.get implementation for testing
+        if (!obj || !path) return undefined;
+        const keys = path.split('.');
+        let result = obj;
+        for (const key of keys) {
+            result = result?.[key];
+            if (result === undefined) return undefined;
+        }
+        return result;
+    },
     Requester: class Requester {
         constructor(params = {}) {
             this.baseUrl = params.baseUrl || '';
@@ -59,6 +70,9 @@ jest.mock('@friggframework/core', () => ({
             this.baseUrl = params.baseUrl || '';
             this.headers = params.headers || {};
             this.apiKey = params.apiKey || '';
+        }
+        setApiKey(key) {
+            this.apiKey = key;
         }
     },
     OAuth2Requester: class OAuth2Requester {
