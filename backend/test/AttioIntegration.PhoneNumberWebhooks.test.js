@@ -259,8 +259,11 @@ describe('BaseCRMIntegration - Phone Number ID Webhook Subscriptions', () => {
             // Assert
             expect(result).toEqual({
                 messageWebhookId: 'webhook-msg-123',
+                messageWebhookKey: 'msg-key',
                 callWebhookId: 'webhook-call-456',
+                callWebhookKey: 'call-key',
                 callSummaryWebhookId: 'webhook-summary-789',
+                callSummaryWebhookKey: 'summary-key',
             });
         });
     });

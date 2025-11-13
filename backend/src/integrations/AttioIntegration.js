@@ -1102,99 +1102,28 @@ class AttioIntegration extends BaseCRMIntegration {
                 `[Quo] Registering message and call webhooks at: ${webhookUrl}`,
             );
 
-            const messageWebhookResponse =
-                await this.quo.api.createMessageWebhook({
-                    url: webhookUrl,
-                    events: this.constructor.WEBHOOK_EVENTS.QUO_MESSAGES,
-                    label: this.constructor.WEBHOOK_LABELS.QUO_MESSAGES,
-                    status: 'enabled',
-                });
+            // STEP 1: Fetch phone numbers and store IDs in config
+            console.log('[Quo] Fetching phone numbers for webhook filtering');
+            await this._fetchAndStoreEnabledPhoneIds();
 
-            if (!messageWebhookResponse?.data?.id) {
-                throw new Error(
-                    'Invalid Quo message webhook response: missing webhook ID',
-                );
-            }
+            // STEP 2: Create webhooks with phone number IDs as resourceIds
+            const {
+                messageWebhookId,
+                messageWebhookKey,
+                callWebhookId,
+                callWebhookKey,
+                callSummaryWebhookId,
+                callSummaryWebhookKey,
+            } = await this._createQuoWebhooksWithPhoneIds(webhookUrl);
 
-            if (!messageWebhookResponse.data.key) {
-                throw new Error(
-                    'Invalid Quo message webhook response: missing webhook key',
-                );
-            }
-
-            const messageWebhookId = messageWebhookResponse.data.id;
-            const messageWebhookKey = messageWebhookResponse.data.key;
-
-            createdWebhooks.push({
-                type: 'message',
-                id: messageWebhookId,
-            });
-
-            console.log(
-                `[Quo] ✓ Message webhook registered with ID: ${messageWebhookId}`,
+            createdWebhooks.push(
+                { type: 'message', id: messageWebhookId },
+                { type: 'call', id: callWebhookId },
+                { type: 'callSummary', id: callSummaryWebhookId }
             );
 
-            const callWebhookResponse = await this.quo.api.createCallWebhook({
-                url: webhookUrl,
-                events: this.constructor.WEBHOOK_EVENTS.QUO_CALLS,
-                label: this.constructor.WEBHOOK_LABELS.QUO_CALLS,
-                status: 'enabled',
-            });
-
-            if (!callWebhookResponse?.data?.id) {
-                throw new Error(
-                    'Invalid Quo call webhook response: missing webhook ID',
-                );
-            }
-
-            if (!callWebhookResponse.data.key) {
-                throw new Error(
-                    'Invalid Quo call webhook response: missing webhook key',
-                );
-            }
-
-            const callWebhookId = callWebhookResponse.data.id;
-            const callWebhookKey = callWebhookResponse.data.key;
-
-            createdWebhooks.push({
-                type: 'call',
-                id: callWebhookId,
-            });
-
             console.log(
-                `[Quo] ✓ Call webhook registered with ID: ${callWebhookId}`,
-            );
-
-            const callSummaryWebhookResponse =
-                await this.quo.api.createCallSummaryWebhook({
-                    url: webhookUrl,
-                    events: this.constructor.WEBHOOK_EVENTS.QUO_CALL_SUMMARIES,
-                    label: this.constructor.WEBHOOK_LABELS.QUO_CALL_SUMMARIES,
-                    status: 'enabled',
-                });
-
-            if (!callSummaryWebhookResponse?.data?.id) {
-                throw new Error(
-                    'Invalid Quo call-summary webhook response: missing webhook ID',
-                );
-            }
-
-            if (!callSummaryWebhookResponse.data.key) {
-                throw new Error(
-                    'Invalid Quo call-summary webhook response: missing webhook key',
-                );
-            }
-
-            const callSummaryWebhookId = callSummaryWebhookResponse.data.id;
-            const callSummaryWebhookKey = callSummaryWebhookResponse.data.key;
-
-            createdWebhooks.push({
-                type: 'callSummary',
-                id: callSummaryWebhookId,
-            });
-
-            console.log(
-                `[Quo] ✓ Call-summary webhook registered with ID: ${callSummaryWebhookId}`,
+                `[Quo] ✓ All webhooks registered with phone number filtering`,
             );
 
             const updatedConfig = {

@@ -1276,7 +1276,14 @@ class BaseCRMIntegration extends IntegrationBase {
             );
         }
 
+        if (!messageWebhookResponse.data.key) {
+            throw new Error(
+                'Invalid Quo message webhook response: missing webhook key'
+            );
+        }
+
         const messageWebhookId = messageWebhookResponse.data.id;
+        const messageWebhookKey = messageWebhookResponse.data.key;
 
         // Create call webhook
         const callWebhookResponse = await this.quo.api.createCallWebhook({
@@ -1291,7 +1298,14 @@ class BaseCRMIntegration extends IntegrationBase {
             );
         }
 
+        if (!callWebhookResponse.data.key) {
+            throw new Error(
+                'Invalid Quo call webhook response: missing webhook key'
+            );
+        }
+
         const callWebhookId = callWebhookResponse.data.id;
+        const callWebhookKey = callWebhookResponse.data.key;
 
         // Create call summary webhook
         const callSummaryWebhookResponse =
@@ -1307,14 +1321,24 @@ class BaseCRMIntegration extends IntegrationBase {
             );
         }
 
+        if (!callSummaryWebhookResponse.data.key) {
+            throw new Error(
+                'Invalid Quo call-summary webhook response: missing webhook key'
+            );
+        }
+
         const callSummaryWebhookId = callSummaryWebhookResponse.data.id;
+        const callSummaryWebhookKey = callSummaryWebhookResponse.data.key;
 
         console.log('[Quo] ✓ Webhooks created with phone number IDs');
 
         return {
             messageWebhookId,
+            messageWebhookKey,
             callWebhookId,
+            callWebhookKey,
             callSummaryWebhookId,
+            callSummaryWebhookKey,
         };
     }
 
