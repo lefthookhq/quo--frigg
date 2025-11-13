@@ -43,13 +43,21 @@ const ZohoCRMIntegration = require('./ZohoCRMIntegration');
 
 describe('ZohoCRMIntegration (Refactored)', () => {
     let integration;
-    let mockZohoApi;
+    let mockZohoCrm;
     let mockQuoApi;
 
     beforeEach(() => {
         // Create mock APIs
-        mockZohoApi = {
+        mockZohoCrm = {
             api: {
+                listContacts: jest.fn(),
+                listAccounts: jest.fn(),
+                getContact: jest.fn(),
+                getAccount: jest.fn(),
+                searchContacts: jest.fn(),
+                createNote: jest.fn(),
+                enableNotification: jest.fn(),
+                disableNotification: jest.fn(),
                 leads: {
                     getAll: jest.fn(),
                     get: jest.fn(),
@@ -77,15 +85,31 @@ describe('ZohoCRMIntegration (Refactored)', () => {
             api: {
                 upsertContact: jest.fn(),
                 logActivity: jest.fn(),
+                listPhoneNumbers: jest.fn(),
+                createMessageWebhook: jest.fn(),
+                createCallWebhook: jest.fn(),
+                createCallSummaryWebhook: jest.fn(),
+                deleteWebhook: jest.fn(),
             },
         };
 
         // Create integration instance
         integration = new ZohoCRMIntegration();
-        integration.zoho = mockZohoApi;
+        integration.zohoCrm = mockZohoCrm;
         integration.quo = mockQuoApi;
         integration.id = 'test-integration-id';
         integration.userId = 'test-user-id';
+
+        // Mock base class methods
+        integration._fetchAndStoreEnabledPhoneIds = jest.fn().mockResolvedValue(['phone-1', 'phone-2']);
+        integration._createQuoWebhooksWithPhoneIds = jest.fn().mockResolvedValue({
+            messageWebhookId: 'quo-msg-wh',
+            messageWebhookKey: 'quo-msg-key',
+            callWebhookId: 'quo-call-wh',
+            callWebhookKey: 'quo-call-key',
+            callSummaryWebhookId: 'quo-summary-wh',
+            callSummaryWebhookKey: 'quo-summary-key',
+        });
     });
 
     describe('Static Configuration', () => {
@@ -365,30 +389,23 @@ describe('ZohoCRMIntegration (Refactored)', () => {
                         ],
                     });
 
-                // Mock Quo webhook setup  
-                mockQuo.api.createMessageWebhook = jest
-                    .fn()
-                    .mockResolvedValue({
-                        data: {
-                            id: 'message-webhook-123',
-                            key: 'message-key',
-                        },
-                    });
-                mockQuo.api.createCallWebhook = jest.fn().mockResolvedValue({
-                    data: { id: 'call-webhook-123', key: 'call-key' },
+                // Mock Quo webhook creation
+                mockQuoApi.api.createMessageWebhook = jest.fn().mockResolvedValue({
+                    data: { id: 'msg-wh-123', key: 'msg-key' }
                 });
-                mockQuo.api.createCallSummaryWebhook = jest
-                    .fn()
-                    .mockResolvedValue({
-                        data: {
-                            id: 'callsummary-webhook-123',
-                            key: 'callsummary-key',
-                        },
-                    });
+                mockQuoApi.api.createCallWebhook = jest.fn().mockResolvedValue({
+                    data: { id: 'call-wh-123', key: 'call-key' }
+                });
+                mockQuoApi.api.createCallSummaryWebhook = jest.fn().mockResolvedValue({
+                    data: { id: 'summary-wh-123', key: 'summary-key' }
+                });
 
-                integration.commands.updateIntegrationConfig = jest
-                    .fn()
-                    .mockResolvedValue({});
+                integration.commands = {
+                    updateIntegrationConfig: jest.fn().mockResolvedValue({}),
+                };
+                integration.updateIntegrationMessages = {
+                    execute: jest.fn().mockResolvedValue({}),
+                };
 
                 process.env.BASE_URL = 'https://test.com';
 
@@ -423,7 +440,7 @@ describe('ZohoCRMIntegration (Refactored)', () => {
             it('should fetch contact by ID', async () => {
                 const mockContact = { id: 'contact-123', First_Name: 'John' };
                 mockZohoCrm.api.getContact.mockResolvedValue({
-                    data: [mockContact],
+                    data: mockContact,
                 });
 
                 const result = await integration.fetchPersonById('contact-123');
@@ -443,7 +460,7 @@ describe('ZohoCRMIntegration (Refactored)', () => {
                     new Error('Not found'),
                 );
                 mockZohoCrm.api.getAccount.mockResolvedValue({
-                    data: [mockAccount],
+                    data: mockAccount,
                 });
 
                 const result = await integration.fetchPersonById('account-456');
