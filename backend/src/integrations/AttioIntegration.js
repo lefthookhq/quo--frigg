@@ -440,14 +440,6 @@ class AttioIntegration extends BaseCRMIntegration {
                     );
             }
 
-            await this.upsertMapping(record_id, {
-                externalId: record_id,
-                entityType: object_type,
-                lastSyncedAt: new Date().toISOString(),
-                syncMethod: 'webhook',
-                action: 'created',
-            });
-
             console.log(
                 `[Attio Webhook] ✓ Synced ${object_type} ${record_id} to Quo`,
             );
@@ -1003,13 +995,15 @@ class AttioIntegration extends BaseCRMIntegration {
             console.error('[Attio] Failed to setup webhook:', error);
 
             // Non-fatal error handling
-            await this.updateIntegrationMessages.execute(
-                this.id,
-                'errors',
-                'Attio Webhook Setup Failed',
-                `Could not register webhook with Attio: ${error.message}. Automatic sync disabled. Please check OAuth scopes include 'webhook:read-write' and try again.`,
-                Date.now(),
-            );
+            if (this.id) {
+                await this.updateIntegrationMessages.execute(
+                    this.id,
+                    'errors',
+                    'Attio Webhook Setup Failed',
+                    `Could not register webhook with Attio: ${error.message}. Automatic sync disabled. Please check OAuth scopes include 'webhook:read-write' and try again.`,
+                    Date.now(),
+                );
+            }
 
             return {
                 status: 'failed',
@@ -1110,99 +1104,28 @@ class AttioIntegration extends BaseCRMIntegration {
                 `[Quo] Registering message and call webhooks at: ${webhookUrl}`,
             );
 
-            const messageWebhookResponse =
-                await this.quo.api.createMessageWebhook({
-                    url: webhookUrl,
-                    events: this.constructor.WEBHOOK_EVENTS.QUO_MESSAGES,
-                    label: this.constructor.WEBHOOK_LABELS.QUO_MESSAGES,
-                    status: 'enabled',
-                });
+            // STEP 1: Fetch phone numbers and store IDs in config
+            console.log('[Quo] Fetching phone numbers for webhook filtering');
+            await this._fetchAndStoreEnabledPhoneIds();
 
-            if (!messageWebhookResponse?.data?.id) {
-                throw new Error(
-                    'Invalid Quo message webhook response: missing webhook ID',
-                );
-            }
+            // STEP 2: Create webhooks with phone number IDs as resourceIds
+            const {
+                messageWebhookId,
+                messageWebhookKey,
+                callWebhookId,
+                callWebhookKey,
+                callSummaryWebhookId,
+                callSummaryWebhookKey,
+            } = await this._createQuoWebhooksWithPhoneIds(webhookUrl);
 
-            if (!messageWebhookResponse.data.key) {
-                throw new Error(
-                    'Invalid Quo message webhook response: missing webhook key',
-                );
-            }
-
-            const messageWebhookId = messageWebhookResponse.data.id;
-            const messageWebhookKey = messageWebhookResponse.data.key;
-
-            createdWebhooks.push({
-                type: 'message',
-                id: messageWebhookId,
-            });
-
-            console.log(
-                `[Quo] ✓ Message webhook registered with ID: ${messageWebhookId}`,
+            createdWebhooks.push(
+                { type: 'message', id: messageWebhookId },
+                { type: 'call', id: callWebhookId },
+                { type: 'callSummary', id: callSummaryWebhookId }
             );
 
-            const callWebhookResponse = await this.quo.api.createCallWebhook({
-                url: webhookUrl,
-                events: this.constructor.WEBHOOK_EVENTS.QUO_CALLS,
-                label: this.constructor.WEBHOOK_LABELS.QUO_CALLS,
-                status: 'enabled',
-            });
-
-            if (!callWebhookResponse?.data?.id) {
-                throw new Error(
-                    'Invalid Quo call webhook response: missing webhook ID',
-                );
-            }
-
-            if (!callWebhookResponse.data.key) {
-                throw new Error(
-                    'Invalid Quo call webhook response: missing webhook key',
-                );
-            }
-
-            const callWebhookId = callWebhookResponse.data.id;
-            const callWebhookKey = callWebhookResponse.data.key;
-
-            createdWebhooks.push({
-                type: 'call',
-                id: callWebhookId,
-            });
-
             console.log(
-                `[Quo] ✓ Call webhook registered with ID: ${callWebhookId}`,
-            );
-
-            const callSummaryWebhookResponse =
-                await this.quo.api.createCallSummaryWebhook({
-                    url: webhookUrl,
-                    events: this.constructor.WEBHOOK_EVENTS.QUO_CALL_SUMMARIES,
-                    label: this.constructor.WEBHOOK_LABELS.QUO_CALL_SUMMARIES,
-                    status: 'enabled',
-                });
-
-            if (!callSummaryWebhookResponse?.data?.id) {
-                throw new Error(
-                    'Invalid Quo call-summary webhook response: missing webhook ID',
-                );
-            }
-
-            if (!callSummaryWebhookResponse.data.key) {
-                throw new Error(
-                    'Invalid Quo call-summary webhook response: missing webhook key',
-                );
-            }
-
-            const callSummaryWebhookId = callSummaryWebhookResponse.data.id;
-            const callSummaryWebhookKey = callSummaryWebhookResponse.data.key;
-
-            createdWebhooks.push({
-                type: 'callSummary',
-                id: callSummaryWebhookId,
-            });
-
-            console.log(
-                `[Quo] ✓ Call-summary webhook registered with ID: ${callSummaryWebhookId}`,
+                `[Quo] ✓ All webhooks registered with phone number filtering`,
             );
 
             const updatedConfig = {
@@ -1257,13 +1180,15 @@ class AttioIntegration extends BaseCRMIntegration {
             }
 
             // Fatal error - both webhooks required
-            await this.updateIntegrationMessages.execute(
-                this.id,
-                'errors',
-                'Quo Webhook Setup Failed',
-                `Could not register webhooks with Quo: ${error.message}. Integration requires both message and call webhooks to function properly.`,
-                Date.now(),
-            );
+            if (this.id) {
+                await this.updateIntegrationMessages.execute(
+                    this.id,
+                    'errors',
+                    'Quo Webhook Setup Failed',
+                    `Could not register webhooks with Quo: ${error.message}. Integration requires both message and call webhooks to function properly.`,
+                    Date.now(),
+                );
+            }
 
             return {
                 status: 'failed',
@@ -1274,21 +1199,11 @@ class AttioIntegration extends BaseCRMIntegration {
 
     /**
      * Setup webhooks with both Attio and Quo
-     * Called during onCreate lifecycle (BaseCRMIntegration) or from handlePostCreateSetup queue handler
+     * Called during onCreate lifecycle (BaseCRMIntegration)
      * Orchestrates webhook setup for both services - BOTH required for success
-     * 
-     * @param {Object} [params] - Optional parameters
-     * @param {string} [params.integrationId] - Integration ID (required when called from queue context)
      * @returns {Promise<Object>} Setup result
      */
-    async setupWebhooks({ integrationId } = {}) {
-        // Use provided integrationId or fall back to this.id
-        const effectiveIntegrationId = integrationId || this.id;
-
-        if (!effectiveIntegrationId) {
-            throw new Error('Integration ID is required for webhook setup');
-        }
-
+    async setupWebhooks() {
         const results = {
             attio: null,
             quo: null,
@@ -1296,11 +1211,8 @@ class AttioIntegration extends BaseCRMIntegration {
         };
 
         try {
-            // Setup Attio webhook (pass integrationId for queue context)
-            results.attio = await this.setupAttioWebhook({ integrationId: effectiveIntegrationId });
-
-            // Setup Quo webhooks (pass integrationId for queue context)
-            results.quo = await this.setupQuoWebhook({ integrationId: effectiveIntegrationId });
+            results.attio = await this.setupAttioWebhook();
+            results.quo = await this.setupQuoWebhook();
 
             // BOTH required - fail if either fails
             if (
@@ -1325,15 +1237,17 @@ class AttioIntegration extends BaseCRMIntegration {
         } catch (error) {
             console.error('[Webhook Setup] Failed:', error);
 
-            await this.updateIntegrationMessages.execute(
-                effectiveIntegrationId,
-                'errors',
-                'Webhook Setup Failed',
-                `Failed to setup webhooks: ${error.message}`,
-                Date.now(),
-            );
+            if (this.id) {
+                await this.updateIntegrationMessages.execute(
+                    this.id,
+                    'errors',
+                    'Webhook Setup Failed',
+                    `Failed to setup webhooks: ${error.message}`,
+                    Date.now(),
+                );
+            }
 
-            throw error; // Re-throw since both are required
+            throw error;
         }
     }
 
@@ -1559,16 +1473,16 @@ class AttioIntegration extends BaseCRMIntegration {
         } catch (error) {
             console.error('[Attio Webhook] Processing error:', error);
 
-            // Log error to integration messages
-            await this.updateIntegrationMessages.execute(
-                this.id,
-                'errors',
-                'Attio Webhook Processing Error',
-                `Failed to process Attio webhook: ${error.message}`,
-                Date.now(),
-            );
+            if (this.id) {
+                await this.updateIntegrationMessages.execute(
+                    this.id,
+                    'errors',
+                    'Attio Webhook Processing Error',
+                    `Failed to process Attio webhook: ${error.message}`,
+                    Date.now(),
+                );
+            }
 
-            // Re-throw for SQS retry and DLQ
             throw error;
         }
     }
@@ -1614,15 +1528,17 @@ class AttioIntegration extends BaseCRMIntegration {
         } catch (error) {
             console.error('[Quo Webhook] Processing error:', error);
 
-            await this.updateIntegrationMessages.execute(
-                this.id,
-                'errors',
-                'Quo Webhook Processing Error',
-                `Failed to process ${eventType}: ${error.message}`,
-                Date.now(),
-            );
+            if (this.id) {
+                await this.updateIntegrationMessages.execute(
+                    this.id,
+                    'errors',
+                    'Quo Webhook Processing Error',
+                    `Failed to process ${eventType}: ${error.message}`,
+                    Date.now(),
+                );
+            }
 
-            throw error; // Re-throw for SQS retry
+            throw error;
         }
     }
 
@@ -1654,7 +1570,9 @@ class AttioIntegration extends BaseCRMIntegration {
                 ? participants[1]
                 : participants[0];
 
-        const attioRecordId = await this._findAttioContactByPhone(contactPhone);
+        const attioRecordId = await this._findAttioContactFromQuoWebhook(
+            contactPhone,
+        );
 
         const deepLink = webhookData.data.deepLink || '#';
 
@@ -1753,7 +1671,9 @@ ${statusDescription}`;
             `[Quo Webhook] Message direction: ${messageObject.direction}, contact: ${contactPhone}`,
         );
 
-        const attioRecordId = await this._findAttioContactByPhone(contactPhone);
+        const attioRecordId = await this._findAttioContactFromQuoWebhook(
+            contactPhone,
+        );
 
         const phoneNumberDetails = await this.quo.api.getPhoneNumber(
             messageObject.phoneNumberId,
@@ -1954,6 +1874,121 @@ Received:
         }
     }
 
+    /**
+     * Override: BaseCRMIntegration._findContactByPhone
+     * Attio supports phone-based contact search via API
+     *
+     * @param {string} phoneNumber - Phone number to search
+     * @returns {Promise<string>} Attio record ID
+     * @throws {Error} If contact not found
+     */
+    async _findContactByPhone(phoneNumber) {
+        return await this._findAttioContactByPhone(phoneNumber);
+    }
+
+    /**
+     * Create or update mapping for a contact (stored by phone number)
+     *
+     * Phone number is the key, mapping contains both externalId and quoContactId.
+     * Retrieves existing mapping first to avoid overwriting fields.
+     *
+     * @param {string} externalId - Attio record ID
+     * @param {string} phoneNumber - Contact phone number (will be normalized)
+     * @param {Object} additionalData - Additional mapping data (quoContactId, etc)
+     */
+    async _upsertContactMapping(
+        externalId,
+        phoneNumber,
+        additionalData = {},
+    ) {
+        if (!phoneNumber) {
+            console.warn(
+                `[Mapping] No phone number provided for ${externalId}, skipping mapping`,
+            );
+            return;
+        }
+
+        const normalizedPhone = this._normalizePhoneNumber(phoneNumber);
+
+        // Retrieve existing mapping to merge (avoid overwriting)
+        const existingMapping = await this.getMapping(normalizedPhone);
+
+        const updatedMapping = {
+            ...(existingMapping || {}), // Preserve existing fields
+            externalId, // Always update externalId
+            phoneNumber: normalizedPhone, // Always update phone
+            entityType: 'people',
+            lastSyncedAt: new Date().toISOString(),
+            ...additionalData, // Merge in new data (quoContactId, etc)
+        };
+
+        await this.upsertMapping(normalizedPhone, updatedMapping);
+        console.log(
+            `[Mapping] Updated mapping for ${normalizedPhone}: externalId=${externalId}, quoContactId=${updatedMapping.quoContactId || 'N/A'}`,
+        );
+    }
+
+    /**
+     * Find Attio contact using mapping-first strategy (webhook optimization)
+     *
+     * @param {string} phoneNumber - Phone number from Quo webhook
+     * @returns {Promise<string>} Attio record ID
+     * @throws {Error} If contact not found
+     */
+    async _findAttioContactFromQuoWebhook(phoneNumber) {
+        if (!phoneNumber) {
+            throw new Error('Phone number is required for webhook lookup');
+        }
+
+        // Normalize phone number for consistent lookups
+        const normalizedPhone = this._normalizePhoneNumber(phoneNumber);
+        console.log(
+            `[Webhook Optimization] Looking up contact for ${phoneNumber} (normalized: ${normalizedPhone})`,
+        );
+
+        // STRATEGY 1: Try mapping lookup by phone number (O(1) - fast!)
+        const externalId = await this._getExternalIdFromMappingByPhone(
+            normalizedPhone,
+        );
+        if (externalId) {
+            console.log(
+                `[Webhook Optimization] ✓ Found via mapping cache: ${externalId}`,
+            );
+            return externalId;
+        }
+
+        // STRATEGY 2: Fallback to Attio API phone search (O(n) - slow)
+        console.log(
+            `[Webhook Optimization] ✗ No mapping found, falling back to Attio API search`,
+        );
+
+        try {
+            const attioRecordId = await this._findContactByPhone(
+                normalizedPhone,
+            );
+
+            // STRATEGY 3: Store mapping by phone number for future fast lookups
+            console.log(
+                `[Webhook Optimization] Creating phone mapping for future lookups: ${normalizedPhone} → ${attioRecordId}`,
+            );
+            await this.upsertMapping(normalizedPhone, {
+                externalId: attioRecordId,
+                phoneNumber: normalizedPhone,
+                entityType: 'people',
+                lastSyncedAt: new Date().toISOString(),
+                syncMethod: 'webhook',
+                action: 'backfill',
+            });
+
+            return attioRecordId;
+        } catch (error) {
+            console.error(
+                `[Webhook Optimization] Phone search failed: ${error.message}`,
+            );
+            throw error;
+        }
+    }
+
     // ============================================================================
     // OPTIONAL HELPER METHODS
     // ============================================================================
@@ -1993,6 +2028,8 @@ Received:
      * Sync Attio person record to Quo
      * Transforms Attio person data to Quo contact format
      *
+     * Phase 2 Fix: Handles 409 conflicts by fetching existing contact and creating mapping
+     *
      * @private
      * @param {Object} attioRecord - Attio person record
      * @param {string} action - created or updated
@@ -2012,18 +2049,84 @@ Received:
             }
 
             if (action === 'created') {
-                const createResponse =
-                    await this.quo.api.createContact(quoContact);
+                try {
+                    const createResponse =
+                        await this.quo.api.createContact(quoContact);
 
-                if (!createResponse?.data) {
-                    throw new Error(
-                        `Create contact failed: Invalid response from Quo API`,
+                    if (!createResponse?.data) {
+                        throw new Error(
+                            `Create contact failed: Invalid response from Quo API`,
+                        );
+                    }
+
+                    // Create mapping by phone number
+                    const phoneNumber =
+                        createResponse.data.defaultFields.phoneNumbers?.[0]
+                            ?.value;
+                    await this._upsertContactMapping(
+                        quoContact.externalId,
+                        phoneNumber,
+                        {
+                            quoContactId: createResponse.data.id,
+                            syncMethod: 'webhook',
+                            action: 'created',
+                        },
                     );
-                }
 
-                console.log(
-                    `[Attio] ✓ Contact ${createResponse.data.id} created in Quo (externalId: ${quoContact.externalId})`,
-                );
+                    console.log(
+                        `[Attio] ✓ Contact ${createResponse.data.id} created in Quo (externalId: ${quoContact.externalId})`,
+                    );
+                } catch (error) {
+                    if (error.status === 409 || error.code === '0800409') {
+                        console.log(
+                            `[Attio] 409 Conflict - Contact already exists in Quo, resolving...`,
+                        );
+
+                        // Step 1: Fetch existing contact by externalId
+                        const existingContacts = await this.quo.api.listContacts({
+                            externalIds: [quoContact.externalId],
+                            maxResults: 1,
+                        });
+
+                        if (!existingContacts?.data?.[0]) {
+                            throw new Error(
+                                `409 conflict but contact not found for externalId: ${quoContact.externalId}`,
+                            );
+                        }
+
+                        const existingContact = existingContacts.data[0];
+                        console.log(
+                            `[Attio] Found existing contact: ${existingContact.id}`,
+                        );
+
+                        // Step 2: Create mapping by phone number
+                        const phoneNumber =
+                            existingContact.defaultFields.phoneNumbers?.[0]
+                                ?.value;
+                        await this._upsertContactMapping(
+                            quoContact.externalId,
+                            phoneNumber,
+                            {
+                                quoContactId: existingContact.id,
+                                syncMethod: 'webhook',
+                                action: 'conflict_resolved',
+                            },
+                        );
+
+                        // Step 3: PATCH existing contact with new data
+                        const { externalId, ...updateData } = quoContact;
+                        await this.quo.api.updateContact(
+                            existingContact.id,
+                            updateData,
+                        );
+
+                        console.log(
+                            `[Attio] ✓ 409 resolved: mapped and updated contact ${existingContact.id}`,
+                        );
+                        return;
+                    }
+                    throw error;
+                }
             } else {
                 const existingContacts = await this.quo.api.listContacts({
                     externalIds: [quoContact.externalId],

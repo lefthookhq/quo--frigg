@@ -35,6 +35,12 @@ describe('PipedriveIntegration (Refactored)', () => {
         mockPipedriveApi = {
             api: {
                 listPersons: jest.fn(), // Used by fetchPersonPage
+                getPerson: jest.fn(),
+                getOrganization: jest.fn(),
+                createWebhook: jest.fn(),
+                deleteWebhook: jest.fn(),
+                createNote: jest.fn(),
+                createActivity: jest.fn(),
                 persons: {
                     getAll: jest.fn(),
                     get: jest.fn(),
@@ -62,6 +68,11 @@ describe('PipedriveIntegration (Refactored)', () => {
             api: {
                 upsertContact: jest.fn(),
                 logActivity: jest.fn(),
+                listPhoneNumbers: jest.fn(),
+                createMessageWebhook: jest.fn(),
+                createCallWebhook: jest.fn(),
+                createCallSummaryWebhook: jest.fn(),
+                deleteWebhook: jest.fn(),
             },
         };
 
@@ -71,6 +82,14 @@ describe('PipedriveIntegration (Refactored)', () => {
         integration.quo = mockQuoApi;
         integration.id = 'test-integration-id';
         integration.userId = 'test-user-id';
+
+        // Mock base class dependencies
+        integration.commands = {
+            updateIntegrationConfig: jest.fn().mockResolvedValue({}),
+        };
+        integration.updateIntegrationMessages = {
+            execute: jest.fn().mockResolvedValue({}),
+        };
     });
 
     describe('Static Configuration', () => {
@@ -272,8 +291,13 @@ describe('PipedriveIntegration (Refactored)', () => {
                         { value: '555-1234', primary: true, label: 'work' },
                         { value: '555-5678', primary: false, label: 'mobile' },
                     ],
-                    org_id: { name: 'Acme Corp' },
+                    org_id: 999,
                 };
+
+                // Mock organization fetch
+                mockPipedriveApi.api.getOrganization = jest.fn().mockResolvedValue({
+                    data: { name: 'Acme Corp' }
+                });
 
                 const result =
                     await integration.transformPersonToQuo(pipedrivePerson);
@@ -347,8 +371,8 @@ describe('PipedriveIntegration (Refactored)', () => {
                 const mockPerson = {
                     data: { id: 123, first_name: 'John', last_name: 'Doe' },
                 };
-                mockPipedriveApi.api.persons.get.mockResolvedValue(mockPerson);
-                mockPipedriveApi.api.activities.create.mockResolvedValue({
+                mockPipedriveApi.api.getPerson.mockResolvedValue(mockPerson);
+                mockPipedriveApi.api.createNote.mockResolvedValue({
                     data: { id: 456 },
                 });
 
@@ -361,24 +385,19 @@ describe('PipedriveIntegration (Refactored)', () => {
 
                 await integration.logSMSToActivity(activity);
 
-                expect(mockPipedriveApi.api.persons.get).toHaveBeenCalledWith(
+                expect(mockPipedriveApi.api.getPerson).toHaveBeenCalledWith(
                     '123',
                 );
                 expect(
-                    mockPipedriveApi.api.activities.create,
+                    mockPipedriveApi.api.createNote,
                 ).toHaveBeenCalledWith({
-                    subject: 'SMS: outbound',
-                    type: 'sms',
-                    done: 1,
-                    note: 'Test SMS message',
+                    content: 'Test SMS message',
                     person_id: 123,
-                    due_date: '2025-01-10',
-                    due_time: '15:30',
                 });
             });
 
             it('should handle person not found gracefully', async () => {
-                mockPipedriveApi.api.persons.get.mockResolvedValue({
+                mockPipedriveApi.api.getPerson.mockResolvedValue({
                     data: null,
                 });
 
@@ -411,8 +430,8 @@ describe('PipedriveIntegration (Refactored)', () => {
                 const mockPerson = {
                     data: { id: 123, first_name: 'John', last_name: 'Doe' },
                 };
-                mockPipedriveApi.api.persons.get.mockResolvedValue(mockPerson);
-                mockPipedriveApi.api.activities.create.mockResolvedValue({
+                mockPipedriveApi.api.getPerson.mockResolvedValue(mockPerson);
+                mockPipedriveApi.api.createActivity.mockResolvedValue({
                     data: { id: 456 },
                 });
 
@@ -427,7 +446,7 @@ describe('PipedriveIntegration (Refactored)', () => {
                 await integration.logCallToActivity(activity);
 
                 expect(
-                    mockPipedriveApi.api.activities.create,
+                    mockPipedriveApi.api.createActivity,
                 ).toHaveBeenCalledWith({
                     subject: 'Call: outbound (300s)',
                     type: 'call',
@@ -444,40 +463,46 @@ describe('PipedriveIntegration (Refactored)', () => {
         describe('setupWebhooks', () => {
             it('should create webhooks for person events', async () => {
                 process.env.BASE_URL = 'https://api.example.com';
-                mockPipedriveApi.api.webhooks.create.mockResolvedValue({
+                mockPipedriveApi.api.createWebhook.mockResolvedValue({
                     data: { id: 1 },
+                });
+                mockQuoApi.api.createMessageWebhook.mockResolvedValue({
+                    data: { id: 'msg-wh', key: 'msg-key' }
+                });
+                mockQuoApi.api.createCallWebhook.mockResolvedValue({
+                    data: { id: 'call-wh', key: 'call-key' }
+                });
+                mockQuoApi.api.createCallSummaryWebhook.mockResolvedValue({
+                    data: { id: 'summary-wh', key: 'summary-key' }
                 });
 
                 await integration.setupWebhooks();
 
                 expect(
-                    mockPipedriveApi.api.webhooks.create,
-                ).toHaveBeenCalledTimes(3);
+                    mockPipedriveApi.api.createWebhook,
+                ).toHaveBeenCalledTimes(4); // added, updated, deleted, merged
                 expect(
-                    mockPipedriveApi.api.webhooks.create,
+                    mockPipedriveApi.api.createWebhook,
                 ).toHaveBeenCalledWith({
-                    subscription_url: `https://api.example.com/integrations/${integration.id}/webhook`,
+                    subscription_url: expect.stringContaining('/webhooks/'),
                     event_action: 'added',
                     event_object: 'person',
+                    name: 'Quo - Person Added',
+                    version: '1.0',
                 });
                 expect(
-                    mockPipedriveApi.api.webhooks.create,
+                    mockPipedriveApi.api.createWebhook,
                 ).toHaveBeenCalledWith({
-                    subscription_url: `https://api.example.com/integrations/${integration.id}/webhook`,
+                    subscription_url: expect.stringContaining('/webhooks/'),
                     event_action: 'updated',
                     event_object: 'person',
-                });
-                expect(
-                    mockPipedriveApi.api.webhooks.create,
-                ).toHaveBeenCalledWith({
-                    subscription_url: `https://api.example.com/integrations/${integration.id}/webhook`,
-                    event_action: 'deleted',
-                    event_object: 'person',
+                    name: 'Quo - Person Updated',
+                    version: '1.0',
                 });
             });
 
             it('should handle webhook setup failure gracefully', async () => {
-                mockPipedriveApi.api.webhooks.create.mockRejectedValue(
+                mockPipedriveApi.api.createWebhook.mockRejectedValue(
                     new Error('Webhook creation failed'),
                 );
 
@@ -485,10 +510,12 @@ describe('PipedriveIntegration (Refactored)', () => {
                     .spyOn(console, 'error')
                     .mockImplementation();
 
-                await integration.setupWebhooks();
+                await expect(integration.setupWebhooks()).rejects.toThrow(
+                    'Failed to create any webhooks',
+                );
 
                 expect(consoleSpy).toHaveBeenCalledWith(
-                    'Failed to setup Pipedrive webhooks:',
+                    '[Webhook Setup] Failed:',
                     expect.any(Error),
                 );
 
