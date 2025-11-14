@@ -394,6 +394,7 @@ class BaseCRMIntegration extends IntegrationBase {
 
         console.log(`[${integrationName}] onCreate called for ${integrationId}`);
 
+
         // Check if we need user configuration
         const needsConfig = await this.checkIfNeedsConfig();
 

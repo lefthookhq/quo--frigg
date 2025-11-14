@@ -335,6 +335,7 @@ describe('BaseCRMIntegration', () => {
         });
     });
 
+
     describe('public orchestration methods', () => {
         it('should delegate startInitialSync to SyncOrchestrator', async () => {
             const expectedResult = {
