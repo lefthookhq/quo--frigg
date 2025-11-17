@@ -1252,6 +1252,92 @@ describe('AttioIntegration (Refactored)', () => {
                     integration._findAttioContactByPhone('+15551111111'),
                 ).rejects.toThrow('No Attio contact found');
             });
+
+            it('should return contact found in Attio even if not synced (no mapping)', async () => {
+                // TDD: This test should fail with current implementation
+                // Current code requires a mapping, but new requirement is to accept any contact in Attio
+                mockAttioApi.api.queryRecords.mockResolvedValue({
+                    data: [
+                        {
+                            id: { record_id: 'rec-unsynced-456' },
+                            values: {
+                                phone_numbers: [
+                                    { phone_number: '+16048027941' },
+                                ],
+                            },
+                        },
+                    ],
+                });
+                // No mapping exists for this contact (not synced)
+                integration.getMapping.mockResolvedValue(null);
+
+                const recordId = await integration._findAttioContactByPhone('+16048027941');
+
+                expect(recordId).toBe('rec-unsynced-456');
+                expect(mockAttioApi.api.queryRecords).toHaveBeenCalledWith(
+                    'people',
+                    {
+                        filter: { phone_numbers: '+16048027941' },
+                        limit: 10,
+                    },
+                );
+            });
+
+            it('should prefer synced contact if multiple contacts found', async () => {
+                // TDD: If multiple contacts match, prefer one with mapping (synced)
+                mockAttioApi.api.queryRecords.mockResolvedValue({
+                    data: [
+                        {
+                            id: { record_id: 'rec-unsynced-111' },
+                            values: {
+                                phone_numbers: [{ phone_number: '+15551234567' }],
+                            },
+                        },
+                        {
+                            id: { record_id: 'rec-synced-222' },
+                            values: {
+                                phone_numbers: [{ phone_number: '+15551234567' }],
+                            },
+                        },
+                    ],
+                });
+
+                // First contact has no mapping, second has mapping
+                integration.getMapping
+                    .mockResolvedValueOnce(null)  // First contact: no mapping
+                    .mockResolvedValueOnce({ externalId: 'rec-synced-222' }); // Second: has mapping
+
+                const recordId = await integration._findAttioContactByPhone('+15551234567');
+
+                expect(recordId).toBe('rec-synced-222');
+            });
+
+            it('should return first contact if none are synced', async () => {
+                // TDD: If no contacts have mappings, return the first one
+                mockAttioApi.api.queryRecords.mockResolvedValue({
+                    data: [
+                        {
+                            id: { record_id: 'rec-first-333' },
+                            values: {
+                                phone_numbers: [{ phone_number: '+15559999999' }],
+                            },
+                        },
+                        {
+                            id: { record_id: 'rec-second-444' },
+                            values: {
+                                phone_numbers: [{ phone_number: '+15559999999' }],
+                            },
+                        },
+                    ],
+                });
+
+                // Neither contact has a mapping
+                integration.getMapping.mockResolvedValue(null);
+
+                const recordId = await integration._findAttioContactByPhone('+15559999999');
+
+                expect(recordId).toBe('rec-first-333');
+            });
         });
     });
 

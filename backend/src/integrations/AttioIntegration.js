@@ -1263,6 +1263,8 @@ class AttioIntegration extends BaseCRMIntegration {
      */
     async onWebhookReceived({ req, res }) {
         try {
+            console.log('DEBUG REQ HEADERS:', req.headers);
+            console.log('DEBUG REQ BODY:', req.body);
             const attioSignature =
                 req.headers['x-attio-signature'] ||
                 req.headers['attio-signature'] ||
@@ -1270,13 +1272,14 @@ class AttioIntegration extends BaseCRMIntegration {
             const quoSignature = req.headers['openphone-signature'];
 
             // Determine webhook source based on signature header
-            const source = quoSignature ? 'quo' : 'attio';
+            const source = attioSignature ? 'attio' : 'quo';
 
             const signature = attioSignature || quoSignature;
 
             // Early signature validation - reject webhooks without signatures
             // This prevents queue flooding attacks
-            if (!signature) {
+            // We need to ignore the quo webhook signature for now because Quo/OpenPhone doesn't support it yet with v2 svix webhooks
+            if (!signature && source !== 'quo') {
                 console.error(
                     `[${source === 'quo' ? 'Quo' : 'Attio'} Webhook] Missing signature header - rejecting webhook`,
                 );
@@ -1341,6 +1344,9 @@ class AttioIntegration extends BaseCRMIntegration {
      */
     async _handleAttioWebhook(data) {
         const { body, headers, integrationId } = data;
+        console.log('Attio webhook data:', data);
+        console.log('Entites currently loaded:', this.entities);
+        console.log('Is api key loaded into quo api class? ', !!this.quo.api.API_KEY_VALUE);
 
         const signature = headers['x-attio-signature'];
 
@@ -1502,7 +1508,9 @@ class AttioIntegration extends BaseCRMIntegration {
         console.log(`[Quo Webhook] Processing event: ${eventType}`);
 
         try {
-            await this._verifyQuoWebhookSignature(headers, body, eventType);
+            // TODO(quo-webhooks): Re-enable signature verification once Quo/OpenPhone
+            // adds OpenPhone-Signature headers to their new webhook service.
+            // await this._verifyQuoWebhookSignature(headers, body, eventType);
 
             let result;
             if (eventType === 'call.completed') {
@@ -1655,6 +1663,38 @@ ${statusDescription}`;
      * @returns {Promise<Object>} Processing result
      */
     async _handleQuoMessageEvent(webhookData) {
+        // DEBUG: Check Quo API module state
+        console.log('\n====== QUO API MODULE DEBUG ======');
+        console.log('[Debug] this.quo exists:', !!this.quo);
+        console.log('[Debug] this.quo.api exists:', !!this.quo?.api);
+        if (this.quo?.api) {
+            console.log('[Debug] API_KEY_NAME:', this.quo.api.API_KEY_NAME);
+            console.log('[Debug] API_KEY_VALUE exists:', !!this.quo.api.API_KEY_VALUE);
+            if (this.quo.api.API_KEY_VALUE) {
+                console.log('[Debug] API_KEY_VALUE length:', this.quo.api.API_KEY_VALUE.length);
+                console.log('[Debug] API_KEY_VALUE preview:', this.quo.api.API_KEY_VALUE.substring(0, 15) + '...');
+            } else {
+                console.log('[Debug] ❌ API_KEY_VALUE is NULL/UNDEFINED');
+            }
+            // Test what headers would be generated
+            const testHeaders = await this.quo.api.addAuthHeaders({});
+            console.log('[Debug] addAuthHeaders() returns:', JSON.stringify(testHeaders));
+
+            // DEBUG: Try an actual API call to verify auth headers in real request
+            console.log('\n[Debug] 🧪 Testing actual API call with getPhoneNumber...');
+            try {
+                const messageObject = webhookData.data.object;
+                const testPhoneNumber = await this.quo.api.getPhoneNumber(messageObject.phoneNumberId);
+                console.log('[Debug] ✅ getPhoneNumber call SUCCEEDED');
+                console.log('[Debug] Phone number name:', testPhoneNumber.name);
+            } catch (testError) {
+                console.log('[Debug] ❌ getPhoneNumber call FAILED');
+                console.log('[Debug] Error:', testError.message);
+                console.log('[Debug] Error status:', testError.status || 'N/A');
+            }
+        }
+        console.log('==================================\n');
+
         const messageObject = webhookData.data.object;
 
         console.log(`[Quo Webhook] Processing message: ${messageObject.id}`);
@@ -1846,10 +1886,18 @@ Received:
                 );
             }
 
-            // Filter to only contacts that were synced FROM Attio to Quo
-            // These will have mappings in our integration
+            // Prefer synced contacts (with mappings), but accept any contact in Attio
+            // Strategy: Check all contacts for mappings, return first with mapping
+            // If none have mappings, return the first contact
+            let fallbackRecordId = null;
+
             for (const contact of contacts) {
                 const recordId = contact.id.record_id;
+
+                // Store first contact as fallback
+                if (!fallbackRecordId) {
+                    fallbackRecordId = recordId;
+                }
 
                 const mapping = await this.getMapping(recordId);
 
@@ -1861,10 +1909,11 @@ Received:
                 }
             }
 
-            throw new Error(
-                `Found ${contacts.length} contact(s) with phone ${normalizedPhone} in Attio, ` +
-                `but none were synced from Attio to Quo. Only synced contacts can receive activity logs.`,
+            // No contacts have mappings - return first contact found
+            console.log(
+                `[Quo Webhook] ✓ Found contact in Attio (not synced): ${fallbackRecordId}`,
             );
+            return fallbackRecordId;
         } catch (error) {
             console.error(
                 `[Quo Webhook] Contact lookup failed:`,
