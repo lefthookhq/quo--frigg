@@ -40,6 +40,10 @@ temp/
 layers/
 backend/layers/
 
+# Security & SSH keys
+backend/security/
+postgres-tunnel.sh
+
 # Claude AI files
 *.claude
 *.claude-flow
