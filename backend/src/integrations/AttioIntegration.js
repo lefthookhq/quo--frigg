@@ -667,7 +667,7 @@ class AttioIntegration extends BaseCRMIntegration {
         let firstName = nameAttr?.first_name || '';
         const lastName = nameAttr?.last_name || '';
 
-        // Handle missing firstName (required by Quo) - use 'Unknown' fallback
+
         if (!firstName || firstName.trim() === '') {
             firstName = 'Unknown';
         }
