@@ -2078,84 +2078,19 @@ class AttioIntegration extends BaseCRMIntegration {
             }
 
             if (action === 'created') {
-                try {
-                    const createResponse =
-                        await this.quo.api.createContact(quoContact);
+                // Use bulkUpsertToQuo instead of singleton createContact
+                const result = await this.bulkUpsertToQuo([quoContact]);
 
-                    if (!createResponse?.data) {
-                        throw new Error(
-                            `Create contact failed: Invalid response from Quo API`,
-                        );
-                    }
-
-                    // Create mapping by phone number
-                    const phoneNumber =
-                        createResponse.data.defaultFields.phoneNumbers?.[0]
-                            ?.value;
-                    await this._upsertContactMapping(
-                        quoContact.externalId,
-                        phoneNumber,
-                        {
-                            quoContactId: createResponse.data.id,
-                            syncMethod: 'webhook',
-                            action: 'created',
-                        },
+                if (result.errorCount > 0) {
+                    const error = result.errors[0];
+                    throw new Error(
+                        `Failed to create contact: ${error?.error || 'Unknown error'}`,
                     );
-
-                    console.log(
-                        `[Attio] ✓ Contact ${createResponse.data.id} created in Quo (externalId: ${quoContact.externalId})`,
-                    );
-                } catch (error) {
-                    if (error.status === 409 || error.code === '0800409') {
-                        console.log(
-                            `[Attio] 409 Conflict - Contact already exists in Quo, resolving...`,
-                        );
-
-                        // Step 1: Fetch existing contact by externalId
-                        const existingContacts = await this.quo.api.listContacts({
-                            externalIds: [quoContact.externalId],
-                            maxResults: 1,
-                        });
-
-                        if (!existingContacts?.data?.[0]) {
-                            throw new Error(
-                                `409 conflict but contact not found for externalId: ${quoContact.externalId}`,
-                            );
-                        }
-
-                        const existingContact = existingContacts.data[0];
-                        console.log(
-                            `[Attio] Found existing contact: ${existingContact.id}`,
-                        );
-
-                        // Step 2: Create mapping by phone number
-                        const phoneNumber =
-                            existingContact.defaultFields.phoneNumbers?.[0]
-                                ?.value;
-                        await this._upsertContactMapping(
-                            quoContact.externalId,
-                            phoneNumber,
-                            {
-                                quoContactId: existingContact.id,
-                                syncMethod: 'webhook',
-                                action: 'conflict_resolved',
-                            },
-                        );
-
-                        // Step 3: PATCH existing contact with new data
-                        const { externalId, ...updateData } = quoContact;
-                        await this.quo.api.updateContact(
-                            existingContact.id,
-                            updateData,
-                        );
-
-                        console.log(
-                            `[Attio] ✓ 409 resolved: mapped and updated contact ${existingContact.id}`,
-                        );
-                        return;
-                    }
-                    throw error;
                 }
+
+                console.log(
+                    `[Attio] ✓ Contact created in Quo via bulkUpsertToQuo (externalId: ${quoContact.externalId})`,
+                );
             } else {
                 const existingContacts = await this.quo.api.listContacts({
                     externalIds: [quoContact.externalId],

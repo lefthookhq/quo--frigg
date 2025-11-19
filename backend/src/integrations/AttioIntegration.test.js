@@ -1406,15 +1406,12 @@ describe('AttioIntegration (Refactored)', () => {
                         },
                     },
                 });
-                mockQuoApi.api.createContact.mockResolvedValue({
-                    data: {
-                        id: 'quo-contact-123',
-                        defaultFields: {
-                            phoneNumbers: [
-                                { value: '+15551234567' }
-                            ]
-                        }
-                    },
+
+                // Mock bulkUpsertToQuo
+                integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
+                    successCount: 1,
+                    errorCount: 0,
+                    errors: [],
                 });
 
                 await integration._handleRecordCreated(eventData);
@@ -1423,15 +1420,14 @@ describe('AttioIntegration (Refactored)', () => {
                     'obj-people',
                     'rec-123',
                 );
-                expect(mockQuoApi.api.createContact).toHaveBeenCalled();
-                expect(integration._upsertContactMapping).toHaveBeenCalledWith(
-                    'rec-123',
-                    '+15551234567',
-                    expect.objectContaining({
-                        action: 'created',
-                        syncMethod: 'webhook',
-                    }),
+                expect(integration.bulkUpsertToQuo).toHaveBeenCalledWith(
+                    expect.arrayContaining([
+                        expect.objectContaining({
+                            externalId: 'rec-123',
+                        }),
+                    ])
                 );
+                expect(mockQuoApi.api.createContact).not.toHaveBeenCalled();
             });
 
             it('should handle record not found', async () => {
@@ -1479,6 +1475,92 @@ describe('AttioIntegration (Refactored)', () => {
                 expect(mockQuoApi.api.createContact).not.toHaveBeenCalled();
 
                 consoleSpy.mockRestore();
+            });
+        });
+
+        describe('_handleRecordCreated with bulkUpsertToQuo', () => {
+            it('should use bulkUpsertToQuo instead of singleton createContact', async () => {
+                const eventData = {
+                    record_id: 'rec-bulk-123',
+                    object_id: 'obj-people',
+                };
+
+                mockAttioApi.api.getRecord.mockResolvedValue({
+                    data: {
+                        id: { record_id: 'rec-bulk-123' },
+                        values: {
+                            name: [
+                                {
+                                    first_name: 'Bulk',
+                                    last_name: 'User',
+                                    active_until: null,
+                                },
+                            ],
+                            phone_numbers: [
+                                { phone_number: '+15551111111' }
+                            ],
+                        },
+                    },
+                });
+
+                // Mock bulkUpsertToQuo
+                integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
+                    successCount: 1,
+                    errorCount: 0,
+                    errors: [],
+                });
+
+                await integration._handleRecordCreated(eventData);
+
+                // Should call bulkUpsertToQuo instead of createContact
+                expect(integration.bulkUpsertToQuo).toHaveBeenCalledWith(
+                    expect.arrayContaining([
+                        expect.objectContaining({
+                            externalId: 'rec-bulk-123',
+                            defaultFields: expect.objectContaining({
+                                firstName: 'Bulk',
+                                lastName: 'User',
+                            }),
+                        }),
+                    ])
+                );
+                expect(mockQuoApi.api.createContact).not.toHaveBeenCalled();
+            });
+
+            it('should handle bulkUpsertToQuo errors gracefully', async () => {
+                const eventData = {
+                    record_id: 'rec-bulk-error',
+                    object_id: 'obj-people',
+                };
+
+                mockAttioApi.api.getRecord.mockResolvedValue({
+                    data: {
+                        id: { record_id: 'rec-bulk-error' },
+                        values: {
+                            name: [
+                                {
+                                    first_name: 'Error',
+                                    last_name: 'Test',
+                                    active_until: null,
+                                },
+                            ],
+                            phone_numbers: [
+                                { phone_number: '+15552222222' }
+                            ],
+                        },
+                    },
+                });
+
+                integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
+                    successCount: 0,
+                    errorCount: 1,
+                    errors: [{
+                        error: 'Failed to create contact',
+                        externalId: 'rec-bulk-error',
+                    }],
+                });
+
+                await expect(integration._handleRecordCreated(eventData)).rejects.toThrow();
             });
         });
 
