@@ -1,12 +1,10 @@
-import type {App} from "attio"
-
-import {helloWorldAction} from "./hello-world-action"
-import {callInQuoAction} from "./call-in-quo-action"
+import type { App } from "attio"
+import { callInQuoAction } from "./call-in-quo-action"
 
 
 export const app: App = {
     record: {
-        actions: [helloWorldAction, callInQuoAction],
+        actions: [callInQuoAction],
         bulkActions: [],
     },
 }

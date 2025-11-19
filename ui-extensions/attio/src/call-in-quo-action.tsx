@@ -1,5 +1,5 @@
 import type {App} from "attio"
-import {runQuery, showToast, showDialog, Link} from "attio/client"
+import {runQuery, showToast} from "attio/client"
 import getPhoneNumber from "./get-phone-number.graphql"
 
 export const callInQuoAction: App.Record.Action = {

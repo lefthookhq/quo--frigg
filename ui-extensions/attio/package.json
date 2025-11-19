@@ -1,6 +1,6 @@
 {
-  "name": "quo-test",
-  "description": "Quo-test",
+  "name": "quo",
+  "description": "Quo app description",
   "private": true,
   "version": "0.0.1",
   "scripts": {
