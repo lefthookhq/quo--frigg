@@ -1402,7 +1402,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
 
         let formattedNote;
         if (callObject.direction === 'outgoing') {
-            formattedNote = `<p><strong>☎️ Call ${inboxName} ${inboxNumberRaw} → ${contactPhone}</strong></p>
+            formattedNote = `<p><strong>☎️  Call ${inboxName} ${inboxNumberRaw} → ${contactPhone}</strong></p>
 <p>${statusDescription}</p>
 <p><a href="${deepLink}">View the call activity in Quo</a></p>`;
         } else {
@@ -1423,7 +1423,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 statusLine += ` / ➿ Voicemail (${vmFormatted})`;
             }
 
-            formattedNote = `<p><strong>☎️ Call ${contactPhone} → ${inboxName} ${inboxNumberRaw}</strong></p>
+            formattedNote = `<p><strong>☎️  Call ${contactPhone} → ${inboxName} ${inboxNumberRaw}</strong></p>
 <p>${statusLine}</p>
 <p><a href="${deepLink}">View the call activity in Quo</a></p>`;
         }
@@ -1584,9 +1584,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
         let formattedNote = '';
 
         if (callObject.direction === 'outgoing') {
-            formattedNote = `<p><strong>☎️ Call ${inboxName} ${inboxNumber} → ${contactPhone}</strong></p>`;
+            formattedNote = `<p><strong>☎️  Call ${inboxName} ${inboxNumber} → ${contactPhone}</strong></p>`;
         } else {
-            formattedNote = `<p><strong>☎️ Call ${contactPhone} → ${inboxName} ${inboxNumber}</strong></p>`;
+            formattedNote = `<p><strong>☎️  Call ${contactPhone} → ${inboxName} ${inboxNumber}</strong></p>`;
         }
 
         formattedNote += `\n<p>${statusDescription}`;

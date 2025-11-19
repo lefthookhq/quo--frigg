@@ -1629,13 +1629,13 @@ class AttioIntegration extends BaseCRMIntegration {
 
         let formattedSummary, title;
         if (callObject.direction === 'outgoing') {
-            title = `☎️ Call ${inboxName} ${inboxNumber} → ${contactPhone}`;
+            title = `☎️  Call ${inboxName} ${inboxNumber} → ${contactPhone}`;
             formattedSummary = `${statusDescription}
 
 [View the call activity in Quo](${deepLink})`;
         } else {
             // Incoming call
-            title = `☎️ Call ${contactPhone} → ${inboxName} ${inboxNumber}`;
+            title = `☎️  Call ${contactPhone} → ${inboxName} ${inboxNumber}`;
             let statusLine = statusDescription;
 
             // Add recording indicator if completed with duration

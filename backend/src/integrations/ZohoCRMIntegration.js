@@ -1311,8 +1311,8 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
 
         // Create title with phone numbers
         const callTitle = callObject.direction === 'outgoing'
-            ? `☎️ Call ${inboxName} ${inboxNumber} → ${contactPhone}`
-            : `☎️ Call ${contactPhone} → ${inboxName} ${inboxNumber}`;
+            ? `☎️  Call ${inboxName} ${inboxNumber} → ${contactPhone}`
+            : `☎️  Call ${contactPhone} → ${inboxName} ${inboxNumber}`;
 
         await this.zohoCrm.api.createNote('Contacts', contactId, {
             Note_Title: callTitle,
