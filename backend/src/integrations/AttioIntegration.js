@@ -1628,15 +1628,13 @@ class AttioIntegration extends BaseCRMIntegration {
 
         let formattedSummary, title;
         if (callObject.direction === 'outgoing') {
-            title = `Call Quo 📱 ${inboxName} ${inboxNumber} → ${contactPhone}`;
-            formattedSummary = `☎️ ${title}
-
-${statusDescription}
+            title = `☎️ Call Quo 📱 ${inboxName} ${inboxNumber} → ${contactPhone}`;
+            formattedSummary = `${statusDescription}
 
 [View the call activity in Quo](${deepLink})`;
         } else {
             // Incoming call
-            title = `Call ${contactPhone} → Quo 📱 ${inboxName} ${inboxNumber}`;
+            title = `☎️ Call ${contactPhone} → Quo 📱 ${inboxName} ${inboxNumber}`;
             let statusLine = statusDescription;
 
             // Add recording indicator if completed with duration
@@ -1653,9 +1651,7 @@ ${statusDescription}
                 statusLine += ` / ➿ Voicemail (${vmFormatted})`;
             }
 
-            formattedSummary = `☎️ ${title}
-
-${statusLine}
+            formattedSummary = `${statusLine}
 
 [View the call activity in Quo](${deepLink})`;
         }
@@ -1722,18 +1718,14 @@ ${statusLine}
         let formattedContent, title;
         if (messageObject.direction === 'outgoing') {
             // Outgoing: Quo → Contact
-            title = `Message Quo ${inboxName} ${messageObject.from} → ${messageObject.to}`;
-            formattedContent = `💬 ${title}
-
-${userName} sent: ${messageObject.text || '(no text)'}
+            title = `💬 Message Quo ${inboxName} ${messageObject.from} → ${messageObject.to}`;
+            formattedContent = `${userName} sent: ${messageObject.text || '(no text)'}
 
 [View the message activity in Quo](${deepLink})`;
         } else {
             // Incoming: Contact → Quo
-            title = `Message ${messageObject.from} → Quo ${inboxName} ${messageObject.to}`;
-            formattedContent = `💬 ${title}
-
-Received: ${messageObject.text || '(no text)'}
+            title = `💬 Message ${messageObject.from} → Quo ${inboxName} ${messageObject.to}`;
+            formattedContent = `Received: ${messageObject.text || '(no text)'}
 
 [View the message activity in Quo](${deepLink})`;
         }

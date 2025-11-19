@@ -998,10 +998,10 @@ describe('AttioIntegration (Refactored)', () => {
                 expect(mockAttioApi.api.createNote).toHaveBeenCalledWith({
                     parent_object: 'people',
                     parent_record_id: 'attio-rec-123',
-                    title: expect.stringContaining('Call:'),
-                    title: expect.stringContaining('→'),
+                    title: expect.stringContaining('☎️'),
+                    title: expect.stringContaining('Call'),
                     format: 'markdown',
-                    content: expect.stringContaining('☎️'),
+                    content: expect.any(String),
                     created_at: '2025-01-10T15:30:00Z',
                 });
                 expect(result).toEqual({
@@ -1101,10 +1101,10 @@ describe('AttioIntegration (Refactored)', () => {
                 expect(mockAttioApi.api.createNote).toHaveBeenCalledWith({
                     parent_object: 'people',
                     parent_record_id: 'attio-rec-123',
-                    title: expect.stringContaining('Message:'),
-                    title: expect.stringContaining('→'),
+                    title: expect.stringContaining('💬'),
+                    title: expect.stringContaining('Message'),
                     format: 'markdown',
-                    content: expect.stringContaining('💬'),
+                    content: expect.stringContaining('sent'),
                     created_at: '2025-01-10T17:00:00Z',
                 });
                 expect(result).toEqual({
@@ -1147,7 +1147,7 @@ describe('AttioIntegration (Refactored)', () => {
                     integration._findAttioContactFromQuoWebhook,
                 ).toHaveBeenCalledWith('+15552222222');
                 const noteCall = mockAttioApi.api.createNote.mock.calls[0][0];
-                expect(noteCall.content).toContain('💬 Message');
+                expect(noteCall.title).toContain('💬 Message');
                 expect(noteCall.content).toContain('Received: Hi there!');
             });
         });
