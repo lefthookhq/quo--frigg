@@ -955,9 +955,10 @@ describe('AttioIntegration (Refactored)', () => {
                 },
             });
             mockQuoApi.api.getUser = jest.fn().mockResolvedValue({
-                name: 'John Agent',
-                firstName: 'John',
-                lastName: 'Agent',
+                data: {
+                    firstName: 'John',
+                    lastName: 'Agent',
+                },
             });
         });
 

@@ -1482,7 +1482,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
             messageObject.to;
 
         const userDetails = await this.quo.api.getUser(messageObject.userId);
-        const userName = `${userDetails.firstName || ''} ${userDetails.lastName || ''}`.trim() ||
+        const userName = `${userDetails.data?.firstName || ''} ${userDetails.data?.lastName || ''}`.trim() ||
             'Quo User';
 
         const deepLink = webhookData.data.deepLink || '#';

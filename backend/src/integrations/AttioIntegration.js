@@ -1600,8 +1600,7 @@ class AttioIntegration extends BaseCRMIntegration {
 
         const userDetails = await this.quo.api.getUser(callObject.userId);
         const userName =
-            userDetails.name ||
-            `${userDetails.firstName || ''} ${userDetails.lastName || ''}`.trim() ||
+            `${userDetails.data?.firstName || ''} ${userDetails.data?.lastName || ''}`.trim() ||
             'Quo User';
 
         const minutes = Math.floor(callObject.duration / 60);
@@ -1713,8 +1712,7 @@ class AttioIntegration extends BaseCRMIntegration {
 
         const userDetails = await this.quo.api.getUser(messageObject.userId);
         const userName =
-            userDetails.name ||
-            `${userDetails.firstName || ''} ${userDetails.lastName || ''}`.trim() ||
+            `${userDetails.data?.firstName || ''} ${userDetails.data?.lastName || ''}`.trim() ||
             'Quo User';
 
         const deepLink = webhookData.data.deepLink || '#';
