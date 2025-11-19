@@ -365,7 +365,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
         if (person.phones && person.phones.length > 0) {
             phoneNumbers.push(
                 ...person.phones.map((p) => ({
-                    name: p.label || 'work',
+                    name: p.label ? p.label.charAt(0).toUpperCase() + p.label.slice(1) : 'Work',
                     value: p.value,
                     primary: p.primary || false,
                 })),
@@ -376,7 +376,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
         if (person.emails && person.emails.length > 0) {
             emails.push(
                 ...person.emails.map((e) => ({
-                    name: e.label || 'work',
+                    name: e.label ? e.label.charAt(0).toUpperCase() + e.label.slice(1) : 'Work',
                     value: e.value,
                     primary: e.primary || false,
                 })),
@@ -405,9 +405,13 @@ class PipedriveIntegration extends BaseCRMIntegration {
 
         const firstName = person.first_name || 'Unknown';
 
+        // Generate sourceUrl for linking back to Pipedrive
+        const sourceUrl = `https://app.pipedrive.com/person/${person.id}`;
+
         return {
             externalId: String(person.id),
-            source: 'pipedrive',
+            source: 'openphone-pipedrive',
+            sourceUrl,
             defaultFields: {
                 firstName,
                 lastName: person.last_name,
@@ -1401,19 +1405,29 @@ class PipedriveIntegration extends BaseCRMIntegration {
 
         let formattedNote;
         if (callObject.direction === 'outgoing') {
-            formattedNote = `<p><strong>☎️  Call Quo 📱 ${inboxName} ${inboxNumberRaw} → ${contactPhone}</strong></p>
+            formattedNote = `<p><strong>☎️ Call Quo 📱 ${inboxName} ${inboxNumberRaw} → ${contactPhone}</strong></p>
 <p>${statusDescription}</p>
 <p><a href="${deepLink}">View the call activity in Quo</a></p>`;
         } else {
-            formattedNote = `<p><strong>☎️  Call ${contactPhone} → Quo 📱 ${inboxName} ${inboxNumberRaw}</strong></p>
-<p>${statusDescription}</p>`;
+            // Incoming call
+            let statusLine = statusDescription;
 
+            // Add recording indicator if completed with duration
             if (callObject.status === 'completed' && callObject.duration > 0) {
-                formattedNote += `
-<p>▶️ Recording (${durationFormatted})</p>`;
+                statusLine += ` / ▶️ Recording (${durationFormatted})`;
             }
 
-            formattedNote += `
+            // Add voicemail indicator if present
+            if (callObject.voicemail) {
+                const voicemailDuration = callObject.voicemail.duration || 0;
+                const vmMinutes = Math.floor(voicemailDuration / 60);
+                const vmSeconds = voicemailDuration % 60;
+                const vmFormatted = `${vmMinutes}:${vmSeconds.toString().padStart(2, '0')}`;
+                statusLine += ` / ➿ Voicemail (${vmFormatted})`;
+            }
+
+            formattedNote = `<p><strong>☎️ Call ${contactPhone} → Quo 📱 ${inboxName} ${inboxNumberRaw}</strong></p>
+<p>${statusLine}</p>
 <p><a href="${deepLink}">View the call activity in Quo</a></p>`;
         }
 
@@ -1482,12 +1496,12 @@ class PipedriveIntegration extends BaseCRMIntegration {
         let formattedNote;
         if (messageObject.direction === 'outgoing') {
             // Outgoing: Quo → Contact
-            formattedNote = `<p><strong>💬 Message ${inboxName} - ${inboxNumber} —> ${contactPhone}</strong></p>
+            formattedNote = `<p><strong>💬 Message Quo ${inboxName} ${inboxNumber} → ${contactPhone}</strong></p>
 <p>${userName} sent: ${messageObject.text || '(no text)'}</p>
 <p><a href="${deepLink}">View the message activity in Quo</a></p>`;
         } else {
             // Incoming: Contact → Quo
-            formattedNote = `<p><strong>💬 Message ${contactPhone} --> ${inboxName} - ${inboxNumber}</strong></p>
+            formattedNote = `<p><strong>💬 Message ${contactPhone} → Quo ${inboxName} ${inboxNumber}</strong></p>
 <p>Received: ${messageObject.text || '(no text)'}</p>
 <p><a href="${deepLink}">View the message activity in Quo</a></p>`;
         }

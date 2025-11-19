@@ -279,15 +279,16 @@ describe('ZohoCRMIntegration (Refactored)', () => {
                     await integration.transformPersonToQuo(zohoContact);
 
                 expect(result.externalId).toBe('contact-123');
-                expect(result.source).toBe('zoho');
+                expect(result.source).toBe('openphone-zoho');
+                expect(result.sourceUrl).toBe('https://crm.zoho.com/crm/org/tab/Contacts/contact-123');
                 expect(result.defaultFields.firstName).toBe('John');
                 expect(result.defaultFields.lastName).toBe('Doe');
                 expect(result.defaultFields.phoneNumbers).toEqual([
-                    { name: 'work', value: '555-1234' },
-                    { name: 'mobile', value: '555-5678' },
+                    { name: 'Work', value: '555-1234' },
+                    { name: 'Mobile', value: '555-5678' },
                 ]);
                 expect(result.defaultFields.emails).toEqual([
-                    { name: 'work', value: 'john@example.com' },
+                    { name: 'Work', value: 'john@example.com' },
                 ]);
                 expect(result.customFields).toEqual([]);
             });
@@ -302,7 +303,8 @@ describe('ZohoCRMIntegration (Refactored)', () => {
 
                 const result = await integration.transformPersonToQuo(zohoAccount);
 
-                expect(result.source).toBe('zoho');
+                expect(result.source).toBe('openphone-zoho');
+                expect(result.sourceUrl).toBe('https://crm.zoho.com/crm/org/tab/Contacts/account-456');
                 expect(result.externalId).toBe('account-456');
                 expect(result.defaultFields.firstName).toBe('Smith Industries');
             });

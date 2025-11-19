@@ -36,17 +36,9 @@ export const callInQuoAction: App.Record.Action = {
             return
         }
         
-        // Show a dialog with a clickable phone link
-        showDialog({
-            title: "Call in Quo",
-            Dialog: () => {
-                return (
-                    <Link href={`tel:${phoneNumber}`}>
-                        Call {phoneNumber}
-                    </Link>
-                )
-            },
-        })
+        // Use tel: protocol to launch Quo desktop app
+        // The tel: URL scheme will be handled by the Quo desktop app
+        window.open(`tel:${phoneNumber}`, '_self')
     },
 }
 

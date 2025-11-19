@@ -269,19 +269,20 @@ describe('AttioIntegration (Refactored)', () => {
 
                 expect(result).toEqual({
                     externalId: 'rec123',
-                    source: 'attio',
+                    source: 'openphone-attio',
+                    sourceUrl: 'https://app.attio.com/people/rec123',
                     defaultFields: {
                         firstName: 'John',
                         lastName: 'Doe',
                         company: null,
                         role: null,
                         phoneNumbers: [
-                            { name: 'phone', value: '555-1234' },
-                            { name: 'phone', value: '555-5678' },
+                            { name: 'Phone', value: '555-1234' },
+                            { name: 'Phone', value: '555-5678' },
                         ],
                         emails: [
-                            { name: 'email', value: 'john@example.com' },
-                            { name: 'email', value: 'john.doe@personal.com' },
+                            { name: 'Email', value: 'john@example.com' },
+                            { name: 'Email', value: 'john.doe@personal.com' },
                         ],
                     },
                     customFields: [],
@@ -1144,7 +1145,8 @@ describe('AttioIntegration (Refactored)', () => {
                     integration._findAttioContactFromQuoWebhook,
                 ).toHaveBeenCalledWith('+15552222222');
                 const noteCall = mockAttioApi.api.createNote.mock.calls[0][0];
-                expect(noteCall.content).toContain('**Message Received**');
+                expect(noteCall.content).toContain('💬 Message');
+                expect(noteCall.content).toContain('Received: Hi there!');
             });
         });
 
@@ -1656,11 +1658,16 @@ describe('AttioIntegration (Refactored)', () => {
                 );
             });
 
-            it('should reject webhook without signature', async () => {
+            it('should allow Quo webhook without signature (v2 svix compatibility)', async () => {
+                // Quo webhooks are allowed without signatures because Quo doesn't support
+                // OpenPhone-Signature headers with v2 svix webhooks yet
                 const req = {
-                    body: {},
-                    headers: {},
-                    params: {},
+                    body: { type: 'message.received', data: {} },
+                    headers: {
+                        // No openphone-signature header - this is expected for Quo v2 webhooks
+                        'content-type': 'application/json',
+                    },
+                    params: { integrationId: 'test-id' },
                 };
                 const res = {
                     status: jest.fn().mockReturnThis(),
@@ -1669,8 +1676,9 @@ describe('AttioIntegration (Refactored)', () => {
 
                 await integration.onWebhookReceived({ req, res });
 
-                expect(res.status).toHaveBeenCalledWith(401);
-                expect(integration.queueWebhook).not.toHaveBeenCalled();
+                // Should accept the webhook (200) even without signature for Quo
+                expect(res.status).toHaveBeenCalledWith(200);
+                expect(integration.queueWebhook).toHaveBeenCalled();
             });
         });
 

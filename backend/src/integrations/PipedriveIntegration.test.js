@@ -304,27 +304,28 @@ describe('PipedriveIntegration (Refactored)', () => {
 
                 expect(result).toEqual({
                     externalId: '123',
-                    source: 'pipedrive',
+                    source: 'openphone-pipedrive',
+                    sourceUrl: 'https://app.pipedrive.com/person/123',
                     defaultFields: {
                         firstName: 'John',
                         lastName: 'Doe',
                         company: 'Acme Corp',
                         phoneNumbers: [
-                            { name: 'work', value: '555-1234', primary: true },
+                            { name: 'Work', value: '555-1234', primary: true },
                             {
-                                name: 'mobile',
+                                name: 'Mobile',
                                 value: '555-5678',
                                 primary: false,
                             },
                         ],
                         emails: [
                             {
-                                name: 'work',
+                                name: 'Work',
                                 value: 'john@example.com',
                                 primary: true,
                             },
                             {
-                                name: 'home',
+                                name: 'Home',
                                 value: 'john.doe@personal.com',
                                 primary: false,
                             },

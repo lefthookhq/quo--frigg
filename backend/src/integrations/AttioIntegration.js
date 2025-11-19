@@ -682,7 +682,7 @@ class AttioIntegration extends BaseCRMIntegration {
         for (const emailAttr of emailAttrs) {
             if (emailAttr.active_until === null && emailAttr.email_address) {
                 emails.push({
-                    name: 'email',
+                    name: 'Email',
                     value: emailAttr.email_address,
                 });
             }
@@ -693,7 +693,7 @@ class AttioIntegration extends BaseCRMIntegration {
         for (const phoneAttr of phoneAttrs) {
             if (phoneAttr.active_until === null && phoneAttr.phone_number) {
                 phoneNumbers.push({
-                    name: 'phone',
+                    name: 'Phone',
                     value: phoneAttr.phone_number,
                 });
             }
@@ -727,9 +727,13 @@ class AttioIntegration extends BaseCRMIntegration {
             }
         }
 
+        // Generate sourceUrl for linking back to Attio
+        const sourceUrl = `https://app.attio.com/people/${person.id.record_id}`;
+
         return {
             externalId: person.id.record_id,
-            source: 'attio',
+            source: 'openphone-attio',
+            sourceUrl: sourceUrl,
             defaultFields: {
                 firstName,
                 lastName,
@@ -1613,27 +1617,43 @@ class AttioIntegration extends BaseCRMIntegration {
             callObject.status === 'missed'
         ) {
             statusDescription = 'Incoming missed';
+        } else if (callObject.status === 'forwarded') {
+            // Handle forwarded calls
+            statusDescription = callObject.forwardedTo
+                ? `Incoming forwarded to ${callObject.forwardedTo}`
+                : 'Incoming forwarded by phone menu';
         } else {
             statusDescription = `${callObject.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} ${callObject.status}`;
         }
 
         let formattedSummary;
         if (callObject.direction === 'outgoing') {
-            formattedSummary = `☎️ Call Quo 📱 ${inboxName} (${inboxNumber}) → ${contactPhone}
+            formattedSummary = `☎️ Call Quo 📱 ${inboxName} ${inboxNumber} → ${contactPhone}
 
 ${statusDescription}
 
 [View the call activity in Quo](${deepLink})`;
         } else {
-            formattedSummary = `☎️ Call ${contactPhone} → Quo 📱 ${inboxName} (${inboxNumber})
+            // Incoming call
+            let statusLine = statusDescription;
 
-${statusDescription}`;
-
+            // Add recording indicator if completed with duration
             if (callObject.status === 'completed' && callObject.duration > 0) {
-                formattedSummary += ` / ▶️ Recording (${durationFormatted})`;
+                statusLine += ` / ▶️ Recording (${durationFormatted})`;
             }
 
-            formattedSummary += `
+            // Add voicemail indicator if present
+            if (callObject.voicemail) {
+                const voicemailDuration = callObject.voicemail.duration || 0;
+                const vmMinutes = Math.floor(voicemailDuration / 60);
+                const vmSeconds = voicemailDuration % 60;
+                const vmFormatted = `${vmMinutes}:${vmSeconds.toString().padStart(2, '0')}`;
+                statusLine += ` / ➿ Voicemail (${vmFormatted})`;
+            }
+
+            formattedSummary = `☎️ Call ${contactPhone} → Quo 📱 ${inboxName} ${inboxNumber}
+
+${statusLine}
 
 [View the call activity in Quo](${deepLink})`;
         }
@@ -1663,38 +1683,6 @@ ${statusDescription}`;
      * @returns {Promise<Object>} Processing result
      */
     async _handleQuoMessageEvent(webhookData) {
-        // DEBUG: Check Quo API module state
-        console.log('\n====== QUO API MODULE DEBUG ======');
-        console.log('[Debug] this.quo exists:', !!this.quo);
-        console.log('[Debug] this.quo.api exists:', !!this.quo?.api);
-        if (this.quo?.api) {
-            console.log('[Debug] API_KEY_NAME:', this.quo.api.API_KEY_NAME);
-            console.log('[Debug] API_KEY_VALUE exists:', !!this.quo.api.API_KEY_VALUE);
-            if (this.quo.api.API_KEY_VALUE) {
-                console.log('[Debug] API_KEY_VALUE length:', this.quo.api.API_KEY_VALUE.length);
-                console.log('[Debug] API_KEY_VALUE preview:', this.quo.api.API_KEY_VALUE.substring(0, 15) + '...');
-            } else {
-                console.log('[Debug] ❌ API_KEY_VALUE is NULL/UNDEFINED');
-            }
-            // Test what headers would be generated
-            const testHeaders = await this.quo.api.addAuthHeaders({});
-            console.log('[Debug] addAuthHeaders() returns:', JSON.stringify(testHeaders));
-
-            // DEBUG: Try an actual API call to verify auth headers in real request
-            console.log('\n[Debug] 🧪 Testing actual API call with getPhoneNumber...');
-            try {
-                const messageObject = webhookData.data.object;
-                const testPhoneNumber = await this.quo.api.getPhoneNumber(messageObject.phoneNumberId);
-                console.log('[Debug] ✅ getPhoneNumber call SUCCEEDED');
-                console.log('[Debug] Phone number name:', testPhoneNumber.name);
-            } catch (testError) {
-                console.log('[Debug] ❌ getPhoneNumber call FAILED');
-                console.log('[Debug] Error:', testError.message);
-                console.log('[Debug] Error status:', testError.status || 'N/A');
-            }
-        }
-        console.log('==================================\n');
-
         const messageObject = webhookData.data.object;
 
         console.log(`[Quo Webhook] Processing message: ${messageObject.id}`);
@@ -1731,26 +1719,18 @@ ${statusDescription}`;
         let formattedContent;
         if (messageObject.direction === 'outgoing') {
             // Outgoing: Quo → Contact
-            formattedContent = `💬 **Message Sent**
+            formattedContent = `💬 Message Quo ${inboxName} ${messageObject.from} → ${messageObject.to}
 
-**From:** Quo ${inboxName} (${messageObject.from})
-**To:** ${messageObject.to}
+${userName} sent: ${messageObject.text || '(no text)'}
 
-**${userName}** sent:
-> ${messageObject.text || '(no text)'}
-
-[View in Quo](${deepLink})`;
+[View the message activity in Quo](${deepLink})`;
         } else {
             // Incoming: Contact → Quo
-            formattedContent = `💬 **Message Received**
+            formattedContent = `💬 Message ${messageObject.from} → Quo ${inboxName} ${messageObject.to}
 
-**From:** ${messageObject.from}
-**To:** Quo ${inboxName} (${messageObject.to})
+Received: ${messageObject.text || '(no text)'}
 
-Received:
-> ${messageObject.text || '(no text)'}
-
-[View in Quo](${deepLink})`;
+[View the message activity in Quo](${deepLink})`;
         }
 
         const activityData = {

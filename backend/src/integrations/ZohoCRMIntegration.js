@@ -214,11 +214,15 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         const company = this._extractCompany(person, objectType);
 
         const externalId = String(person.id || person.Id || 'unknown');
-        const source = 'zoho';
+        const source = 'openphone-zoho';
+
+        // Generate sourceUrl for linking back to Zoho CRM
+        const sourceUrl = `https://crm.zoho.com/crm/org/tab/Contacts/${externalId}`;
 
         return {
             externalId,
             source,
+            sourceUrl,
             defaultFields: {
                 firstName,
                 lastName: person.Last_Name || '',
@@ -242,11 +246,11 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         const phones = [];
 
         if (person.Phone) {
-            phones.push({ name: 'work', value: person.Phone });
+            phones.push({ name: 'Work', value: person.Phone });
         }
 
         if (objectType === 'Contact' && person.Mobile) {
-            phones.push({ name: 'mobile', value: person.Mobile });
+            phones.push({ name: 'Mobile', value: person.Mobile });
         }
 
         return phones;
@@ -256,7 +260,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         const emails = [];
 
         if (objectType === 'Contact' && person.Email) {
-            emails.push({ name: 'work', value: person.Email });
+            emails.push({ name: 'Work', value: person.Email });
         }
 
         return emails;
@@ -1282,23 +1286,34 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
 
         let formattedNote;
         if (callObject.direction === 'outgoing') {
-            formattedNote = `☎️ Call: Quo 📱 ${inboxName} (${inboxNumber}) → ${contactPhone}
+            formattedNote = `☎️ Call Quo 📱 ${inboxName} ${inboxNumber} → ${contactPhone}
 
-Status: ${statusDescription}
+${statusDescription}
 
-View in Quo: ${deepLink}`;
+[View the call activity in Quo](${deepLink})`;
         } else {
-            formattedNote = `☎️ Call: ${contactPhone} → Quo 📱 ${inboxName} (${inboxNumber})
+            // Incoming call
+            let statusLine = statusDescription;
 
-Status: ${statusDescription}`;
-
+            // Add recording indicator if completed with duration
             if (callObject.status === 'completed' && callObject.duration > 0) {
-                formattedNote += ` / ▶️ Recording (${durationFormatted})`;
+                statusLine += ` / ▶️ Recording (${durationFormatted})`;
             }
 
-            formattedNote += `
+            // Add voicemail indicator if present
+            if (callObject.voicemail) {
+                const voicemailDuration = callObject.voicemail.duration || 0;
+                const vmMinutes = Math.floor(voicemailDuration / 60);
+                const vmSeconds = voicemailDuration % 60;
+                const vmFormatted = `${vmMinutes}:${vmSeconds.toString().padStart(2, '0')}`;
+                statusLine += ` / ➿ Voicemail (${vmFormatted})`;
+            }
 
-View in Quo: ${deepLink}`;
+            formattedNote = `☎️ Call ${contactPhone} → Quo 📱 ${inboxName} ${inboxNumber}
+
+${statusLine}
+
+[View the call activity in Quo](${deepLink})`;
         }
 
         await this.zohoCrm.api.createNote('Contacts', contactId, {
@@ -1379,19 +1394,17 @@ View in Quo: ${deepLink}`;
 
         let formattedNote;
         if (messageObject.direction === 'outgoing') {
-            formattedNote = `💬 Message: ${inboxName} (${inboxNumber}) → ${contactPhone}
+            formattedNote = `💬 Message Quo ${inboxName} ${inboxNumber} → ${contactPhone}
 
-${userName} sent:
-"${messageObject.text || '(no text)'}"
+${userName} sent: ${messageObject.text || '(no text)'}
 
-View in Quo: ${deepLink}`;
+[View the message activity in Quo](${deepLink})`;
         } else {
-            formattedNote = `💬 Message: ${contactPhone} → ${inboxName} (${inboxNumber})
+            formattedNote = `💬 Message ${contactPhone} → Quo ${inboxName} ${inboxNumber}
 
-Received:
-"${messageObject.text || '(no text)'}"
+Received: ${messageObject.text || '(no text)'}
 
-View in Quo: ${deepLink}`;
+[View the message activity in Quo](${deepLink})`;
         }
 
         const noteResponse = await this.zohoCrm.api.createNote(
