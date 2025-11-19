@@ -948,8 +948,11 @@ describe('AttioIntegration (Refactored)', () => {
                 .fn()
                 .mockResolvedValue('attio-rec-123');
             mockQuoApi.api.getPhoneNumber = jest.fn().mockResolvedValue({
-                name: 'Main Line',
-                phoneNumber: '+15551234567',
+                data: {
+                    symbol: '🎒',
+                    name: 'Primary',
+                    number: '+15551234567',
+                },
             });
             mockQuoApi.api.getUser = jest.fn().mockResolvedValue({
                 name: 'John Agent',
@@ -986,7 +989,11 @@ describe('AttioIntegration (Refactored)', () => {
                     id: 'note-123',
                 });
                 mockQuoApi.api.getPhoneNumber = jest.fn().mockResolvedValue({
-                    data: { name: 'Main Line' }
+                    data: {
+                        symbol: '🎒',
+                        name: 'Primary',
+                        number: '+15551234567',
+                    }
                 });
 
                 const result =
@@ -1034,7 +1041,11 @@ describe('AttioIntegration (Refactored)', () => {
                     id: 'note-456',
                 });
                 mockQuoApi.api.getPhoneNumber = jest.fn().mockResolvedValue({
-                    data: { name: 'Main Line' }
+                    data: {
+                        symbol: '🎒',
+                        name: 'Primary',
+                        number: '+15551234567',
+                    }
                 });
 
                 const result =
@@ -1089,7 +1100,11 @@ describe('AttioIntegration (Refactored)', () => {
                     id: 'note-789',
                 });
                 mockQuoApi.api.getPhoneNumber = jest.fn().mockResolvedValue({
-                    data: { name: 'Main Line' }
+                    data: {
+                        symbol: '🎒',
+                        name: 'Primary',
+                        number: '+15551234567',
+                    }
                 });
 
                 const result =
@@ -1137,7 +1152,11 @@ describe('AttioIntegration (Refactored)', () => {
                     id: 'note-abc',
                 });
                 mockQuoApi.api.getPhoneNumber = jest.fn().mockResolvedValue({
-                    data: { name: 'Main Line' }
+                    data: {
+                        symbol: '🎒',
+                        name: 'Primary',
+                        number: '+15551234567',
+                    }
                 });
 
                 const result =

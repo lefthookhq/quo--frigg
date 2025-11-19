@@ -1368,12 +1368,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
         const phoneNumberDetails = await this.quo.api.getPhoneNumber(
             callObject.phoneNumberId,
         );
-        const inboxName =
-            phoneNumberDetails.data.users.length > 0
-                ? phoneNumberDetails.data.users[0].firstName +
-                  ' ' +
-                  phoneNumberDetails.data.users[0].lastName
-                : 'Quo Line';
+        const inboxName = phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
+            ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
+            : phoneNumberDetails.data?.name || 'Quo Line';
 
         const userDetails = await this.quo.api.getUser(callObject.userId);
         const userName = `${userDetails.data.firstName || ''} ${userDetails.data.lastName || ''}`.trim() ||
@@ -1405,7 +1402,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
 
         let formattedNote;
         if (callObject.direction === 'outgoing') {
-            formattedNote = `<p><strong>☎️ Call Quo 📱 ${inboxName} ${inboxNumberRaw} → ${contactPhone}</strong></p>
+            formattedNote = `<p><strong>☎️ Call ${inboxName} ${inboxNumberRaw} → ${contactPhone}</strong></p>
 <p>${statusDescription}</p>
 <p><a href="${deepLink}">View the call activity in Quo</a></p>`;
         } else {
@@ -1426,7 +1423,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 statusLine += ` / ➿ Voicemail (${vmFormatted})`;
             }
 
-            formattedNote = `<p><strong>☎️ Call ${contactPhone} → Quo 📱 ${inboxName} ${inboxNumberRaw}</strong></p>
+            formattedNote = `<p><strong>☎️ Call ${contactPhone} → ${inboxName} ${inboxNumberRaw}</strong></p>
 <p>${statusLine}</p>
 <p><a href="${deepLink}">View the call activity in Quo</a></p>`;
         }
@@ -1476,15 +1473,12 @@ class PipedriveIntegration extends BaseCRMIntegration {
         const phoneNumberDetails = await this.quo.api.getPhoneNumber(
             messageObject.phoneNumberId,
         );
-        const inboxName =
-            phoneNumberDetails.data.users.length > 0
-                ? phoneNumberDetails.data.users[0].firstName +
-                  ' ' +
-                  phoneNumberDetails.data.users[0].lastName
-                : 'Quo Inbox';
+        const inboxName = phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
+            ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
+            : phoneNumberDetails.data?.name || 'Quo Inbox';
 
         const inboxNumber =
-            phoneNumberDetails.data.number ||
+            phoneNumberDetails.data?.number ||
             messageObject.to;
 
         const userDetails = await this.quo.api.getUser(messageObject.userId);
@@ -1496,12 +1490,12 @@ class PipedriveIntegration extends BaseCRMIntegration {
         let formattedNote;
         if (messageObject.direction === 'outgoing') {
             // Outgoing: Quo → Contact
-            formattedNote = `<p><strong>💬 Message Quo ${inboxName} ${inboxNumber} → ${contactPhone}</strong></p>
+            formattedNote = `<p><strong>💬 Message ${inboxName} ${inboxNumber} → ${contactPhone}</strong></p>
 <p>${userName} sent: ${messageObject.text || '(no text)'}</p>
 <p><a href="${deepLink}">View the message activity in Quo</a></p>`;
         } else {
             // Incoming: Contact → Quo
-            formattedNote = `<p><strong>💬 Message ${contactPhone} → Quo ${inboxName} ${inboxNumber}</strong></p>
+            formattedNote = `<p><strong>💬 Message ${contactPhone} → ${inboxName} ${inboxNumber}</strong></p>
 <p>Received: ${messageObject.text || '(no text)'}</p>
 <p><a href="${deepLink}">View the message activity in Quo</a></p>`;
         }
@@ -1553,12 +1547,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
         const phoneNumberDetails = await this.quo.api.getPhoneNumber(
             callObject.phoneNumberId,
         );
-        const inboxName =
-            phoneNumberDetails.data.users.length > 0
-                ? phoneNumberDetails.data.users[0].firstName +
-                  ' ' +
-                  phoneNumberDetails.data.users[0].lastName
-                : 'Quo Line';
+        const inboxName = phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
+            ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
+            : phoneNumberDetails.data?.name || 'Quo Line';
         const inboxNumber =
             phoneNumberDetails.data.number ||
             phoneNumberDetails.data.formattedNumber ||
@@ -1593,9 +1584,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
         let formattedNote = '';
 
         if (callObject.direction === 'outgoing') {
-            formattedNote = `<p><strong>☎️  Call Quo 📱 ${inboxName} ${inboxNumber} → ${contactPhone}</strong></p>`;
+            formattedNote = `<p><strong>☎️ Call ${inboxName} ${inboxNumber} → ${contactPhone}</strong></p>`;
         } else {
-            formattedNote = `<p><strong>☎️  Call ${contactPhone} → Quo 📱 ${inboxName} ${inboxNumber}</strong></p>`;
+            formattedNote = `<p><strong>☎️ Call ${contactPhone} → ${inboxName} ${inboxNumber}</strong></p>`;
         }
 
         formattedNote += `\n<p>${statusDescription}`;

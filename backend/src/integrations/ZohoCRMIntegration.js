@@ -1249,15 +1249,12 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         const phoneNumberDetails = await this.quo.api.getPhoneNumber(
             callObject.phoneNumberId,
         );
-        const inboxName =
-            phoneNumberDetails.data.users.length > 0
-                ? phoneNumberDetails.data.users[0].firstName +
-                  ' ' +
-                  phoneNumberDetails.data.users[0].lastName
-                : 'Quo Line';
+        const inboxName = phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
+            ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
+            : phoneNumberDetails.data?.name || 'Quo Line';
         const inboxNumber =
-            phoneNumberDetails.data.number ||
-            phoneNumberDetails.data.formattedNumber ||
+            phoneNumberDetails.data?.number ||
+            phoneNumberDetails.data?.formattedNumber ||
             participants[callObject.direction === 'outgoing' ? 0 : 1];
 
         const userDetails = await this.quo.api.getUser(callObject.userId);
@@ -1286,9 +1283,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
 
         let formattedNote;
         if (callObject.direction === 'outgoing') {
-            formattedNote = `☎️ Call Quo 📱 ${inboxName} ${inboxNumber} → ${contactPhone}
-
-${statusDescription}
+            formattedNote = `${statusDescription}
 
 [View the call activity in Quo](${deepLink})`;
         } else {
@@ -1309,17 +1304,15 @@ ${statusDescription}
                 statusLine += ` / ➿ Voicemail (${vmFormatted})`;
             }
 
-            formattedNote = `☎️ Call ${contactPhone} → Quo 📱 ${inboxName} ${inboxNumber}
-
-${statusLine}
+            formattedNote = `${statusLine}
 
 [View the call activity in Quo](${deepLink})`;
         }
 
         // Create title with phone numbers
         const callTitle = callObject.direction === 'outgoing'
-            ? `Call: Quo ${inboxName} ${inboxNumber} → ${contactPhone}`
-            : `Call: ${contactPhone} → Quo ${inboxName} ${inboxNumber}`;
+            ? `☎️ Call ${inboxName} ${inboxNumber} → ${contactPhone}`
+            : `☎️ Call ${contactPhone} → ${inboxName} ${inboxNumber}`;
 
         await this.zohoCrm.api.createNote('Contacts', contactId, {
             Note_Title: callTitle,
@@ -1378,16 +1371,13 @@ ${statusLine}
         const phoneNumberDetails = await this.quo.api.getPhoneNumber(
             messageObject.phoneNumberId,
         );
-        const inboxName =
-            phoneNumberDetails.data.users.length > 0
-                ? phoneNumberDetails.data.users[0].firstName +
-                  ' ' +
-                  phoneNumberDetails.data.users[0].lastName
-                : 'Quo Inbox';
+        const inboxName = phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
+            ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
+            : phoneNumberDetails.data?.name || 'Quo Inbox';
 
         const inboxNumber =
-            phoneNumberDetails.data.number ||
-            phoneNumberDetails.data.formattedNumber ||
+            phoneNumberDetails.data?.number ||
+            phoneNumberDetails.data?.formattedNumber ||
             messageObject.to;
 
         const userDetails = await this.quo.api.getUser(messageObject.userId);
@@ -1399,23 +1389,19 @@ ${statusLine}
 
         let formattedNote;
         if (messageObject.direction === 'outgoing') {
-            formattedNote = `💬 Message Quo ${inboxName} ${inboxNumber} → ${contactPhone}
-
-${userName} sent: ${messageObject.text || '(no text)'}
+            formattedNote = `${userName} sent: ${messageObject.text || '(no text)'}
 
 [View the message activity in Quo](${deepLink})`;
         } else {
-            formattedNote = `💬 Message ${contactPhone} → Quo ${inboxName} ${inboxNumber}
-
-Received: ${messageObject.text || '(no text)'}
+            formattedNote = `Received: ${messageObject.text || '(no text)'}
 
 [View the message activity in Quo](${deepLink})`;
         }
 
         // Create title with phone numbers
         const messageTitle = messageObject.direction === 'outgoing'
-            ? `Message: Quo ${inboxName} ${inboxNumber} → ${contactPhone}`
-            : `Message: ${contactPhone} → Quo ${inboxName} ${inboxNumber}`;
+            ? `💬 Message ${inboxName} ${inboxNumber} → ${contactPhone}`
+            : `💬 Message ${contactPhone} → ${inboxName} ${inboxNumber}`;
 
         const noteResponse = await this.zohoCrm.api.createNote(
             'Contacts',
@@ -1475,15 +1461,12 @@ Received: ${messageObject.text || '(no text)'}
         const phoneNumberDetails = await this.quo.api.getPhoneNumber(
             callObject.phoneNumberId,
         );
-        const inboxName =
-            phoneNumberDetails.data.users.length > 0
-                ? phoneNumberDetails.data.users[0].firstName +
-                  ' ' +
-                  phoneNumberDetails.data.users[0].lastName
-                : 'Quo Line';
+        const inboxName = phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
+            ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
+            : phoneNumberDetails.data?.name || 'Quo Line';
         const inboxNumber =
-            phoneNumberDetails.data.number ||
-            phoneNumberDetails.data.formattedNumber ||
+            phoneNumberDetails.data?.number ||
+            phoneNumberDetails.data?.formattedNumber ||
             participants[callObject.direction === 'outgoing' ? 0 : 1];
 
         const userDetails = await this.quo.api.getUser(callObject.userId);

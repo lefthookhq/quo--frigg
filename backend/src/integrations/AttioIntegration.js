@@ -1591,9 +1591,11 @@ class AttioIntegration extends BaseCRMIntegration {
         const phoneNumberDetails = await this.quo.api.getPhoneNumber(
             callObject.phoneNumberId,
         );
-        const inboxName = phoneNumberDetails.name || 'Quo Line';
+        const inboxName = phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
+            ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
+            : phoneNumberDetails.data?.name || 'Quo Line';
         const inboxNumber =
-            phoneNumberDetails.phoneNumber ||
+            phoneNumberDetails.data?.number ||
             participants[callObject.direction === 'outgoing' ? 0 : 1];
 
         const userDetails = await this.quo.api.getUser(callObject.userId);
@@ -1628,13 +1630,13 @@ class AttioIntegration extends BaseCRMIntegration {
 
         let formattedSummary, title;
         if (callObject.direction === 'outgoing') {
-            title = `☎️ Call Quo 📱 ${inboxName} ${inboxNumber} → ${contactPhone}`;
+            title = `☎️ Call ${inboxName} ${inboxNumber} → ${contactPhone}`;
             formattedSummary = `${statusDescription}
 
 [View the call activity in Quo](${deepLink})`;
         } else {
             // Incoming call
-            title = `☎️ Call ${contactPhone} → Quo 📱 ${inboxName} ${inboxNumber}`;
+            title = `☎️ Call ${contactPhone} → ${inboxName} ${inboxNumber}`;
             let statusLine = statusDescription;
 
             // Add recording indicator if completed with duration
@@ -1705,7 +1707,9 @@ class AttioIntegration extends BaseCRMIntegration {
         const phoneNumberDetails = await this.quo.api.getPhoneNumber(
             messageObject.phoneNumberId,
         );
-        const inboxName = phoneNumberDetails.name || 'Quo Inbox';
+        const inboxName = phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
+            ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
+            : phoneNumberDetails.data?.name || 'Quo Inbox';
 
         const userDetails = await this.quo.api.getUser(messageObject.userId);
         const userName =
@@ -1718,13 +1722,13 @@ class AttioIntegration extends BaseCRMIntegration {
         let formattedContent, title;
         if (messageObject.direction === 'outgoing') {
             // Outgoing: Quo → Contact
-            title = `💬 Message Quo ${inboxName} ${messageObject.from} → ${messageObject.to}`;
+            title = `💬 Message ${inboxName} ${messageObject.from} → ${messageObject.to}`;
             formattedContent = `${userName} sent: ${messageObject.text || '(no text)'}
 
 [View the message activity in Quo](${deepLink})`;
         } else {
             // Incoming: Contact → Quo
-            title = `💬 Message ${messageObject.from} → Quo ${inboxName} ${messageObject.to}`;
+            title = `💬 Message ${messageObject.from} → ${inboxName} ${messageObject.to}`;
             formattedContent = `Received: ${messageObject.text || '(no text)'}
 
 [View the message activity in Quo](${deepLink})`;
