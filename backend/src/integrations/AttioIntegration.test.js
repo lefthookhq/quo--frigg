@@ -999,6 +999,7 @@ describe('AttioIntegration (Refactored)', () => {
                     parent_object: 'people',
                     parent_record_id: 'attio-rec-123',
                     title: expect.stringContaining('Call:'),
+                    title: expect.stringContaining('→'),
                     format: 'markdown',
                     content: expect.stringContaining('☎️'),
                     created_at: '2025-01-10T15:30:00Z',
@@ -1100,7 +1101,8 @@ describe('AttioIntegration (Refactored)', () => {
                 expect(mockAttioApi.api.createNote).toHaveBeenCalledWith({
                     parent_object: 'people',
                     parent_record_id: 'attio-rec-123',
-                    title: expect.stringContaining('SMS:'),
+                    title: expect.stringContaining('Message:'),
+                    title: expect.stringContaining('→'),
                     format: 'markdown',
                     content: expect.stringContaining('💬'),
                     created_at: '2025-01-10T17:00:00Z',

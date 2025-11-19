@@ -1316,8 +1316,13 @@ ${statusLine}
 [View the call activity in Quo](${deepLink})`;
         }
 
+        // Create title with phone numbers
+        const callTitle = callObject.direction === 'outgoing'
+            ? `Call: Quo ${inboxName} ${inboxNumber} → ${contactPhone}`
+            : `Call: ${contactPhone} → Quo ${inboxName} ${inboxNumber}`;
+
         await this.zohoCrm.api.createNote('Contacts', contactId, {
-            Note_Title: `Call: ${callObject.direction} (${durationFormatted})`,
+            Note_Title: callTitle,
             Note_Content: formattedNote,
         });
 
@@ -1407,11 +1412,16 @@ Received: ${messageObject.text || '(no text)'}
 [View the message activity in Quo](${deepLink})`;
         }
 
+        // Create title with phone numbers
+        const messageTitle = messageObject.direction === 'outgoing'
+            ? `Message: Quo ${inboxName} ${inboxNumber} → ${contactPhone}`
+            : `Message: ${contactPhone} → Quo ${inboxName} ${inboxNumber}`;
+
         const noteResponse = await this.zohoCrm.api.createNote(
             'Contacts',
             contactId,
             {
-                Note_Title: `SMS: ${messageObject.direction}`,
+                Note_Title: messageTitle,
                 Note_Content: formattedNote,
             },
         );

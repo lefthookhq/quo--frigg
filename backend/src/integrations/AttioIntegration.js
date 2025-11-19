@@ -878,7 +878,7 @@ class AttioIntegration extends BaseCRMIntegration {
             const noteData = {
                 parent_object: 'people',
                 parent_record_id: activity.contactExternalId,
-                title: `SMS: ${activity.direction}`,
+                title: activity.title || `SMS: ${activity.direction}`,
                 format: 'markdown',
                 content: activity.content,
                 created_at: activity.timestamp,
@@ -912,7 +912,7 @@ class AttioIntegration extends BaseCRMIntegration {
             const noteData = {
                 parent_object: 'people',
                 parent_record_id: activity.contactExternalId,
-                title: `Call: ${activity.direction} (${activity.duration}s)`,
+                title: activity.title || `Call: ${activity.direction} (${activity.duration}s)`,
                 format: 'markdown',
                 content: activity.summary || 'Phone call',
                 created_at: activity.timestamp,
@@ -1626,15 +1626,17 @@ class AttioIntegration extends BaseCRMIntegration {
             statusDescription = `${callObject.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} ${callObject.status}`;
         }
 
-        let formattedSummary;
+        let formattedSummary, title;
         if (callObject.direction === 'outgoing') {
-            formattedSummary = `☎️ Call Quo 📱 ${inboxName} ${inboxNumber} → ${contactPhone}
+            title = `Call Quo 📱 ${inboxName} ${inboxNumber} → ${contactPhone}`;
+            formattedSummary = `☎️ ${title}
 
 ${statusDescription}
 
 [View the call activity in Quo](${deepLink})`;
         } else {
             // Incoming call
+            title = `Call ${contactPhone} → Quo 📱 ${inboxName} ${inboxNumber}`;
             let statusLine = statusDescription;
 
             // Add recording indicator if completed with duration
@@ -1651,7 +1653,7 @@ ${statusDescription}
                 statusLine += ` / ➿ Voicemail (${vmFormatted})`;
             }
 
-            formattedSummary = `☎️ Call ${contactPhone} → Quo 📱 ${inboxName} ${inboxNumber}
+            formattedSummary = `☎️ ${title}
 
 ${statusLine}
 
@@ -1664,6 +1666,7 @@ ${statusLine}
                 callObject.direction === 'outgoing' ? 'outbound' : 'inbound',
             timestamp: callObject.createdAt,
             duration: callObject.duration,
+            title: title,
             summary: formattedSummary,
         };
 
@@ -1716,17 +1719,19 @@ ${statusLine}
 
         const deepLink = webhookData.data.deepLink || '#';
 
-        let formattedContent;
+        let formattedContent, title;
         if (messageObject.direction === 'outgoing') {
             // Outgoing: Quo → Contact
-            formattedContent = `💬 Message Quo ${inboxName} ${messageObject.from} → ${messageObject.to}
+            title = `Message Quo ${inboxName} ${messageObject.from} → ${messageObject.to}`;
+            formattedContent = `💬 ${title}
 
 ${userName} sent: ${messageObject.text || '(no text)'}
 
 [View the message activity in Quo](${deepLink})`;
         } else {
             // Incoming: Contact → Quo
-            formattedContent = `💬 Message ${messageObject.from} → Quo ${inboxName} ${messageObject.to}
+            title = `Message ${messageObject.from} → Quo ${inboxName} ${messageObject.to}`;
+            formattedContent = `💬 ${title}
 
 Received: ${messageObject.text || '(no text)'}
 
@@ -1737,6 +1742,7 @@ Received: ${messageObject.text || '(no text)'}
             contactExternalId: attioRecordId,
             direction:
                 messageObject.direction === 'outgoing' ? 'outbound' : 'inbound',
+            title: title,
             content: formattedContent,
             timestamp: messageObject.createdAt,
         };
