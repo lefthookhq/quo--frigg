@@ -615,5 +615,129 @@ describe('PipedriveIntegration (Refactored)', () => {
                 consoleSpy.mockRestore();
             });
         });
+
+        describe('_syncPersonToQuo with bulkUpsertToQuo', () => {
+            beforeEach(() => {
+                mockQuoApi.api.createContact = jest.fn();
+                mockQuoApi.api.updateContact = jest.fn();
+                mockQuoApi.api.listContacts = jest.fn();
+                integration.transformPersonToQuo = jest.fn();
+            });
+
+            it('should use bulkUpsertToQuo for added action', async () => {
+                const person = {
+                    id: 123,
+                    first_name: 'John',
+                    last_name: 'Doe',
+                    phones: [{ value: '+15551234567', primary: true }],
+                };
+
+                const mockQuoContact = {
+                    externalId: '123',
+                    source: 'openphone-pipedrive',
+                    defaultFields: {
+                        firstName: 'John',
+                        lastName: 'Doe',
+                        phoneNumbers: [{ name: 'Work', value: '+15551234567' }],
+                    },
+                };
+
+                integration.transformPersonToQuo.mockResolvedValue(mockQuoContact);
+                integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
+                    successCount: 1,
+                    errorCount: 0,
+                    errors: [],
+                });
+
+                await integration._syncPersonToQuo(person, 'added');
+
+                expect(integration.bulkUpsertToQuo).toHaveBeenCalledWith(
+                    expect.arrayContaining([
+                        expect.objectContaining({
+                            externalId: '123',
+                        }),
+                    ])
+                );
+                expect(mockQuoApi.api.createContact).not.toHaveBeenCalled();
+            });
+
+            it('should handle bulkUpsertToQuo errors for added action', async () => {
+                const person = { id: 456, first_name: 'Error', last_name: 'Test' };
+
+                integration.transformPersonToQuo.mockResolvedValue({
+                    externalId: '456',
+                    defaultFields: { firstName: 'Error' },
+                });
+                integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
+                    successCount: 0,
+                    errorCount: 1,
+                    errors: [{
+                        error: 'Failed to create contact',
+                        externalId: '456',
+                    }],
+                });
+
+                await expect(
+                    integration._syncPersonToQuo(person, 'added')
+                ).rejects.toThrow('Failed to added contact');
+            });
+
+            it('should use bulkUpsertToQuo for updated action', async () => {
+                const person = {
+                    id: 789,
+                    first_name: 'Jane',
+                    last_name: 'Smith',
+                    phones: [{ value: '+15559999999', primary: true }],
+                };
+
+                const mockQuoContact = {
+                    externalId: '789',
+                    defaultFields: {
+                        firstName: 'Jane',
+                        lastName: 'Smith',
+                        phoneNumbers: [{ name: 'Mobile', value: '+15559999999' }],
+                    },
+                };
+
+                integration.transformPersonToQuo.mockResolvedValue(mockQuoContact);
+                integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
+                    successCount: 1,
+                    errorCount: 0,
+                    errors: [],
+                });
+
+                await integration._syncPersonToQuo(person, 'updated');
+
+                expect(integration.bulkUpsertToQuo).toHaveBeenCalledWith(
+                    expect.arrayContaining([
+                        expect.objectContaining({
+                            externalId: '789',
+                        }),
+                    ])
+                );
+                expect(mockQuoApi.api.updateContact).not.toHaveBeenCalled();
+            });
+
+            it('should handle bulkUpsertToQuo errors for updated action', async () => {
+                const person = { id: 999, first_name: 'Update', last_name: 'Error' };
+
+                integration.transformPersonToQuo.mockResolvedValue({
+                    externalId: '999',
+                    defaultFields: { firstName: 'Update' },
+                });
+                integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
+                    successCount: 0,
+                    errorCount: 1,
+                    errors: [{
+                        error: 'Contact update failed',
+                        externalId: '999',
+                    }],
+                });
+
+                await expect(
+                    integration._syncPersonToQuo(person, 'updated')
+                ).rejects.toThrow('Failed to updated contact');
+            });
+        });
     });
 });

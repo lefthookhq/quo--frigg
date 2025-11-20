@@ -1204,70 +1204,19 @@ class PipedriveIntegration extends BaseCRMIntegration {
 
             const quoContact = await this.transformPersonToQuo(person);
 
-            if (action === 'added') {
-                const createResponse =
-                    await this.quo.api.createContact(quoContact);
+            // Use bulkUpsertToQuo for both added and updated operations
+            const result = await this.bulkUpsertToQuo([quoContact]);
 
-                if (!createResponse?.data) {
-                    throw new Error(
-                        `Create contact failed: Invalid response from Quo API`,
-                    );
-                }
-
-                console.log(
-                    `[Pipedrive] ✓ Contact ${createResponse.data.id} created in Quo (externalId: ${quoContact.externalId})`,
+            if (result.errorCount > 0) {
+                const error = result.errors[0];
+                throw new Error(
+                    `Failed to ${action} contact: ${error?.error || 'Unknown error'}`,
                 );
-            } else {
-                const existingContacts = await this.quo.api.listContacts({
-                    externalIds: [quoContact.externalId],
-                    maxResults: 10,
-                });
-
-                const exactMatch =
-                    existingContacts?.data && existingContacts.data.length > 0
-                        ? existingContacts.data.find(
-                              (contact) =>
-                                  contact.externalId === quoContact.externalId,
-                          )
-                        : null;
-
-                if (exactMatch) {
-                    const quoContactId = exactMatch.id;
-                    const { externalId, ...contactData } = quoContact;
-                    const updateResponse = await this.quo.api.updateContact(
-                        quoContactId,
-                        contactData,
-                    );
-
-                    if (!updateResponse?.data) {
-                        throw new Error(
-                            `Update contact failed: Invalid response from Quo API`,
-                        );
-                    }
-
-                    console.log(
-                        `[Pipedrive] ✓ Contact ${quoContactId} updated in Quo (externalId: ${externalId})`,
-                    );
-                } else {
-                    // Contact not found - create it as fallback
-                    console.log(
-                        `[Pipedrive] Contact with externalId ${quoContact.externalId} not found in Quo, creating as fallback`,
-                    );
-
-                    const createResponse =
-                        await this.quo.api.createContact(quoContact);
-
-                    if (!createResponse?.data) {
-                        throw new Error(
-                            `Create contact failed: Invalid response from Quo API`,
-                        );
-                    }
-
-                    console.log(
-                        `[Pipedrive] ✓ Contact ${createResponse.data.id} created in Quo as fallback (externalId: ${quoContact.externalId})`,
-                    );
-                }
             }
+
+            console.log(
+                `[Pipedrive] ✓ Contact synced to Quo via bulkUpsertToQuo (${action}, externalId: ${quoContact.externalId})`,
+            );
 
             console.log(`[Pipedrive] ✓ Person ${person.id} synced to Quo`);
         } catch (error) {
