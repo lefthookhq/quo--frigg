@@ -17,6 +17,11 @@ process.env.AWS_REGION = 'us-east-1';
 process.env.S3_BUCKET_NAME = 'test-bucket';
 process.env.SQS_QUEUE_URL =
     'https://sqs.us-east-1.amazonaws.com/123456789/test-queue';
+// Prisma needs DATABASE_URL even in tests (used by bulkUpsertToQuo)
+// This is a mock URL that won't actually be used since Prisma calls are mocked
+process.env.DATABASE_URL =
+    process.env.DATABASE_URL ||
+    'postgresql://test:test@localhost:5432/test_db';
 
 jest.mock('aws-sdk', () => ({
     S3: jest.fn(() => ({
@@ -36,6 +41,24 @@ jest.mock('aws-sdk', () => ({
                 MessageId: 'test-message-id',
             }),
         })),
+    })),
+}));
+
+// Mock Prisma Client to avoid database connections in tests
+jest.mock('@prisma/client', () => ({
+    PrismaClient: jest.fn().mockImplementation(() => ({
+        user: {
+            findUnique: jest.fn().mockResolvedValue({
+                id: 'test-user-id',
+                appOrgId: 'test-org-id',
+            }),
+            findMany: jest.fn().mockResolvedValue([]),
+            create: jest.fn().mockResolvedValue({}),
+            update: jest.fn().mockResolvedValue({}),
+            delete: jest.fn().mockResolvedValue({}),
+        },
+        $connect: jest.fn().mockResolvedValue(undefined),
+        $disconnect: jest.fn().mockResolvedValue(undefined),
     })),
 }));
 

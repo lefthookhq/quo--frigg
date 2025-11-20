@@ -18,6 +18,13 @@ describe('AttioIntegration - 409 Conflict Handling', () => {
         integration.upsertMapping = jest.fn().mockResolvedValue();
         integration._upsertContactMapping = jest.fn().mockResolvedValue();
         integration.getMapping = jest.fn().mockResolvedValue(null);
+
+        // Mock bulkUpsertToQuo to avoid Prisma database calls
+        integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
+            successCount: 1,
+            errorCount: 0,
+            errors: [],
+        });
     });
 
     describe('_syncPersonToQuo - 409 conflict handling', () => {
