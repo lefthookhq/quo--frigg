@@ -998,17 +998,7 @@ class AttioIntegration extends BaseCRMIntegration {
         } catch (error) {
             console.error('[Attio] Failed to setup webhook:', error);
 
-            // Non-fatal error handling
-            if (this.id) {
-                await this.updateIntegrationMessages.execute(
-                    this.id,
-                    'errors',
-                    'Attio Webhook Setup Failed',
-                    `Could not register webhook with Attio: ${error.message}. Automatic sync disabled. Please check OAuth scopes include 'webhook:read-write' and try again.`,
-                    Date.now(),
-                );
-            }
-
+            // Return failed status - setupWebhooks() will handle logging
             return {
                 status: 'failed',
                 error: error.message,
@@ -1183,17 +1173,7 @@ class AttioIntegration extends BaseCRMIntegration {
                 }
             }
 
-            // Fatal error - both webhooks required
-            if (this.id) {
-                await this.updateIntegrationMessages.execute(
-                    this.id,
-                    'errors',
-                    'Quo Webhook Setup Failed',
-                    `Could not register webhooks with Quo: ${error.message}. Integration requires both message and call webhooks to function properly.`,
-                    Date.now(),
-                );
-            }
-
+            // Return failed status - setupWebhooks() will handle logging
             return {
                 status: 'failed',
                 error: error.message,
@@ -1204,7 +1184,7 @@ class AttioIntegration extends BaseCRMIntegration {
     /**
      * Setup webhooks with both Attio and Quo
      * Called during onCreate lifecycle (BaseCRMIntegration)
-     * Orchestrates webhook setup for both services - BOTH required for success
+     * Orchestrates webhook setup for both services
      * @returns {Promise<Object>} Setup result
      */
     async setupWebhooks() {
@@ -1214,45 +1194,115 @@ class AttioIntegration extends BaseCRMIntegration {
             overallStatus: 'success',
         };
 
-        try {
-            results.attio = await this.setupAttioWebhook();
-            results.quo = await this.setupQuoWebhook();
+        // Use Promise.allSettled to attempt both webhook setups independently
+        // This ensures Quo webhooks are created even if Attio setup fails
+        const [attioResult, quoResult] = await Promise.allSettled([
+            this.setupAttioWebhook(),
+            this.setupQuoWebhook(),
+        ]);
 
-            // BOTH required - fail if either fails
-            if (
-                results.attio.status === 'failed' ||
-                results.quo.status === 'failed'
-            ) {
-                results.overallStatus = 'failed';
-                const failedServices = [];
-                if (results.attio.status === 'failed')
-                    failedServices.push('Attio');
-                if (results.quo.status === 'failed') failedServices.push('Quo');
+        // Process Attio webhook result
+        if (attioResult.status === 'fulfilled' && attioResult.value.status !== 'failed') {
+            results.attio = attioResult.value;
+            console.log('[Webhook Setup] ✓ Attio webhooks configured');
+        } else {
+            // Handle both rejected Promise AND fulfilled Promise with failed status
+            const errorMessage = attioResult.status === 'rejected'
+                ? attioResult.reason.message
+                : attioResult.value.error;
 
-                throw new Error(
-                    `Webhook setup failed for: ${failedServices.join(', ')}. Both Attio and Quo webhooks are required for integration to function.`,
+            results.attio = {
+                status: 'failed',
+                error: errorMessage,
+            };
+            console.error(
+                '[Webhook Setup] ✗ Attio webhook setup failed:',
+                errorMessage,
+            );
+
+            // Log warning for Attio failure (non-fatal)
+            if (this.id) {
+                await this.updateIntegrationMessages.execute(
+                    this.id,
+                    'warnings',
+                    'Attio Webhook Setup Failed',
+                    `Could not register webhooks with Attio: ${errorMessage}. Integration will function without Attio webhooks, but changes in Attio will not sync automatically.`,
+                    Date.now(),
                 );
             }
+        }
 
-            console.log(
-                '[Webhook Setup] ✓ All webhooks configured successfully',
+        // Process Quo webhook result
+        if (quoResult.status === 'fulfilled' && quoResult.value.status !== 'failed') {
+            results.quo = quoResult.value;
+            console.log('[Webhook Setup] ✓ Quo webhooks configured');
+        } else {
+            // Handle both rejected Promise AND fulfilled Promise with failed status
+            const errorMessage = quoResult.status === 'rejected'
+                ? quoResult.reason.message
+                : quoResult.value.error;
+
+            results.quo = {
+                status: 'failed',
+                error: errorMessage,
+            };
+            console.error(
+                '[Webhook Setup] ✗ Quo webhook setup failed:',
+                errorMessage,
             );
-            return results;
-        } catch (error) {
-            console.error('[Webhook Setup] Failed:', error);
 
+            // Quo webhooks are critical - log as error
             if (this.id) {
                 await this.updateIntegrationMessages.execute(
                     this.id,
                     'errors',
-                    'Webhook Setup Failed',
-                    `Failed to setup webhooks: ${error.message}`,
+                    'Quo Webhook Setup Failed',
+                    `Could not register webhooks with Quo: ${errorMessage}. Integration requires both message and call webhooks to function properly.`,
                     Date.now(),
                 );
             }
-
-            throw error;
         }
+
+        // Determine overall status
+        // Note: Both methods catch errors and return {status: 'failed'} instead of throwing
+        // So we check both Promise fulfillment AND the result.status field
+        const attioSuccess =
+            attioResult.status === 'fulfilled' &&
+            results.attio.status !== 'failed';
+        const quoSuccess =
+            quoResult.status === 'fulfilled' &&
+            results.quo.status !== 'failed';
+
+        if (attioSuccess && quoSuccess) {
+            results.overallStatus = 'success';
+            console.log(
+                '[Webhook Setup] ✓ All webhooks configured successfully',
+            );
+        } else if (quoSuccess) {
+            // Quo webhooks working is sufficient for basic functionality
+            results.overallStatus = 'partial';
+            console.log(
+                '[Webhook Setup] ⚠ Partial success - Quo webhooks configured, Attio webhooks failed',
+            );
+        } else if (attioSuccess) {
+            // Attio webhooks alone are not sufficient (need Quo for core functionality)
+            results.overallStatus = 'failed';
+            console.error(
+                '[Webhook Setup] ✗ Failed - Quo webhooks required for integration to function',
+            );
+            throw new Error(
+                'Quo webhook setup failed. Quo webhooks are required for integration to function.',
+            );
+        } else {
+            // Both failed
+            results.overallStatus = 'failed';
+            console.error('[Webhook Setup] ✗ Failed - Both webhook setups failed');
+            throw new Error(
+                'Both Attio and Quo webhook setups failed. Integration cannot function without Quo webhooks.',
+            );
+        }
+
+        return results;
     }
 
     /**

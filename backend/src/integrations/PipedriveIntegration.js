@@ -715,99 +715,21 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 `[Quo] Registering message and call webhooks at: ${webhookUrl}`,
             );
 
-            const messageWebhookResponse =
-                await this.quo.api.createMessageWebhook({
-                    url: webhookUrl,
-                    events: this.constructor.WEBHOOK_EVENTS.QUO_MESSAGES,
-                    label: this.constructor.WEBHOOK_LABELS.QUO_MESSAGES,
-                    status: 'enabled',
-                });
+            // Use base class method to create webhooks with resourceIds support
+            const {
+                messageWebhookId,
+                messageWebhookKey,
+                callWebhookId,
+                callWebhookKey,
+                callSummaryWebhookId,
+                callSummaryWebhookKey,
+            } = await this._createQuoWebhooksWithPhoneIds(webhookUrl);
 
-            if (!messageWebhookResponse?.data?.id) {
-                throw new Error(
-                    'Invalid Quo message webhook response: missing webhook ID',
-                );
-            }
-
-            if (!messageWebhookResponse.data.key) {
-                throw new Error(
-                    'Invalid Quo message webhook response: missing webhook key',
-                );
-            }
-
-            const messageWebhookId = messageWebhookResponse.data.id;
-            const messageWebhookKey = messageWebhookResponse.data.key;
-
-            createdWebhooks.push({
-                type: 'message',
-                id: messageWebhookId,
-            });
-
-            console.log(
-                `[Quo] ✓ Message webhook registered with ID: ${messageWebhookId}`,
-            );
-
-            const callWebhookResponse = await this.quo.api.createCallWebhook({
-                url: webhookUrl,
-                events: this.constructor.WEBHOOK_EVENTS.QUO_CALLS,
-                label: this.constructor.WEBHOOK_LABELS.QUO_CALLS,
-                status: 'enabled',
-            });
-
-            if (!callWebhookResponse?.data?.id) {
-                throw new Error(
-                    'Invalid Quo call webhook response: missing webhook ID',
-                );
-            }
-
-            if (!callWebhookResponse.data.key) {
-                throw new Error(
-                    'Invalid Quo call webhook response: missing webhook key',
-                );
-            }
-
-            const callWebhookId = callWebhookResponse.data.id;
-            const callWebhookKey = callWebhookResponse.data.key;
-
-            createdWebhooks.push({
-                type: 'call',
-                id: callWebhookId,
-            });
-
-            console.log(
-                `[Quo] ✓ Call webhook registered with ID: ${callWebhookId}`,
-            );
-
-            const callSummaryWebhookResponse =
-                await this.quo.api.createCallSummaryWebhook({
-                    url: webhookUrl,
-                    events: this.constructor.WEBHOOK_EVENTS.QUO_CALL_SUMMARIES,
-                    label: this.constructor.WEBHOOK_LABELS.QUO_CALL_SUMMARIES,
-                    status: 'enabled',
-                });
-
-            if (!callSummaryWebhookResponse?.data?.id) {
-                throw new Error(
-                    'Invalid Quo call-summary webhook response: missing webhook ID',
-                );
-            }
-
-            if (!callSummaryWebhookResponse.data.key) {
-                throw new Error(
-                    'Invalid Quo call-summary webhook response: missing webhook key',
-                );
-            }
-
-            const callSummaryWebhookId = callSummaryWebhookResponse.data.id;
-            const callSummaryWebhookKey = callSummaryWebhookResponse.data.key;
-
-            createdWebhooks.push({
-                type: 'callSummary',
-                id: callSummaryWebhookId,
-            });
-
-            console.log(
-                `[Quo] ✓ Call-summary webhook registered with ID: ${callSummaryWebhookId}`,
+            // Track created webhooks for rollback on error
+            createdWebhooks.push(
+                { type: 'message', id: messageWebhookId },
+                { type: 'call', id: callWebhookId },
+                { type: 'callSummary', id: callSummaryWebhookId }
             );
 
             const updatedConfig = {
@@ -890,44 +812,101 @@ class PipedriveIntegration extends BaseCRMIntegration {
             overallStatus: 'success',
         };
 
-        try {
-            results.pipedrive = await this.setupPipedriveWebhooks();
+        // Use Promise.allSettled to attempt both webhook setups independently
+        // This ensures Quo webhooks are created even if Pipedrive setup fails
+        const [pipedriveResult, quoResult] = await Promise.allSettled([
+            this.setupPipedriveWebhooks(),
+            this.setupQuoWebhook(),
+        ]);
 
-            results.quo = await this.setupQuoWebhook();
-
-            // BOTH required - fail if either fails
-            if (
-                results.pipedrive.status === 'failed' ||
-                results.quo.status === 'failed'
-            ) {
-                results.overallStatus = 'failed';
-                const failedServices = [];
-                if (results.pipedrive.status === 'failed')
-                    failedServices.push('Pipedrive');
-                if (results.quo.status === 'failed') failedServices.push('Quo');
-
-                throw new Error(
-                    `Webhook setup failed for: ${failedServices.join(', ')}. Both Pipedrive and Quo webhooks are required for integration to function.`,
-                );
-            }
-
-            console.log(
-                '[Webhook Setup] ✓ All webhooks configured successfully',
+        // Process Pipedrive webhook result
+        if (pipedriveResult.status === 'fulfilled') {
+            results.pipedrive = pipedriveResult.value;
+            console.log('[Webhook Setup] ✓ Pipedrive webhooks configured');
+        } else {
+            results.pipedrive = {
+                status: 'failed',
+                error: pipedriveResult.reason.message,
+            };
+            console.error(
+                '[Webhook Setup] ✗ Pipedrive webhook setup failed:',
+                pipedriveResult.reason.message,
             );
-            return results;
-        } catch (error) {
-            console.error('[Webhook Setup] Failed:', error);
 
+            // Log warning for Pipedrive failure (non-fatal)
+            await this.updateIntegrationMessages.execute(
+                this.id,
+                'warnings',
+                'Pipedrive Webhook Setup Failed',
+                `Could not register webhooks with Pipedrive: ${pipedriveResult.reason.message}. Integration will function without Pipedrive webhooks, but changes in Pipedrive will not sync automatically.`,
+                Date.now(),
+            );
+        }
+
+        // Process Quo webhook result
+        if (quoResult.status === 'fulfilled') {
+            results.quo = quoResult.value;
+            console.log('[Webhook Setup] ✓ Quo webhooks configured');
+        } else {
+            results.quo = {
+                status: 'failed',
+                error: quoResult.reason.message,
+            };
+            console.error(
+                '[Webhook Setup] ✗ Quo webhook setup failed:',
+                quoResult.reason.message,
+            );
+
+            // Quo webhooks are critical - log as error
             await this.updateIntegrationMessages.execute(
                 this.id,
                 'errors',
-                'Webhook Setup Failed',
-                `Failed to setup webhooks: ${error.message}`,
+                'Quo Webhook Setup Failed',
+                `Failed to register webhooks with Quo: ${quoResult.reason.message}. Quo webhooks are required for receiving calls and messages.`,
                 Date.now(),
             );
-
-            throw error; // Re-throw since both are required
         }
+
+        // Determine overall status
+        // Note: Both methods catch errors and return {status: 'failed'} instead of throwing
+        // So we check both Promise fulfillment AND the result.status field
+        const pipedriveSuccess =
+            pipedriveResult.status === 'fulfilled' &&
+            results.pipedrive.status !== 'failed';
+        const quoSuccess =
+            quoResult.status === 'fulfilled' &&
+            results.quo.status !== 'failed';
+
+        if (pipedriveSuccess && quoSuccess) {
+            results.overallStatus = 'success';
+            console.log(
+                '[Webhook Setup] ✓ All webhooks configured successfully',
+            );
+        } else if (quoSuccess) {
+            // Quo webhooks working is sufficient for basic functionality
+            results.overallStatus = 'partial';
+            console.log(
+                '[Webhook Setup] ⚠ Partial success - Quo webhooks configured, Pipedrive webhooks failed',
+            );
+        } else if (pipedriveSuccess) {
+            // Pipedrive webhooks alone are not sufficient (need Quo for core functionality)
+            results.overallStatus = 'failed';
+            console.error(
+                '[Webhook Setup] ✗ Failed - Quo webhooks required for integration to function',
+            );
+            throw new Error(
+                'Quo webhook setup failed. Quo webhooks are required for integration to function.',
+            );
+        } else {
+            // Both failed
+            results.overallStatus = 'failed';
+            console.error('[Webhook Setup] ✗ Failed - Both webhook setups failed');
+            throw new Error(
+                'Both Pipedrive and Quo webhook setups failed. Integration cannot function without Quo webhooks.',
+            );
+        }
+
+        return results;
     }
 
     /**

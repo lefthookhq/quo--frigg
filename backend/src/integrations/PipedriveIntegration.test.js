@@ -82,6 +82,7 @@ describe('PipedriveIntegration (Refactored)', () => {
         integration.quo = mockQuoApi;
         integration.id = 'test-integration-id';
         integration.userId = 'test-user-id';
+        integration.config = {}; // Initialize config
 
         // Mock base class dependencies
         integration.commands = {
@@ -464,6 +465,11 @@ describe('PipedriveIntegration (Refactored)', () => {
         describe('setupWebhooks', () => {
             it('should create webhooks for person events', async () => {
                 process.env.BASE_URL = 'https://api.example.com';
+
+                // Ensure config is properly initialized
+                integration.config = {};
+                integration.id = 'test-integration-id'; // Ensure ID is set
+
                 mockPipedriveApi.api.createWebhook.mockResolvedValue({
                     data: { id: 1 },
                 });
@@ -477,7 +483,28 @@ describe('PipedriveIntegration (Refactored)', () => {
                     data: { id: 'summary-wh', key: 'summary-key' }
                 });
 
-                await integration.setupWebhooks();
+                // Ensure commands and updateIntegrationMessages are mocked
+                integration.commands = {
+                    updateIntegrationConfig: jest.fn().mockResolvedValue({})
+                };
+                integration.updateIntegrationMessages = {
+                    execute: jest.fn().mockResolvedValue({})
+                };
+
+                // Mock _generateWebhookUrl since it's called by setupQuoWebhook
+                integration._generateWebhookUrl = jest.fn((path) => `https://api.example.com/api/pipedrive-integration${path}`);
+
+                // Mock the base class helper method that's called by setupQuoWebhook
+                integration._createQuoWebhooksWithPhoneIds = jest.fn().mockResolvedValue({
+                    messageWebhookId: 'msg-wh',
+                    messageWebhookKey: 'msg-key',
+                    callWebhookId: 'call-wh',
+                    callWebhookKey: 'call-key',
+                    callSummaryWebhookId: 'summary-wh',
+                    callSummaryWebhookKey: 'summary-key',
+                });
+
+                const result = await integration.setupWebhooks();
 
                 expect(
                     mockPipedriveApi.api.createWebhook,
@@ -503,21 +530,31 @@ describe('PipedriveIntegration (Refactored)', () => {
             });
 
             it('should handle webhook setup failure gracefully', async () => {
+                // Both Pipedrive and Quo fail (new behavior with Promise.allSettled)
                 mockPipedriveApi.api.createWebhook.mockRejectedValue(
                     new Error('Webhook creation failed'),
+                );
+                mockQuoApi.api.createMessageWebhook.mockRejectedValue(
+                    new Error('Quo API error')
+                );
+                mockQuoApi.api.createCallWebhook.mockRejectedValue(
+                    new Error('Quo API error')
+                );
+                mockQuoApi.api.createCallSummaryWebhook.mockRejectedValue(
+                    new Error('Quo API error')
                 );
 
                 const consoleSpy = jest
                     .spyOn(console, 'error')
                     .mockImplementation();
 
+                // New error message when BOTH fail
                 await expect(integration.setupWebhooks()).rejects.toThrow(
-                    'Failed to create any webhooks',
+                    'Both Pipedrive and Quo webhook setups failed'
                 );
 
                 expect(consoleSpy).toHaveBeenCalledWith(
-                    '[Webhook Setup] Failed:',
-                    expect.any(Error),
+                    '[Webhook Setup] ✗ Failed - Both webhook setups failed',
                 );
 
                 consoleSpy.mockRestore();

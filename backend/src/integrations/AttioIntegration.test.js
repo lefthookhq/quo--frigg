@@ -568,8 +568,9 @@ describe('AttioIntegration (Refactored)', () => {
                     new Error('Webhook creation failed'),
                 );
 
+                // With Promise.allSettled, Quo failure throws even if Attio succeeds
                 await expect(integration.setupWebhooks()).rejects.toThrow(
-                    'Webhook setup failed for: Quo',
+                    'Quo webhook setup failed',
                 );
 
                 // Verify the base class method was called
@@ -580,8 +581,9 @@ describe('AttioIntegration (Refactored)', () => {
             it('should handle missing BASE_URL', async () => {
                 delete process.env.BASE_URL;
 
+                // With Promise.allSettled, both fail independently but Quo failure is what throws
                 await expect(integration.setupWebhooks()).rejects.toThrow(
-                    'Webhook setup failed for: Attio, Quo',
+                    'Both Attio and Quo webhook setups failed',
                 );
             });
 
@@ -591,22 +593,42 @@ describe('AttioIntegration (Refactored)', () => {
                     new Error('Network error'),
                 );
 
+                // Need to mock Quo webhooks to also fail, otherwise partial success occurs
+                integration._createQuoWebhooksWithPhoneIds.mockRejectedValue(
+                    new Error('Quo API error'),
+                );
+
                 const consoleSpy = jest
                     .spyOn(console, 'error')
                     .mockImplementation();
 
+                // With Promise.allSettled, both fail independently
                 await expect(integration.setupWebhooks()).rejects.toThrow(
-                    'Webhook setup failed for: Attio',
+                    'Both Attio and Quo webhook setups failed',
                 );
 
                 expect(consoleSpy).toHaveBeenCalled();
+
+                // When BOTH fail, both messages are logged:
+                // 1. Attio logs as warning (non-fatal)
+                expect(
+                    integration.updateIntegrationMessages.execute,
+                ).toHaveBeenCalledWith(
+                    integration.id,
+                    'warnings',
+                    'Attio Webhook Setup Failed',
+                    expect.stringContaining('Could not register webhooks with Attio'),
+                    expect.any(Number),
+                );
+
+                // 2. Quo logs as error (critical)
                 expect(
                     integration.updateIntegrationMessages.execute,
                 ).toHaveBeenCalledWith(
                     integration.id,
                     'errors',
-                    'Webhook Setup Failed',
-                    expect.stringContaining('Failed to setup webhooks'),
+                    'Quo Webhook Setup Failed',
+                    expect.stringContaining('Could not register webhooks with Quo'),
                     expect.any(Number),
                 );
 
