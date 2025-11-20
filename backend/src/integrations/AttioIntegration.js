@@ -307,7 +307,7 @@ class AttioIntegration extends BaseCRMIntegration {
      * @returns {string} Normalized phone number
      */
     _normalizePhoneNumber(phone) {
-        if (!phone) return phone;
+        if (!phone || typeof phone !== 'string') return phone;
         // Remove spaces, parentheses, dashes, but keep + for international format
         return phone.replace(/[\s\(\)\-]/g, '');
     }

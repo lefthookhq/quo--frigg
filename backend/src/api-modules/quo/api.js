@@ -3,7 +3,10 @@ const { ApiKeyRequester, get } = require('@friggframework/core');
 class Api extends ApiKeyRequester {
     constructor(params = {}) {
         super(params);
-        this.baseUrl = process.env.QUO_BASE_URL;
+        this.baseUrl =
+            params.baseUrl ||
+            process.env.QUO_BASE_URL ||
+            'https://dev-public-api.openphone.dev';
 
         this.API_KEY_NAME = 'Authorization';
 
