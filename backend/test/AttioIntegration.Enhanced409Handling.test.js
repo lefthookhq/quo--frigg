@@ -66,7 +66,9 @@ describe('AttioIntegration - Enhanced 409 Conflict Handling', () => {
                 data: [existingContact],
             });
 
-            mockQuoApi.updateContact.mockResolvedValue({ data: existingContact });
+            mockQuoApi.updateContact.mockResolvedValue({
+                data: existingContact,
+            });
 
             // Act
             await integration._syncPersonToQuo(attioRecord, 'created');
@@ -162,7 +164,9 @@ describe('AttioIntegration - Enhanced 409 Conflict Handling', () => {
                 data: [existingContact],
             });
 
-            mockQuoApi.updateContact.mockResolvedValue({ data: existingContact });
+            mockQuoApi.updateContact.mockResolvedValue({
+                data: existingContact,
+            });
 
             // Act
             await integration._syncPersonToQuo(attioRecord, 'created');
@@ -187,9 +191,7 @@ describe('AttioIntegration - Enhanced 409 Conflict Handling', () => {
                 id: 'quo-456',
                 externalId: 'attio-123',
                 defaultFields: {
-                    phoneNumbers: [
-                        { value: '+12125551234', type: 'mobile' },
-                    ],
+                    phoneNumbers: [{ value: '+12125551234', type: 'mobile' }],
                 },
             };
 
@@ -204,7 +206,9 @@ describe('AttioIntegration - Enhanced 409 Conflict Handling', () => {
                 data: [existingContact],
             });
 
-            mockQuoApi.updateContact.mockResolvedValue({ data: existingContact });
+            mockQuoApi.updateContact.mockResolvedValue({
+                data: existingContact,
+            });
 
             // Act
             await integration._syncPersonToQuo(attioRecord, 'created');

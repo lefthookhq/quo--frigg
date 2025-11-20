@@ -28,7 +28,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
         },
         modules: {
             axisCare: { definition: axisCare.Definition },
-            quo: { 
+            quo: {
                 definition: {
                     ...quo.Definition,
                     getName: () => 'quo-axisCare',
@@ -37,7 +37,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
                         ...(quo.Definition.display || {}),
                         label: 'Quo (AxisCare)',
                     },
-                }
+                },
             },
         },
         routes: [

@@ -18,7 +18,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             icon: '',
         },
         modules: {
-            quo: { 
+            quo: {
                 definition: {
                     ...QuoDefinition,
                     getName: () => 'quo-zohoCrm',
@@ -27,7 +27,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                         ...(QuoDefinition.display || {}),
                         label: 'Quo (Zoho CRM)',
                     },
-                }
+                },
             },
             zohoCrm: {
                 definition: zohoCrm.Definition,
@@ -465,7 +465,8 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             const notificationConfig = {
                 watch: [
                     {
-                        channel_id: this.constructor.ZOHO_NOTIFICATION_CHANNEL_ID,
+                        channel_id:
+                            this.constructor.ZOHO_NOTIFICATION_CHANNEL_ID,
                         events: ['Accounts.all', 'Contacts.all'],
                         notify_url: notificationUrl,
                         token: notificationToken,
@@ -501,7 +502,8 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
 
             const updatedConfig = {
                 ...this.config,
-                zohoNotificationChannelId: this.constructor.ZOHO_NOTIFICATION_CHANNEL_ID,
+                zohoNotificationChannelId:
+                    this.constructor.ZOHO_NOTIFICATION_CHANNEL_ID,
                 zohoNotificationToken: notificationToken,
                 zohoNotificationUrl: notificationUrl,
                 notificationCreatedAt: new Date().toISOString(),
@@ -655,7 +657,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             createdWebhooks.push(
                 { type: 'message', id: messageWebhookId },
                 { type: 'call', id: callWebhookId },
-                { type: 'callSummary', id: callSummaryWebhookId }
+                { type: 'callSummary', id: callSummaryWebhookId },
             );
 
             const updatedConfig = {
@@ -800,8 +802,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             zohoResult.status === 'fulfilled' &&
             results.zoho.status !== 'failed';
         const quoSuccess =
-            quoResult.status === 'fulfilled' &&
-            results.quo.status !== 'failed';
+            quoResult.status === 'fulfilled' && results.quo.status !== 'failed';
 
         if (zohoSuccess && quoSuccess) {
             results.overallStatus = 'success';
@@ -826,7 +827,9 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         } else {
             // Both failed
             results.overallStatus = 'failed';
-            console.error('[Webhook Setup] ✗ Failed - Both webhook setups failed');
+            console.error(
+                '[Webhook Setup] ✗ Failed - Both webhook setups failed',
+            );
             throw new Error(
                 'Both Zoho CRM and Quo webhook setups failed. Integration cannot function without Quo webhooks.',
             );
@@ -1220,7 +1223,9 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         const contactId = await this._findZohoContactByPhone(contactPhone);
 
         if (!contactId) {
-            console.log(`[Quo Webhook] ℹ️ No contact found for phone ${contactPhone} in Zoho CRM, skipping call sync`);
+            console.log(
+                `[Quo Webhook] ℹ️ No contact found for phone ${contactPhone} in Zoho CRM, skipping call sync`,
+            );
             return;
         }
 
@@ -1229,9 +1234,10 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         const phoneNumberDetails = await this.quo.api.getPhoneNumber(
             callObject.phoneNumberId,
         );
-        const inboxName = phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
-            ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
-            : phoneNumberDetails.data?.name || 'Quo Line';
+        const inboxName =
+            phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
+                ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
+                : phoneNumberDetails.data?.name || 'Quo Line';
         const inboxNumber =
             phoneNumberDetails.data?.number ||
             phoneNumberDetails.data?.formattedNumber ||
@@ -1290,9 +1296,10 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         }
 
         // Create title with phone numbers
-        const callTitle = callObject.direction === 'outgoing'
-            ? `☎️  Call ${inboxName} ${inboxNumber} → ${contactPhone}`
-            : `☎️  Call ${contactPhone} → ${inboxName} ${inboxNumber}`;
+        const callTitle =
+            callObject.direction === 'outgoing'
+                ? `☎️  Call ${inboxName} ${inboxNumber} → ${contactPhone}`
+                : `☎️  Call ${contactPhone} → ${inboxName} ${inboxNumber}`;
 
         await this.zohoCrm.api.createNote('Contacts', contactId, {
             Note_Title: callTitle,
@@ -1344,16 +1351,19 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         const contactId = await this._findZohoContactByPhone(contactPhone);
 
         if (!contactId) {
-            console.log(`[Quo Webhook] ℹ️ No contact found for phone ${contactPhone} in Zoho CRM, skipping message sync`);
+            console.log(
+                `[Quo Webhook] ℹ️ No contact found for phone ${contactPhone} in Zoho CRM, skipping message sync`,
+            );
             return;
         }
 
         const phoneNumberDetails = await this.quo.api.getPhoneNumber(
             messageObject.phoneNumberId,
         );
-        const inboxName = phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
-            ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
-            : phoneNumberDetails.data?.name || 'Quo Inbox';
+        const inboxName =
+            phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
+                ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
+                : phoneNumberDetails.data?.name || 'Quo Inbox';
 
         const inboxNumber =
             phoneNumberDetails.data?.number ||
@@ -1379,9 +1389,10 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         }
 
         // Create title with phone numbers
-        const messageTitle = messageObject.direction === 'outgoing'
-            ? `💬 Message ${inboxName} ${inboxNumber} → ${contactPhone}`
-            : `💬 Message ${contactPhone} → ${inboxName} ${inboxNumber}`;
+        const messageTitle =
+            messageObject.direction === 'outgoing'
+                ? `💬 Message ${inboxName} ${inboxNumber} → ${contactPhone}`
+                : `💬 Message ${contactPhone} → ${inboxName} ${inboxNumber}`;
 
         const noteResponse = await this.zohoCrm.api.createNote(
             'Contacts',
@@ -1434,16 +1445,19 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         const contactId = await this._findZohoContactByPhone(contactPhone);
 
         if (!contactId) {
-            console.log(`[Quo Webhook] ℹ️ No contact found for phone ${contactPhone} in Zoho CRM, skipping call summary sync`);
+            console.log(
+                `[Quo Webhook] ℹ️ No contact found for phone ${contactPhone} in Zoho CRM, skipping call summary sync`,
+            );
             return;
         }
 
         const phoneNumberDetails = await this.quo.api.getPhoneNumber(
             callObject.phoneNumberId,
         );
-        const inboxName = phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
-            ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
-            : phoneNumberDetails.data?.name || 'Quo Line';
+        const inboxName =
+            phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
+                ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
+                : phoneNumberDetails.data?.name || 'Quo Line';
         const inboxNumber =
             phoneNumberDetails.data?.number ||
             phoneNumberDetails.data?.formattedNumber ||
@@ -1540,7 +1554,12 @@ View in Quo: ${deepLink}`;
         };
     }
 
-    async _handlePersonWebhook({ objectType, recordId, moduleName, operation }) {
+    async _handlePersonWebhook({
+        objectType,
+        recordId,
+        moduleName,
+        operation,
+    }) {
         console.log(`[Zoho CRM Webhook] Handling ${objectType}: ${recordId}`);
 
         try {
@@ -1579,7 +1598,9 @@ View in Quo: ${deepLink}`;
 
             if (Array.isArray(response.data)) {
                 if (response.data.length === 0) {
-                    throw new Error(`Contact ${recordId} not found (empty array)`);
+                    throw new Error(
+                        `Contact ${recordId} not found (empty array)`,
+                    );
                 }
                 person = response.data[0];
             } else {
@@ -1594,7 +1615,9 @@ View in Quo: ${deepLink}`;
 
             if (Array.isArray(response.data)) {
                 if (response.data.length === 0) {
-                    throw new Error(`Account ${recordId} not found (empty array)`);
+                    throw new Error(
+                        `Account ${recordId} not found (empty array)`,
+                    );
                 }
                 person = response.data[0];
             } else {

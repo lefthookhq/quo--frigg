@@ -37,7 +37,7 @@ class AttioIntegration extends BaseCRMIntegration {
                         ...(quo.Definition.display || {}),
                         label: 'Quo (Attio)',
                     },
-                }
+                },
             },
         },
         routes: [
@@ -325,7 +325,7 @@ class AttioIntegration extends BaseCRMIntegration {
         if (!process.env.BASE_URL) {
             throw new Error(
                 'BASE_URL environment variable is required for webhook setup. ' +
-                'Please configure this in your deployment environment before enabling webhooks.',
+                    'Please configure this in your deployment environment before enabling webhooks.',
             );
         }
 
@@ -637,7 +637,7 @@ class AttioIntegration extends BaseCRMIntegration {
 
             console.log(
                 `[Attio] Fetched ${persons.length} ${objectType} at offset ${cursor || 0}, ` +
-                `hasMore=${!!nextCursor}`,
+                    `hasMore=${!!nextCursor}`,
             );
 
             return {
@@ -666,7 +666,6 @@ class AttioIntegration extends BaseCRMIntegration {
         const nameAttr = this.getActiveValue(attributes.name);
         let firstName = nameAttr?.first_name || '';
         const lastName = nameAttr?.last_name || '';
-
 
         if (!firstName || firstName.trim() === '') {
             firstName = 'Unknown';
@@ -912,7 +911,9 @@ class AttioIntegration extends BaseCRMIntegration {
             const noteData = {
                 parent_object: 'people',
                 parent_record_id: activity.contactExternalId,
-                title: activity.title || `Call: ${activity.direction} (${activity.duration}s)`,
+                title:
+                    activity.title ||
+                    `Call: ${activity.direction} (${activity.duration}s)`,
                 format: 'markdown',
                 content: activity.summary || 'Phone call',
                 created_at: activity.timestamp,
@@ -1115,7 +1116,7 @@ class AttioIntegration extends BaseCRMIntegration {
             createdWebhooks.push(
                 { type: 'message', id: messageWebhookId },
                 { type: 'call', id: callWebhookId },
-                { type: 'callSummary', id: callSummaryWebhookId }
+                { type: 'callSummary', id: callSummaryWebhookId },
             );
 
             console.log(
@@ -1202,14 +1203,18 @@ class AttioIntegration extends BaseCRMIntegration {
         ]);
 
         // Process Attio webhook result
-        if (attioResult.status === 'fulfilled' && attioResult.value.status !== 'failed') {
+        if (
+            attioResult.status === 'fulfilled' &&
+            attioResult.value.status !== 'failed'
+        ) {
             results.attio = attioResult.value;
             console.log('[Webhook Setup] ✓ Attio webhooks configured');
         } else {
             // Handle both rejected Promise AND fulfilled Promise with failed status
-            const errorMessage = attioResult.status === 'rejected'
-                ? attioResult.reason.message
-                : attioResult.value.error;
+            const errorMessage =
+                attioResult.status === 'rejected'
+                    ? attioResult.reason.message
+                    : attioResult.value.error;
 
             results.attio = {
                 status: 'failed',
@@ -1233,14 +1238,18 @@ class AttioIntegration extends BaseCRMIntegration {
         }
 
         // Process Quo webhook result
-        if (quoResult.status === 'fulfilled' && quoResult.value.status !== 'failed') {
+        if (
+            quoResult.status === 'fulfilled' &&
+            quoResult.value.status !== 'failed'
+        ) {
             results.quo = quoResult.value;
             console.log('[Webhook Setup] ✓ Quo webhooks configured');
         } else {
             // Handle both rejected Promise AND fulfilled Promise with failed status
-            const errorMessage = quoResult.status === 'rejected'
-                ? quoResult.reason.message
-                : quoResult.value.error;
+            const errorMessage =
+                quoResult.status === 'rejected'
+                    ? quoResult.reason.message
+                    : quoResult.value.error;
 
             results.quo = {
                 status: 'failed',
@@ -1270,8 +1279,7 @@ class AttioIntegration extends BaseCRMIntegration {
             attioResult.status === 'fulfilled' &&
             results.attio.status !== 'failed';
         const quoSuccess =
-            quoResult.status === 'fulfilled' &&
-            results.quo.status !== 'failed';
+            quoResult.status === 'fulfilled' && results.quo.status !== 'failed';
 
         if (attioSuccess && quoSuccess) {
             results.overallStatus = 'success';
@@ -1296,7 +1304,9 @@ class AttioIntegration extends BaseCRMIntegration {
         } else {
             // Both failed
             results.overallStatus = 'failed';
-            console.error('[Webhook Setup] ✗ Failed - Both webhook setups failed');
+            console.error(
+                '[Webhook Setup] ✗ Failed - Both webhook setups failed',
+            );
             throw new Error(
                 'Both Attio and Quo webhook setups failed. Integration cannot function without Quo webhooks.',
             );
@@ -1400,7 +1410,10 @@ class AttioIntegration extends BaseCRMIntegration {
         const { body, headers, integrationId } = data;
         console.log('Attio webhook data:', data);
         console.log('Entites currently loaded:', this.entities);
-        console.log('Is api key loaded into quo api class? ', !!this.quo.api.API_KEY_VALUE);
+        console.log(
+            'Is api key loaded into quo api class? ',
+            !!this.quo.api.API_KEY_VALUE,
+        );
 
         const signature = headers['x-attio-signature'];
 
@@ -1632,18 +1645,18 @@ class AttioIntegration extends BaseCRMIntegration {
                 ? participants[1]
                 : participants[0];
 
-        const attioRecordId = await this._findAttioContactFromQuoWebhook(
-            contactPhone,
-        );
+        const attioRecordId =
+            await this._findAttioContactFromQuoWebhook(contactPhone);
 
         const deepLink = webhookData.data.deepLink || '#';
 
         const phoneNumberDetails = await this.quo.api.getPhoneNumber(
             callObject.phoneNumberId,
         );
-        const inboxName = phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
-            ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
-            : phoneNumberDetails.data?.name || 'Quo Line';
+        const inboxName =
+            phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
+                ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
+                : phoneNumberDetails.data?.name || 'Quo Line';
         const inboxNumber =
             phoneNumberDetails.data?.number ||
             participants[callObject.direction === 'outgoing' ? 0 : 1];
@@ -1749,16 +1762,16 @@ class AttioIntegration extends BaseCRMIntegration {
             `[Quo Webhook] Message direction: ${messageObject.direction}, contact: ${contactPhone}`,
         );
 
-        const attioRecordId = await this._findAttioContactFromQuoWebhook(
-            contactPhone,
-        );
+        const attioRecordId =
+            await this._findAttioContactFromQuoWebhook(contactPhone);
 
         const phoneNumberDetails = await this.quo.api.getPhoneNumber(
             messageObject.phoneNumberId,
         );
-        const inboxName = phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
-            ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
-            : phoneNumberDetails.data?.name || 'Quo Inbox';
+        const inboxName =
+            phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
+                ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
+                : phoneNumberDetails.data?.name || 'Quo Inbox';
 
         const userDetails = await this.quo.api.getUser(messageObject.userId);
         const userName =
@@ -1912,7 +1925,7 @@ class AttioIntegration extends BaseCRMIntegration {
             if (contacts.length === 0) {
                 throw new Error(
                     `No Attio contact found with phone number ${phoneNumber} (normalized: ${normalizedPhone}). ` +
-                    `Contact must exist in Attio to log activities.`,
+                        `Contact must exist in Attio to log activities.`,
                 );
             }
 
@@ -1975,11 +1988,7 @@ class AttioIntegration extends BaseCRMIntegration {
      * @param {string} phoneNumber - Contact phone number (will be normalized)
      * @param {Object} additionalData - Additional mapping data (quoContactId, etc)
      */
-    async _upsertContactMapping(
-        externalId,
-        phoneNumber,
-        additionalData = {},
-    ) {
+    async _upsertContactMapping(externalId, phoneNumber, additionalData = {}) {
         if (!phoneNumber) {
             console.warn(
                 `[Mapping] No phone number provided for ${externalId}, skipping mapping`,
@@ -2026,9 +2035,8 @@ class AttioIntegration extends BaseCRMIntegration {
         );
 
         // STRATEGY 1: Try mapping lookup by phone number (O(1) - fast!)
-        const externalId = await this._getExternalIdFromMappingByPhone(
-            normalizedPhone,
-        );
+        const externalId =
+            await this._getExternalIdFromMappingByPhone(normalizedPhone);
         if (externalId) {
             console.log(
                 `[Webhook Optimization] ✓ Found via mapping cache: ${externalId}`,
@@ -2042,9 +2050,8 @@ class AttioIntegration extends BaseCRMIntegration {
         );
 
         try {
-            const attioRecordId = await this._findContactByPhone(
-                normalizedPhone,
-            );
+            const attioRecordId =
+                await this._findContactByPhone(normalizedPhone);
 
             // STRATEGY 3: Store mapping by phone number for future fast lookups
             console.log(

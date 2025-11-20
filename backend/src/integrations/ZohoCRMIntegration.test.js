@@ -101,15 +101,19 @@ describe('ZohoCRMIntegration (Refactored)', () => {
         integration.userId = 'test-user-id';
 
         // Mock base class methods
-        integration._fetchAndStoreEnabledPhoneIds = jest.fn().mockResolvedValue(['phone-1', 'phone-2']);
-        integration._createQuoWebhooksWithPhoneIds = jest.fn().mockResolvedValue({
-            messageWebhookId: 'quo-msg-wh',
-            messageWebhookKey: 'quo-msg-key',
-            callWebhookId: 'quo-call-wh',
-            callWebhookKey: 'quo-call-key',
-            callSummaryWebhookId: 'quo-summary-wh',
-            callSummaryWebhookKey: 'quo-summary-key',
-        });
+        integration._fetchAndStoreEnabledPhoneIds = jest
+            .fn()
+            .mockResolvedValue(['phone-1', 'phone-2']);
+        integration._createQuoWebhooksWithPhoneIds = jest
+            .fn()
+            .mockResolvedValue({
+                messageWebhookId: 'quo-msg-wh',
+                messageWebhookKey: 'quo-msg-key',
+                callWebhookId: 'quo-call-wh',
+                callWebhookKey: 'quo-call-key',
+                callSummaryWebhookId: 'quo-summary-wh',
+                callSummaryWebhookKey: 'quo-summary-key',
+            });
     });
 
     describe('Static Configuration', () => {
@@ -124,15 +128,24 @@ describe('ZohoCRMIntegration (Refactored)', () => {
 
         it('should have quo module with correct name and label overrides', () => {
             expect(ZohoCRMIntegration.Definition.modules.quo).toBeDefined();
-            expect(ZohoCRMIntegration.Definition.modules.quo.definition).toBeDefined();
-            
+            expect(
+                ZohoCRMIntegration.Definition.modules.quo.definition,
+            ).toBeDefined();
+
             // Test name override
-            expect(ZohoCRMIntegration.Definition.modules.quo.definition.getName()).toBe('quo-zohoCrm');
-            expect(ZohoCRMIntegration.Definition.modules.quo.definition.moduleName).toBe('quo-zohoCrm');
-            
+            expect(
+                ZohoCRMIntegration.Definition.modules.quo.definition.getName(),
+            ).toBe('quo-zohoCrm');
+            expect(
+                ZohoCRMIntegration.Definition.modules.quo.definition.moduleName,
+            ).toBe('quo-zohoCrm');
+
             // Test label override (if display property exists)
             if (ZohoCRMIntegration.Definition.modules.quo.definition.display) {
-                expect(ZohoCRMIntegration.Definition.modules.quo.definition.display.label).toBe('Quo (Zoho CRM)');
+                expect(
+                    ZohoCRMIntegration.Definition.modules.quo.definition.display
+                        .label,
+                ).toBe('Quo (Zoho CRM)');
             }
         });
 
@@ -280,7 +293,9 @@ describe('ZohoCRMIntegration (Refactored)', () => {
 
                 expect(result.externalId).toBe('contact-123');
                 expect(result.source).toBe('openphone-zoho');
-                expect(result.sourceUrl).toBe('https://crm.zoho.com/crm/org/tab/Contacts/contact-123');
+                expect(result.sourceUrl).toBe(
+                    'https://crm.zoho.com/crm/org/tab/Contacts/contact-123',
+                );
                 expect(result.defaultFields.firstName).toBe('John');
                 expect(result.defaultFields.lastName).toBe('Doe');
                 expect(result.defaultFields.phoneNumbers).toEqual([
@@ -301,10 +316,13 @@ describe('ZohoCRMIntegration (Refactored)', () => {
                     _objectType: 'Account',
                 };
 
-                const result = await integration.transformPersonToQuo(zohoAccount);
+                const result =
+                    await integration.transformPersonToQuo(zohoAccount);
 
                 expect(result.source).toBe('openphone-zoho');
-                expect(result.sourceUrl).toBe('https://crm.zoho.com/crm/org/tab/Contacts/account-456');
+                expect(result.sourceUrl).toBe(
+                    'https://crm.zoho.com/crm/org/tab/Contacts/account-456',
+                );
                 expect(result.externalId).toBe('account-456');
                 expect(result.defaultFields.firstName).toBe('Smith Industries');
             });
@@ -392,15 +410,19 @@ describe('ZohoCRMIntegration (Refactored)', () => {
                     });
 
                 // Mock Quo webhook creation
-                mockQuoApi.api.createMessageWebhook = jest.fn().mockResolvedValue({
-                    data: { id: 'msg-wh-123', key: 'msg-key' }
-                });
+                mockQuoApi.api.createMessageWebhook = jest
+                    .fn()
+                    .mockResolvedValue({
+                        data: { id: 'msg-wh-123', key: 'msg-key' },
+                    });
                 mockQuoApi.api.createCallWebhook = jest.fn().mockResolvedValue({
-                    data: { id: 'call-wh-123', key: 'call-key' }
+                    data: { id: 'call-wh-123', key: 'call-key' },
                 });
-                mockQuoApi.api.createCallSummaryWebhook = jest.fn().mockResolvedValue({
-                    data: { id: 'summary-wh-123', key: 'summary-key' }
-                });
+                mockQuoApi.api.createCallSummaryWebhook = jest
+                    .fn()
+                    .mockResolvedValue({
+                        data: { id: 'summary-wh-123', key: 'summary-key' },
+                    });
 
                 integration.commands = {
                     updateIntegrationConfig: jest.fn().mockResolvedValue({}),
@@ -447,7 +469,10 @@ describe('ZohoCRMIntegration (Refactored)', () => {
 
                 const result = await integration.fetchPersonById('contact-123');
 
-                expect(result).toEqual({ ...mockContact, _objectType: 'Contact' });
+                expect(result).toEqual({
+                    ...mockContact,
+                    _objectType: 'Contact',
+                });
                 expect(mockZohoCrm.api.getContact).toHaveBeenCalledWith(
                     'contact-123',
                 );
@@ -467,7 +492,10 @@ describe('ZohoCRMIntegration (Refactored)', () => {
 
                 const result = await integration.fetchPersonById('account-456');
 
-                expect(result).toEqual({ ...mockAccount, _objectType: 'Account' });
+                expect(result).toEqual({
+                    ...mockAccount,
+                    _objectType: 'Account',
+                });
             });
 
             it('should throw error if neither contact nor account found', async () => {
@@ -515,21 +543,27 @@ describe('ZohoCRMIntegration (Refactored)', () => {
                 };
 
                 integration._fetchZohoObject.mockResolvedValue(mockZohoPerson);
-                integration.transformPersonToQuo.mockResolvedValue(mockQuoContact);
+                integration.transformPersonToQuo.mockResolvedValue(
+                    mockQuoContact,
+                );
                 integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
                     successCount: 1,
                     errorCount: 0,
                     errors: [],
                 });
 
-                await integration._syncPersonToQuo(objectType, recordId, operation);
+                await integration._syncPersonToQuo(
+                    objectType,
+                    recordId,
+                    operation,
+                );
 
                 expect(integration.bulkUpsertToQuo).toHaveBeenCalledWith(
                     expect.arrayContaining([
                         expect.objectContaining({
                             externalId: recordId,
                         }),
-                    ])
+                    ]),
                 );
                 expect(mockQuoApi.api.createContact).not.toHaveBeenCalled();
             });
@@ -539,7 +573,9 @@ describe('ZohoCRMIntegration (Refactored)', () => {
                 const objectType = 'Contacts';
                 const operation = 'insert';
 
-                integration._fetchZohoObject.mockResolvedValue({ id: recordId });
+                integration._fetchZohoObject.mockResolvedValue({
+                    id: recordId,
+                });
                 integration.transformPersonToQuo.mockResolvedValue({
                     externalId: recordId,
                     defaultFields: { firstName: 'Test' },
@@ -547,14 +583,20 @@ describe('ZohoCRMIntegration (Refactored)', () => {
                 integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
                     successCount: 0,
                     errorCount: 1,
-                    errors: [{
-                        error: 'Failed to create contact',
-                        externalId: recordId,
-                    }],
+                    errors: [
+                        {
+                            error: 'Failed to create contact',
+                            externalId: recordId,
+                        },
+                    ],
                 });
 
                 await expect(
-                    integration._syncPersonToQuo(objectType, recordId, operation)
+                    integration._syncPersonToQuo(
+                        objectType,
+                        recordId,
+                        operation,
+                    ),
                 ).rejects.toThrow('Failed to insert contact');
             });
 
@@ -568,12 +610,18 @@ describe('ZohoCRMIntegration (Refactored)', () => {
                     defaultFields: {
                         firstName: 'Jane',
                         lastName: 'Smith',
-                        phoneNumbers: [{ name: 'Mobile', value: '+15559999999' }],
+                        phoneNumbers: [
+                            { name: 'Mobile', value: '+15559999999' },
+                        ],
                     },
                 };
 
-                integration._fetchZohoObject.mockResolvedValue({ id: recordId });
-                integration.transformPersonToQuo.mockResolvedValue(mockQuoContact);
+                integration._fetchZohoObject.mockResolvedValue({
+                    id: recordId,
+                });
+                integration.transformPersonToQuo.mockResolvedValue(
+                    mockQuoContact,
+                );
 
                 integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
                     successCount: 1,
@@ -581,14 +629,18 @@ describe('ZohoCRMIntegration (Refactored)', () => {
                     errors: [],
                 });
 
-                await integration._syncPersonToQuo(objectType, recordId, operation);
+                await integration._syncPersonToQuo(
+                    objectType,
+                    recordId,
+                    operation,
+                );
 
                 expect(integration.bulkUpsertToQuo).toHaveBeenCalledWith(
                     expect.arrayContaining([
                         expect.objectContaining({
                             externalId: recordId,
                         }),
-                    ])
+                    ]),
                 );
                 expect(mockQuoApi.api.updateContact).not.toHaveBeenCalled();
             });
@@ -598,7 +650,9 @@ describe('ZohoCRMIntegration (Refactored)', () => {
                 const objectType = 'Contacts';
                 const operation = 'update';
 
-                integration._fetchZohoObject.mockResolvedValue({ id: recordId });
+                integration._fetchZohoObject.mockResolvedValue({
+                    id: recordId,
+                });
                 integration.transformPersonToQuo.mockResolvedValue({
                     externalId: recordId,
                     defaultFields: { firstName: 'Test' },
@@ -607,14 +661,20 @@ describe('ZohoCRMIntegration (Refactored)', () => {
                 integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
                     successCount: 0,
                     errorCount: 1,
-                    errors: [{
-                        error: 'Contact update failed',
-                        externalId: recordId,
-                    }],
+                    errors: [
+                        {
+                            error: 'Contact update failed',
+                            externalId: recordId,
+                        },
+                    ],
                 });
 
                 await expect(
-                    integration._syncPersonToQuo(objectType, recordId, operation)
+                    integration._syncPersonToQuo(
+                        objectType,
+                        recordId,
+                        operation,
+                    ),
                 ).rejects.toThrow('Failed to update contact');
             });
         });

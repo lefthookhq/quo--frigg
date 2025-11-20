@@ -105,15 +105,27 @@ describe('PipedriveIntegration (Refactored)', () => {
 
         it('should have quo module with correct name and label overrides', () => {
             expect(PipedriveIntegration.Definition.modules.quo).toBeDefined();
-            expect(PipedriveIntegration.Definition.modules.quo.definition).toBeDefined();
-            
+            expect(
+                PipedriveIntegration.Definition.modules.quo.definition,
+            ).toBeDefined();
+
             // Test name override
-            expect(PipedriveIntegration.Definition.modules.quo.definition.getName()).toBe('quo-pipedrive');
-            expect(PipedriveIntegration.Definition.modules.quo.definition.moduleName).toBe('quo-pipedrive');
-            
+            expect(
+                PipedriveIntegration.Definition.modules.quo.definition.getName(),
+            ).toBe('quo-pipedrive');
+            expect(
+                PipedriveIntegration.Definition.modules.quo.definition
+                    .moduleName,
+            ).toBe('quo-pipedrive');
+
             // Test label override (if display property exists)
-            if (PipedriveIntegration.Definition.modules.quo.definition.display) {
-                expect(PipedriveIntegration.Definition.modules.quo.definition.display.label).toBe('Quo (Pipedrive)');
+            if (
+                PipedriveIntegration.Definition.modules.quo.definition.display
+            ) {
+                expect(
+                    PipedriveIntegration.Definition.modules.quo.definition
+                        .display.label,
+                ).toBe('Quo (Pipedrive)');
             }
         });
 
@@ -296,9 +308,11 @@ describe('PipedriveIntegration (Refactored)', () => {
                 };
 
                 // Mock organization fetch
-                mockPipedriveApi.api.getOrganization = jest.fn().mockResolvedValue({
-                    data: { name: 'Acme Corp' }
-                });
+                mockPipedriveApi.api.getOrganization = jest
+                    .fn()
+                    .mockResolvedValue({
+                        data: { name: 'Acme Corp' },
+                    });
 
                 const result =
                     await integration.transformPersonToQuo(pipedrivePerson);
@@ -390,9 +404,7 @@ describe('PipedriveIntegration (Refactored)', () => {
                 expect(mockPipedriveApi.api.getPerson).toHaveBeenCalledWith(
                     '123',
                 );
-                expect(
-                    mockPipedriveApi.api.createNote,
-                ).toHaveBeenCalledWith({
+                expect(mockPipedriveApi.api.createNote).toHaveBeenCalledWith({
                     content: 'Test SMS message',
                     person_id: 123,
                 });
@@ -474,59 +486,64 @@ describe('PipedriveIntegration (Refactored)', () => {
                     data: { id: 1 },
                 });
                 mockQuoApi.api.createMessageWebhook.mockResolvedValue({
-                    data: { id: 'msg-wh', key: 'msg-key' }
+                    data: { id: 'msg-wh', key: 'msg-key' },
                 });
                 mockQuoApi.api.createCallWebhook.mockResolvedValue({
-                    data: { id: 'call-wh', key: 'call-key' }
+                    data: { id: 'call-wh', key: 'call-key' },
                 });
                 mockQuoApi.api.createCallSummaryWebhook.mockResolvedValue({
-                    data: { id: 'summary-wh', key: 'summary-key' }
+                    data: { id: 'summary-wh', key: 'summary-key' },
                 });
 
                 // Ensure commands and updateIntegrationMessages are mocked
                 integration.commands = {
-                    updateIntegrationConfig: jest.fn().mockResolvedValue({})
+                    updateIntegrationConfig: jest.fn().mockResolvedValue({}),
                 };
                 integration.updateIntegrationMessages = {
-                    execute: jest.fn().mockResolvedValue({})
+                    execute: jest.fn().mockResolvedValue({}),
                 };
 
                 // Mock _generateWebhookUrl since it's called by setupQuoWebhook
-                integration._generateWebhookUrl = jest.fn((path) => `https://api.example.com/api/pipedrive-integration${path}`);
+                integration._generateWebhookUrl = jest.fn(
+                    (path) =>
+                        `https://api.example.com/api/pipedrive-integration${path}`,
+                );
 
                 // Mock the base class helper method that's called by setupQuoWebhook
-                integration._createQuoWebhooksWithPhoneIds = jest.fn().mockResolvedValue({
-                    messageWebhookId: 'msg-wh',
-                    messageWebhookKey: 'msg-key',
-                    callWebhookId: 'call-wh',
-                    callWebhookKey: 'call-key',
-                    callSummaryWebhookId: 'summary-wh',
-                    callSummaryWebhookKey: 'summary-key',
-                });
+                integration._createQuoWebhooksWithPhoneIds = jest
+                    .fn()
+                    .mockResolvedValue({
+                        messageWebhookId: 'msg-wh',
+                        messageWebhookKey: 'msg-key',
+                        callWebhookId: 'call-wh',
+                        callWebhookKey: 'call-key',
+                        callSummaryWebhookId: 'summary-wh',
+                        callSummaryWebhookKey: 'summary-key',
+                    });
 
                 const result = await integration.setupWebhooks();
 
                 expect(
                     mockPipedriveApi.api.createWebhook,
                 ).toHaveBeenCalledTimes(4); // added, updated, deleted, merged
-                expect(
-                    mockPipedriveApi.api.createWebhook,
-                ).toHaveBeenCalledWith({
-                    subscription_url: expect.stringContaining('/webhooks/'),
-                    event_action: 'added',
-                    event_object: 'person',
-                    name: 'Quo - Person Added',
-                    version: '1.0',
-                });
-                expect(
-                    mockPipedriveApi.api.createWebhook,
-                ).toHaveBeenCalledWith({
-                    subscription_url: expect.stringContaining('/webhooks/'),
-                    event_action: 'updated',
-                    event_object: 'person',
-                    name: 'Quo - Person Updated',
-                    version: '1.0',
-                });
+                expect(mockPipedriveApi.api.createWebhook).toHaveBeenCalledWith(
+                    {
+                        subscription_url: expect.stringContaining('/webhooks/'),
+                        event_action: 'added',
+                        event_object: 'person',
+                        name: 'Quo - Person Added',
+                        version: '1.0',
+                    },
+                );
+                expect(mockPipedriveApi.api.createWebhook).toHaveBeenCalledWith(
+                    {
+                        subscription_url: expect.stringContaining('/webhooks/'),
+                        event_action: 'updated',
+                        event_object: 'person',
+                        name: 'Quo - Person Updated',
+                        version: '1.0',
+                    },
+                );
             });
 
             it('should handle webhook setup failure gracefully', async () => {
@@ -535,13 +552,13 @@ describe('PipedriveIntegration (Refactored)', () => {
                     new Error('Webhook creation failed'),
                 );
                 mockQuoApi.api.createMessageWebhook.mockRejectedValue(
-                    new Error('Quo API error')
+                    new Error('Quo API error'),
                 );
                 mockQuoApi.api.createCallWebhook.mockRejectedValue(
-                    new Error('Quo API error')
+                    new Error('Quo API error'),
                 );
                 mockQuoApi.api.createCallSummaryWebhook.mockRejectedValue(
-                    new Error('Quo API error')
+                    new Error('Quo API error'),
                 );
 
                 const consoleSpy = jest
@@ -550,7 +567,7 @@ describe('PipedriveIntegration (Refactored)', () => {
 
                 // New error message when BOTH fail
                 await expect(integration.setupWebhooks()).rejects.toThrow(
-                    'Both Pipedrive and Quo webhook setups failed'
+                    'Both Pipedrive and Quo webhook setups failed',
                 );
 
                 expect(consoleSpy).toHaveBeenCalledWith(
@@ -679,7 +696,9 @@ describe('PipedriveIntegration (Refactored)', () => {
                     },
                 };
 
-                integration.transformPersonToQuo.mockResolvedValue(mockQuoContact);
+                integration.transformPersonToQuo.mockResolvedValue(
+                    mockQuoContact,
+                );
                 integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
                     successCount: 1,
                     errorCount: 0,
@@ -693,13 +712,17 @@ describe('PipedriveIntegration (Refactored)', () => {
                         expect.objectContaining({
                             externalId: '123',
                         }),
-                    ])
+                    ]),
                 );
                 expect(mockQuoApi.api.createContact).not.toHaveBeenCalled();
             });
 
             it('should handle bulkUpsertToQuo errors for added action', async () => {
-                const person = { id: 456, first_name: 'Error', last_name: 'Test' };
+                const person = {
+                    id: 456,
+                    first_name: 'Error',
+                    last_name: 'Test',
+                };
 
                 integration.transformPersonToQuo.mockResolvedValue({
                     externalId: '456',
@@ -708,14 +731,16 @@ describe('PipedriveIntegration (Refactored)', () => {
                 integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
                     successCount: 0,
                     errorCount: 1,
-                    errors: [{
-                        error: 'Failed to create contact',
-                        externalId: '456',
-                    }],
+                    errors: [
+                        {
+                            error: 'Failed to create contact',
+                            externalId: '456',
+                        },
+                    ],
                 });
 
                 await expect(
-                    integration._syncPersonToQuo(person, 'added')
+                    integration._syncPersonToQuo(person, 'added'),
                 ).rejects.toThrow('Failed to added contact');
             });
 
@@ -732,11 +757,15 @@ describe('PipedriveIntegration (Refactored)', () => {
                     defaultFields: {
                         firstName: 'Jane',
                         lastName: 'Smith',
-                        phoneNumbers: [{ name: 'Mobile', value: '+15559999999' }],
+                        phoneNumbers: [
+                            { name: 'Mobile', value: '+15559999999' },
+                        ],
                     },
                 };
 
-                integration.transformPersonToQuo.mockResolvedValue(mockQuoContact);
+                integration.transformPersonToQuo.mockResolvedValue(
+                    mockQuoContact,
+                );
                 integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
                     successCount: 1,
                     errorCount: 0,
@@ -750,13 +779,17 @@ describe('PipedriveIntegration (Refactored)', () => {
                         expect.objectContaining({
                             externalId: '789',
                         }),
-                    ])
+                    ]),
                 );
                 expect(mockQuoApi.api.updateContact).not.toHaveBeenCalled();
             });
 
             it('should handle bulkUpsertToQuo errors for updated action', async () => {
-                const person = { id: 999, first_name: 'Update', last_name: 'Error' };
+                const person = {
+                    id: 999,
+                    first_name: 'Update',
+                    last_name: 'Error',
+                };
 
                 integration.transformPersonToQuo.mockResolvedValue({
                     externalId: '999',
@@ -765,14 +798,16 @@ describe('PipedriveIntegration (Refactored)', () => {
                 integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
                     successCount: 0,
                     errorCount: 1,
-                    errors: [{
-                        error: 'Contact update failed',
-                        externalId: '999',
-                    }],
+                    errors: [
+                        {
+                            error: 'Contact update failed',
+                            externalId: '999',
+                        },
+                    ],
                 });
 
                 await expect(
-                    integration._syncPersonToQuo(person, 'updated')
+                    integration._syncPersonToQuo(person, 'updated'),
                 ).rejects.toThrow('Failed to updated contact');
             });
         });

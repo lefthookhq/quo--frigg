@@ -104,12 +104,16 @@ class Api extends ApiKeyRequester {
         for (const [key, value] of Object.entries(params)) {
             if (Array.isArray(value)) {
                 // Handle arrays with bracket notation: key[]=val1&key[]=val2
-                value.forEach(item => {
-                    queryParts.push(`${encodeURIComponent(key)}[]=${encodeURIComponent(item)}`);
+                value.forEach((item) => {
+                    queryParts.push(
+                        `${encodeURIComponent(key)}[]=${encodeURIComponent(item)}`,
+                    );
                 });
             } else {
                 // Handle regular params
-                queryParts.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+                queryParts.push(
+                    `${encodeURIComponent(key)}=${encodeURIComponent(value)}`,
+                );
             }
         }
 
@@ -211,7 +215,7 @@ class Api extends ApiKeyRequester {
             body: {
                 // orgId,
                 // TODO: Uncomment this when orgId is available
-                contacts: data
+                contacts: data,
             },
         };
         return this._post(options);

@@ -38,15 +38,27 @@ describe('ScalingTestIntegration (Refactored)', () => {
 
         it('should have quo module with correct name and label overrides', () => {
             expect(ScalingTestIntegration.Definition.modules.quo).toBeDefined();
-            expect(ScalingTestIntegration.Definition.modules.quo.definition).toBeDefined();
-            
+            expect(
+                ScalingTestIntegration.Definition.modules.quo.definition,
+            ).toBeDefined();
+
             // Test name override
-            expect(ScalingTestIntegration.Definition.modules.quo.definition.getName()).toBe('quo-scalingtest');
-            expect(ScalingTestIntegration.Definition.modules.quo.definition.moduleName).toBe('quo-scalingtest');
-            
+            expect(
+                ScalingTestIntegration.Definition.modules.quo.definition.getName(),
+            ).toBe('quo-scalingtest');
+            expect(
+                ScalingTestIntegration.Definition.modules.quo.definition
+                    .moduleName,
+            ).toBe('quo-scalingtest');
+
             // Test label override (if display property exists)
-            if (ScalingTestIntegration.Definition.modules.quo.definition.display) {
-                expect(ScalingTestIntegration.Definition.modules.quo.definition.display.label).toBe('Quo (Scaling Test)');
+            if (
+                ScalingTestIntegration.Definition.modules.quo.definition.display
+            ) {
+                expect(
+                    ScalingTestIntegration.Definition.modules.quo.definition
+                        .display.label,
+                ).toBe('Quo (Scaling Test)');
             }
         });
 

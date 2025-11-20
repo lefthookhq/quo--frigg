@@ -21,25 +21,25 @@ describe('Quo Webhook Subscriptions', () => {
         mockQuoApi = {
             api: {
                 createMessageWebhook: jest.fn().mockResolvedValue({
-                    data: { id: 'msg-webhook-123', key: 'msg-key-abc' }
+                    data: { id: 'msg-webhook-123', key: 'msg-key-abc' },
                 }),
                 createCallWebhook: jest.fn().mockResolvedValue({
-                    data: { id: 'call-webhook-456', key: 'call-key-def' }
+                    data: { id: 'call-webhook-456', key: 'call-key-def' },
                 }),
                 createCallSummaryWebhook: jest.fn().mockResolvedValue({
-                    data: { id: 'summary-webhook-789', key: 'summary-key-ghi' }
+                    data: { id: 'summary-webhook-789', key: 'summary-key-ghi' },
                 }),
                 deleteWebhook: jest.fn().mockResolvedValue({}),
-            }
+            },
         };
 
         // Mock Pipedrive API
         mockPipedriveApi = {
             api: {
                 createWebhook: jest.fn().mockResolvedValue({
-                    data: { id: 1 }
+                    data: { id: 1 },
                 }),
-            }
+            },
         };
 
         // Mock commands
@@ -84,7 +84,7 @@ describe('Quo Webhook Subscriptions', () => {
                     status: 'enabled',
                     events: expect.any(Array),
                     label: expect.any(String),
-                })
+                }),
             );
 
             expect(mockQuoApi.api.createCallWebhook).toHaveBeenCalledWith(
@@ -94,17 +94,19 @@ describe('Quo Webhook Subscriptions', () => {
                     status: 'enabled',
                     events: expect.any(Array),
                     label: expect.any(String),
-                })
+                }),
             );
 
-            expect(mockQuoApi.api.createCallSummaryWebhook).toHaveBeenCalledWith(
+            expect(
+                mockQuoApi.api.createCallSummaryWebhook,
+            ).toHaveBeenCalledWith(
                 expect.objectContaining({
                     resourceIds: ['PHmR5aU', 'PHxY7bZ'],
                     url: expect.any(String),
                     status: 'enabled',
                     events: expect.any(Array),
                     label: expect.any(String),
-                })
+                }),
             );
         });
 
@@ -122,10 +124,11 @@ describe('Quo Webhook Subscriptions', () => {
                     status: 'enabled',
                     events: expect.any(Array),
                     label: expect.any(String),
-                })
+                }),
             );
 
-            const messageCall = mockQuoApi.api.createMessageWebhook.mock.calls[0][0];
+            const messageCall =
+                mockQuoApi.api.createMessageWebhook.mock.calls[0][0];
             expect(messageCall).not.toHaveProperty('resourceIds');
         });
 
@@ -137,7 +140,8 @@ describe('Quo Webhook Subscriptions', () => {
             await integration.setupQuoWebhook();
 
             // Verify: resourceIds should NOT be present
-            const messageCall = mockQuoApi.api.createMessageWebhook.mock.calls[0][0];
+            const messageCall =
+                mockQuoApi.api.createMessageWebhook.mock.calls[0][0];
             expect(messageCall).not.toHaveProperty('resourceIds');
         });
 
@@ -153,7 +157,9 @@ describe('Quo Webhook Subscriptions', () => {
             await integration.setupQuoWebhook();
 
             // Verify: Should attempt cleanup of orphaned webhook
-            expect(mockQuoApi.api.deleteWebhook).toHaveBeenCalledWith('old-msg-webhook');
+            expect(mockQuoApi.api.deleteWebhook).toHaveBeenCalledWith(
+                'old-msg-webhook',
+            );
 
             // Verify: Should create new webhooks after cleanup
             expect(mockQuoApi.api.createMessageWebhook).toHaveBeenCalled();

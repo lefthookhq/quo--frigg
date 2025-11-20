@@ -74,7 +74,9 @@ describe('Bulk Sync Mapping Creation', () => {
             }),
         };
         const userRepoFactory = require('@friggframework/core/user/repositories/user-repository-factory');
-        jest.spyOn(userRepoFactory, 'createUserRepository').mockReturnValue(mockUserRepo);
+        jest.spyOn(userRepoFactory, 'createUserRepository').mockReturnValue(
+            mockUserRepo,
+        );
     });
 
     afterEach(() => {
@@ -90,7 +92,9 @@ describe('Bulk Sync Mapping Creation', () => {
 
             integration.quo = {
                 api: {
-                    bulkCreateContacts: jest.fn().mockResolvedValue({ status: 202 }),
+                    bulkCreateContacts: jest
+                        .fn()
+                        .mockResolvedValue({ status: 202 }),
                     listContacts: jest.fn().mockResolvedValue({
                         data: [
                             {
@@ -99,8 +103,8 @@ describe('Bulk Sync Mapping Creation', () => {
                                 source: 'test-crm',
                                 createdAt: new Date().toISOString(),
                                 defaultFields: {
-                                    phoneNumbers: [{ value: '+15551111111' }]
-                                }
+                                    phoneNumbers: [{ value: '+15551111111' }],
+                                },
                             },
                             {
                                 id: 'quo-contact-2',
@@ -108,8 +112,8 @@ describe('Bulk Sync Mapping Creation', () => {
                                 source: 'test-crm',
                                 createdAt: new Date().toISOString(),
                                 defaultFields: {
-                                    phoneNumbers: [{ value: '+15552222222' }]
-                                }
+                                    phoneNumbers: [{ value: '+15552222222' }],
+                                },
                             },
                         ],
                         totalItems: 2,
@@ -121,7 +125,10 @@ describe('Bulk Sync Mapping Creation', () => {
 
             const result = await integration.bulkUpsertToQuo(contacts);
 
-            expect(integration.quo.api.bulkCreateContacts).toHaveBeenCalledWith('test-org-456', contacts);
+            expect(integration.quo.api.bulkCreateContacts).toHaveBeenCalledWith(
+                'test-org-456',
+                contacts,
+            );
 
             // listContacts is now paginated with maxResults: 50 (API limit)
             expect(integration.quo.api.listContacts).toHaveBeenCalledWith({
@@ -130,22 +137,28 @@ describe('Bulk Sync Mapping Creation', () => {
             });
 
             expect(integration.upsertMapping).toHaveBeenCalledTimes(2);
-            expect(integration.upsertMapping).toHaveBeenCalledWith('+15551111111', expect.objectContaining({
-                externalId: 'attio-person-1',
-                quoContactId: 'quo-contact-1',
-                phoneNumber: '+15551111111',
-                entityType: 'people',
-                syncMethod: 'bulk',
-                action: 'created',
-            }));
-            expect(integration.upsertMapping).toHaveBeenCalledWith('+15552222222', expect.objectContaining({
-                externalId: 'attio-person-2',
-                quoContactId: 'quo-contact-2',
-                phoneNumber: '+15552222222',
-                entityType: 'people',
-                syncMethod: 'bulk',
-                action: 'created',
-            }));
+            expect(integration.upsertMapping).toHaveBeenCalledWith(
+                '+15551111111',
+                expect.objectContaining({
+                    externalId: 'attio-person-1',
+                    quoContactId: 'quo-contact-1',
+                    phoneNumber: '+15551111111',
+                    entityType: 'people',
+                    syncMethod: 'bulk',
+                    action: 'created',
+                }),
+            );
+            expect(integration.upsertMapping).toHaveBeenCalledWith(
+                '+15552222222',
+                expect.objectContaining({
+                    externalId: 'attio-person-2',
+                    quoContactId: 'quo-contact-2',
+                    phoneNumber: '+15552222222',
+                    entityType: 'people',
+                    syncMethod: 'bulk',
+                    action: 'created',
+                }),
+            );
 
             expect(result).toEqual({
                 successCount: 2,
@@ -163,7 +176,9 @@ describe('Bulk Sync Mapping Creation', () => {
 
             integration.quo = {
                 api: {
-                    bulkCreateContacts: jest.fn().mockResolvedValue({ status: 202 }),
+                    bulkCreateContacts: jest
+                        .fn()
+                        .mockResolvedValue({ status: 202 }),
                     listContacts: jest.fn().mockResolvedValue({
                         data: [
                             {
@@ -171,8 +186,8 @@ describe('Bulk Sync Mapping Creation', () => {
                                 externalId: 'attio-person-1',
                                 source: 'test-crm',
                                 defaultFields: {
-                                    phoneNumbers: [{ value: '+15551111111' }]
-                                }
+                                    phoneNumbers: [{ value: '+15551111111' }],
+                                },
                             },
                         ],
                         totalItems: 1,
@@ -207,18 +222,24 @@ describe('Bulk Sync Mapping Creation', () => {
 
             integration.quo = {
                 api: {
-                    bulkCreateContacts: jest.fn().mockResolvedValue({ status: 202 }),
+                    bulkCreateContacts: jest
+                        .fn()
+                        .mockResolvedValue({ status: 202 }),
                     listContacts: jest.fn().mockResolvedValue({
                         data: [
                             {
                                 id: 'quo-contact-1',
                                 externalId: 'attio-person-1',
-                                defaultFields: { phoneNumbers: [{ value: '+15551111111' }] }
+                                defaultFields: {
+                                    phoneNumbers: [{ value: '+15551111111' }],
+                                },
                             },
                             {
                                 id: 'quo-contact-2',
                                 externalId: 'attio-person-2',
-                                defaultFields: { phoneNumbers: [{ value: '+15552222222' }] }
+                                defaultFields: {
+                                    phoneNumbers: [{ value: '+15552222222' }],
+                                },
                             },
                         ],
                         totalItems: 2,
@@ -226,7 +247,8 @@ describe('Bulk Sync Mapping Creation', () => {
                 },
             };
 
-            integration.upsertMapping = jest.fn()
+            integration.upsertMapping = jest
+                .fn()
                 .mockResolvedValueOnce()
                 .mockRejectedValueOnce(new Error('Database connection failed'));
 
@@ -248,9 +270,9 @@ describe('Bulk Sync Mapping Creation', () => {
 
             integration.quo = {
                 api: {
-                    bulkCreateContacts: jest.fn().mockRejectedValue(
-                        new Error('Quo API unavailable')
-                    ),
+                    bulkCreateContacts: jest
+                        .fn()
+                        .mockRejectedValue(new Error('Quo API unavailable')),
                 },
             };
 
@@ -269,18 +291,27 @@ describe('Bulk Sync Mapping Creation', () => {
         });
 
         it('should wait briefly after bulk create for async processing', async () => {
-            const contacts = [buildQuoContact({ externalId: 'attio-person-1' })];
+            const contacts = [
+                buildQuoContact({ externalId: 'attio-person-1' }),
+            ];
 
             const bulkCreateTimestamp = Date.now();
             let listContactsTimestamp;
 
             integration.quo = {
                 api: {
-                    bulkCreateContacts: jest.fn().mockResolvedValue({ status: 202 }),
+                    bulkCreateContacts: jest
+                        .fn()
+                        .mockResolvedValue({ status: 202 }),
                     listContacts: jest.fn().mockImplementation(() => {
                         listContactsTimestamp = Date.now();
                         return Promise.resolve({
-                            data: [{ id: 'quo-contact-1', externalId: 'attio-person-1' }],
+                            data: [
+                                {
+                                    id: 'quo-contact-1',
+                                    externalId: 'attio-person-1',
+                                },
+                            ],
                             totalItems: 1,
                         });
                     }),

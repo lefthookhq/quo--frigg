@@ -8,7 +8,7 @@ describe('QuoApi.listContacts - Array Query Parameter Handling', () => {
         // Create QuoApi instance with proper params structure
         quoApi = new QuoApi({
             access_token: 'test-key',
-            api_key: 'test-key'
+            api_key: 'test-key',
         });
 
         // Mock the _get method to capture the URL
@@ -195,16 +195,20 @@ describe('QuoApi.listContacts - Array Query Parameter Handling', () => {
             const calledUrl = mockGet.mock.calls[0][0].url;
 
             // Each ID should be a separate parameter
-            params.externalIds.forEach(id => {
+            params.externalIds.forEach((id) => {
                 expect(calledUrl).toContain(`externalIds[]=${id}`);
             });
 
             // Should NOT be comma-separated (which caused the 75 char limit error)
-            expect(calledUrl).not.toContain('0e77bdf3-2c4a-41be-801e-c1a47e8af171,7893b79c');
+            expect(calledUrl).not.toContain(
+                '0e77bdf3-2c4a-41be-801e-c1a47e8af171,7893b79c',
+            );
 
             // Each individual param should be under 75 chars
-            const idParams = calledUrl.split('&').filter(p => p.includes('externalIds[]'));
-            idParams.forEach(param => {
+            const idParams = calledUrl
+                .split('&')
+                .filter((p) => p.includes('externalIds[]'));
+            idParams.forEach((param) => {
                 const value = param.split('=')[1];
                 expect(value.length).toBeLessThanOrEqual(75);
             });

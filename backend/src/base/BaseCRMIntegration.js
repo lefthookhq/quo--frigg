@@ -379,27 +379,32 @@ class BaseCRMIntegration extends IntegrationBase {
     /**
      * Called when integration is created
      * Override to customize behavior
-     * 
+     *
      * IMPORTANT: This method handles Quo (OpenPhone) API key propagation delay (~30 seconds).
      * Webhook setup and initial sync are delayed by 35 seconds to ensure API key is active.
-     * 
+     *
      * @param {Object} params
      * @param {string} params.integrationId - Integration ID
      */
     async onCreate({ integrationId }) {
         const integrationName = this.constructor.Definition?.name;
         if (!integrationName) {
-            throw new Error('Integration Definition.name is required but not defined');
+            throw new Error(
+                'Integration Definition.name is required but not defined',
+            );
         }
 
-        console.log(`[${integrationName}] onCreate called for ${integrationId}`);
-
+        console.log(
+            `[${integrationName}] onCreate called for ${integrationId}`,
+        );
 
         // Check if we need user configuration
         const needsConfig = await this.checkIfNeedsConfig();
 
         if (needsConfig) {
-            console.log(`[${integrationName}] Integration ${integrationId} needs configuration`);
+            console.log(
+                `[${integrationName}] Integration ${integrationId} needs configuration`,
+            );
             await this.updateIntegrationStatus.execute(
                 integrationId,
                 'NEEDS_CONFIG',
@@ -408,19 +413,21 @@ class BaseCRMIntegration extends IntegrationBase {
         }
 
         // Update status to ENABLED immediately
-        console.log(`[${integrationName}] Marking integration ${integrationId} as ENABLED`);
-        await this.updateIntegrationStatus.execute(
-            integrationId,
-            'ENABLED',
+        console.log(
+            `[${integrationName}] Marking integration ${integrationId} as ENABLED`,
         );
+        await this.updateIntegrationStatus.execute(integrationId, 'ENABLED');
 
         // ⚠️ TEMPORARY WORKAROUND - SCHEDULED FOR REMOVAL ⚠️
         // Queue delayed webhook setup + initial sync to allow Quo API key propagation
         // Quo (OpenPhone) API keys take ~30 seconds to activate after creation
         // Without this delay, webhook creation fails with 401/403 errors
         // TODO: Remove this delay mechanism (and QueuerUtilWrapper) once Quo implements instant API key propagation
-        const delaySeconds = this.constructor.CRMConfig?.onCreateDelaySeconds || 35;
-        console.log(`[${integrationName}] Queueing delayed webhook setup + initial sync for ${integrationId} (${delaySeconds} second delay for Quo API key propagation)`);
+        const delaySeconds =
+            this.constructor.CRMConfig?.onCreateDelaySeconds || 35;
+        console.log(
+            `[${integrationName}] Queueing delayed webhook setup + initial sync for ${integrationId} (${delaySeconds} second delay for Quo API key propagation)`,
+        );
 
         try {
             await this.queueManager.queueMessage({
@@ -428,9 +435,14 @@ class BaseCRMIntegration extends IntegrationBase {
                 integrationId,
                 delaySeconds,
             });
-            console.log(`[${integrationName}] Delayed webhook setup + initial sync queued successfully for ${integrationId}`);
+            console.log(
+                `[${integrationName}] Delayed webhook setup + initial sync queued successfully for ${integrationId}`,
+            );
         } catch (error) {
-            console.error(`[${integrationName}] Failed to queue delayed webhook setup for ${integrationId}:`, error);
+            console.error(
+                `[${integrationName}] Failed to queue delayed webhook setup for ${integrationId}:`,
+                error,
+            );
             // Non-fatal - webhooks and sync can be triggered manually later
         }
     }
@@ -488,19 +500,19 @@ class BaseCRMIntegration extends IntegrationBase {
     /**
      * Handle post-creation setup: webhook registration and initial sync
      * This is triggered by the POST_CREATE_SETUP queue message from onCreate
-     * 
+     *
      * Runs after a delay (default 35 seconds) to handle Quo API key propagation (~30 seconds).
      * By the time this runs, the API key should be active.
-     * 
+     *
      * IMPORTANT: This handler is called from a queue worker context where the integration
      * instance is NOT hydrated (no entities, userId, or API instances). The integration
      * is passed through as integrationId only, which the caller must use to hydrate if needed.
-     * 
+     *
      * For POST_CREATE_SETUP, we rely on the integrationId parameter being passed to
      * startInitialSync, which handles its own hydration through SyncOrchestrator.
      * setupWebhooks() should also handle integration lookup internally if it needs
      * the full integration record.
-     * 
+     *
      * @param {Object} event - Queue event with integrationId
      * @param {Object} event.data - Event data
      * @param {string} event.data.integrationId - Integration ID to setup
@@ -510,10 +522,14 @@ class BaseCRMIntegration extends IntegrationBase {
         const { integrationId } = data;
         const integrationName = this.constructor.Definition?.name;
         if (!integrationName) {
-            throw new Error('Integration Definition.name is required but not defined');
+            throw new Error(
+                'Integration Definition.name is required but not defined',
+            );
         }
 
-        console.log(`[${integrationName}] Starting post-create setup (webhook + sync) for ${integrationId}`);
+        console.log(
+            `[${integrationName}] Starting post-create setup (webhook + sync) for ${integrationId}`,
+        );
 
         const results = {
             webhooks: null,
@@ -524,9 +540,15 @@ class BaseCRMIntegration extends IntegrationBase {
             try {
                 // Pass integrationId to setupWebhooks so it can hydrate if needed
                 results.webhooks = await this.setupWebhooks({ integrationId });
-                console.log(`[${integrationName}] Webhook setup completed for ${integrationId}:`, results.webhooks);
+                console.log(
+                    `[${integrationName}] Webhook setup completed for ${integrationId}:`,
+                    results.webhooks,
+                );
             } catch (error) {
-                console.error(`[${integrationName}] Webhook setup failed for ${integrationId}:`, error);
+                console.error(
+                    `[${integrationName}] Webhook setup failed for ${integrationId}:`,
+                    error,
+                );
                 results.webhooks = {
                     status: 'failed',
                     error: error.message,
@@ -534,16 +556,31 @@ class BaseCRMIntegration extends IntegrationBase {
                 // Continue to try initial sync even if webhooks fail
             }
         } else {
-            console.log(`[${integrationName}] Webhooks not enabled, skipping webhook setup`);
-            results.webhooks = { status: 'skipped', message: 'Webhooks not enabled' };
+            console.log(
+                `[${integrationName}] Webhooks not enabled, skipping webhook setup`,
+            );
+            results.webhooks = {
+                status: 'skipped',
+                message: 'Webhooks not enabled',
+            };
         }
 
         try {
-            console.log(`[${integrationName}] Starting initial sync for ${integrationId}`);
-            results.initialSync = await this.startInitialSync({ integrationId });
-            console.log(`[${integrationName}] Initial sync started for ${integrationId}:`, results.initialSync);
+            console.log(
+                `[${integrationName}] Starting initial sync for ${integrationId}`,
+            );
+            results.initialSync = await this.startInitialSync({
+                integrationId,
+            });
+            console.log(
+                `[${integrationName}] Initial sync started for ${integrationId}:`,
+                results.initialSync,
+            );
         } catch (error) {
-            console.error(`[${integrationName}] Failed to start initial sync for ${integrationId}:`, error);
+            console.error(
+                `[${integrationName}] Failed to start initial sync for ${integrationId}:`,
+                error,
+            );
             results.initialSync = {
                 status: 'failed',
                 error: error.message,
@@ -1032,22 +1069,29 @@ class BaseCRMIntegration extends IntegrationBase {
 
         // Fetch all pages in parallel for better performance
         const fetchPromises = chunks.map((chunk, index) =>
-            this.quo.api.listContacts({
-                externalIds: chunk,
-                maxResults: effectivePageSize,
-            }).catch(error => {
-                // Log error with page info
-                console.error(`Failed to fetch page ${index + 1}:`, error.message);
-                // Rethrow to fail the entire operation
-                throw error;
-            })
+            this.quo.api
+                .listContacts({
+                    externalIds: chunk,
+                    maxResults: effectivePageSize,
+                })
+                .catch((error) => {
+                    // Log error with page info
+                    console.error(
+                        `Failed to fetch page ${index + 1}:`,
+                        error.message,
+                    );
+                    // Rethrow to fail the entire operation
+                    throw error;
+                }),
         );
 
         try {
             const responses = await Promise.all(fetchPromises);
 
             // Combine all results
-            const allContacts = responses.flatMap(response => response?.data || []);
+            const allContacts = responses.flatMap(
+                (response) => response?.data || [],
+            );
 
             return allContacts;
         } catch (error) {
@@ -1069,7 +1113,9 @@ class BaseCRMIntegration extends IntegrationBase {
 
         try {
             // Get orgId from Frigg user table
-            const { createUserRepository } = require('@friggframework/core/user/repositories/user-repository-factory');
+            const {
+                createUserRepository,
+            } = require('@friggframework/core/user/repositories/user-repository-factory');
             const userRepo = createUserRepository();
 
             // Get the organization user (this.userId points to org user when primary: 'organization')
@@ -1083,16 +1129,19 @@ class BaseCRMIntegration extends IntegrationBase {
             // Call bulkCreateContacts with orgId and contacts
             await this.quo.api.bulkCreateContacts(orgId, contacts);
 
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await new Promise((resolve) => setTimeout(resolve, 1000));
 
             // Fetch created contacts using paginated helper
-            const externalIds = contacts.map(c => c.externalId);
-            const fetchedContactsData = await this._fetchContactsByExternalIds(externalIds);
+            const externalIds = contacts.map((c) => c.externalId);
+            const fetchedContactsData =
+                await this._fetchContactsByExternalIds(externalIds);
 
             if (fetchedContactsData) {
                 for (const createdContact of fetchedContactsData) {
                     try {
-                        const phoneNumber = createdContact.defaultFields?.phoneNumbers?.[0]?.value;
+                        const phoneNumber =
+                            createdContact.defaultFields?.phoneNumbers?.[0]
+                                ?.value;
 
                         if (phoneNumber) {
                             // Store mapping by phone number (contains both IDs)
@@ -1109,7 +1158,9 @@ class BaseCRMIntegration extends IntegrationBase {
                             await this.upsertMapping(phoneNumber, mappingData);
                             successCount++;
                         } else {
-                            console.warn(`No phone number for ${createdContact.externalId}, skipping mapping`);
+                            console.warn(
+                                `No phone number for ${createdContact.externalId}, skipping mapping`,
+                            );
                             errorCount++;
                             errors.push({
                                 error: 'No phone number available',
@@ -1117,7 +1168,10 @@ class BaseCRMIntegration extends IntegrationBase {
                             });
                         }
                     } catch (mappingError) {
-                        console.error(`Failed to create mapping for ${createdContact.externalId}:`, mappingError);
+                        console.error(
+                            `Failed to create mapping for ${createdContact.externalId}:`,
+                            mappingError,
+                        );
                         errorCount++;
                         errors.push({
                             error: mappingError.message,
@@ -1128,18 +1182,21 @@ class BaseCRMIntegration extends IntegrationBase {
             }
 
             if (fetchedContactsData?.length < contacts.length) {
-                const createdExternalIds = new Set(fetchedContactsData.map(c => c.externalId));
-                const failedContacts = contacts.filter(c => !createdExternalIds.has(c.externalId));
+                const createdExternalIds = new Set(
+                    fetchedContactsData.map((c) => c.externalId),
+                );
+                const failedContacts = contacts.filter(
+                    (c) => !createdExternalIds.has(c.externalId),
+                );
 
                 errorCount += failedContacts.length;
-                failedContacts.forEach(c => {
+                failedContacts.forEach((c) => {
                     errors.push({
                         error: 'Contact not found after bulk create',
                         externalId: c.externalId,
                     });
                 });
             }
-
         } catch (error) {
             errorCount = contacts.length;
             console.error('Bulk upsert error:', error);
@@ -1182,13 +1239,13 @@ class BaseCRMIntegration extends IntegrationBase {
 
             if (mapping?.externalId) {
                 console.log(
-                    `[Mapping Lookup] ✓ Found externalId: ${mapping.externalId} for phone: ${phoneNumber}`
+                    `[Mapping Lookup] ✓ Found externalId: ${mapping.externalId} for phone: ${phoneNumber}`,
                 );
                 return mapping.externalId;
             }
 
             console.log(
-                `[Mapping Lookup] ✗ No mapping found for phone: ${phoneNumber}`
+                `[Mapping Lookup] ✗ No mapping found for phone: ${phoneNumber}`,
             );
             return null;
         } catch (error) {
@@ -1214,7 +1271,7 @@ class BaseCRMIntegration extends IntegrationBase {
     async _findContactByPhone(phoneNumber) {
         throw new Error(
             `${this.constructor.name} does not support phone-based contact lookup for ${phoneNumber}. ` +
-            `Contact mapping is required for webhook activity logging.`
+                `Contact mapping is required for webhook activity logging.`,
         );
     }
 
@@ -1232,7 +1289,7 @@ class BaseCRMIntegration extends IntegrationBase {
     async _fetchAndStoreEnabledPhoneIds() {
         if (!this.quo?.api) {
             throw new Error(
-                'Quo API not configured - cannot fetch phone numbers'
+                'Quo API not configured - cannot fetch phone numbers',
             );
         }
 
@@ -1245,7 +1302,7 @@ class BaseCRMIntegration extends IntegrationBase {
         const phoneIds = response.data.map((phone) => phone.id);
 
         console.log(
-            `[Quo] Found ${phoneIds.length} phone number(s): ${phoneIds.join(', ')}`
+            `[Quo] Found ${phoneIds.length} phone number(s): ${phoneIds.join(', ')}`,
         );
 
         // Store both phone IDs and metadata in config
@@ -1281,9 +1338,7 @@ class BaseCRMIntegration extends IntegrationBase {
      */
     async _createQuoWebhooksWithPhoneIds(webhookUrl) {
         if (!this.quo?.api) {
-            throw new Error(
-                'Quo API not configured - cannot create webhooks'
-            );
+            throw new Error('Quo API not configured - cannot create webhooks');
         }
 
         const phoneIds = this.config?.enabledPhoneIds || [];
@@ -1296,11 +1351,11 @@ class BaseCRMIntegration extends IntegrationBase {
         if (phoneIds.length > 0) {
             webhookData.resourceIds = phoneIds;
             console.log(
-                `[Quo] Creating webhooks with ${phoneIds.length} phone number ID(s)`
+                `[Quo] Creating webhooks with ${phoneIds.length} phone number ID(s)`,
             );
         } else {
             console.warn(
-                '[Quo] No phone IDs configured, creating webhooks without resourceIds'
+                '[Quo] No phone IDs configured, creating webhooks without resourceIds',
             );
         }
 
@@ -1310,27 +1365,26 @@ class BaseCRMIntegration extends IntegrationBase {
 
         if (!WEBHOOK_EVENTS || !WEBHOOK_LABELS) {
             throw new Error(
-                `${this.constructor.name} must define static WEBHOOK_EVENTS and WEBHOOK_LABELS constants`
+                `${this.constructor.name} must define static WEBHOOK_EVENTS and WEBHOOK_LABELS constants`,
             );
         }
 
         // Create message webhook
-        const messageWebhookResponse =
-            await this.quo.api.createMessageWebhook({
-                ...webhookData,
-                events: WEBHOOK_EVENTS.QUO_MESSAGES,
-                label: WEBHOOK_LABELS.QUO_MESSAGES,
-            });
+        const messageWebhookResponse = await this.quo.api.createMessageWebhook({
+            ...webhookData,
+            events: WEBHOOK_EVENTS.QUO_MESSAGES,
+            label: WEBHOOK_LABELS.QUO_MESSAGES,
+        });
 
         if (!messageWebhookResponse?.data?.id) {
             throw new Error(
-                'Invalid Quo message webhook response: missing webhook ID'
+                'Invalid Quo message webhook response: missing webhook ID',
             );
         }
 
         if (!messageWebhookResponse.data.key) {
             throw new Error(
-                'Invalid Quo message webhook response: missing webhook key'
+                'Invalid Quo message webhook response: missing webhook key',
             );
         }
 
@@ -1346,13 +1400,13 @@ class BaseCRMIntegration extends IntegrationBase {
 
         if (!callWebhookResponse?.data?.id) {
             throw new Error(
-                'Invalid Quo call webhook response: missing webhook ID'
+                'Invalid Quo call webhook response: missing webhook ID',
             );
         }
 
         if (!callWebhookResponse.data.key) {
             throw new Error(
-                'Invalid Quo call webhook response: missing webhook key'
+                'Invalid Quo call webhook response: missing webhook key',
             );
         }
 
@@ -1369,13 +1423,13 @@ class BaseCRMIntegration extends IntegrationBase {
 
         if (!callSummaryWebhookResponse?.data?.id) {
             throw new Error(
-                'Invalid Quo call-summary webhook response: missing webhook ID'
+                'Invalid Quo call-summary webhook response: missing webhook ID',
             );
         }
 
         if (!callSummaryWebhookResponse.data.key) {
             throw new Error(
-                'Invalid Quo call-summary webhook response: missing webhook key'
+                'Invalid Quo call-summary webhook response: missing webhook key',
             );
         }
 
@@ -1406,9 +1460,7 @@ class BaseCRMIntegration extends IntegrationBase {
      */
     async _handlePhoneIdUpdate(newConfig) {
         if (!this.quo?.api) {
-            throw new Error(
-                'Quo API not configured - cannot update webhooks'
-            );
+            throw new Error('Quo API not configured - cannot update webhooks');
         }
 
         const oldPhoneIds = this.config?.enabledPhoneIds || [];
@@ -1425,7 +1477,7 @@ class BaseCRMIntegration extends IntegrationBase {
         }
 
         console.log(
-            `[Quo] Phone ID changes detected: ${oldPhoneIds.length} → ${newPhoneIds.length}`
+            `[Quo] Phone ID changes detected: ${oldPhoneIds.length} → ${newPhoneIds.length}`,
         );
 
         // Verify webhooks are configured
@@ -1435,7 +1487,7 @@ class BaseCRMIntegration extends IntegrationBase {
 
         if (!messageWebhookId || !callWebhookId || !callSummaryWebhookId) {
             throw new Error(
-                'Webhooks not configured - cannot update phone number subscriptions'
+                'Webhooks not configured - cannot update phone number subscriptions',
             );
         }
 
@@ -1445,7 +1497,7 @@ class BaseCRMIntegration extends IntegrationBase {
         };
 
         console.log(
-            `[Quo] Updating webhooks with ${newPhoneIds.length} phone number ID(s)`
+            `[Quo] Updating webhooks with ${newPhoneIds.length} phone number ID(s)`,
         );
 
         await Promise.all([
@@ -1502,19 +1554,26 @@ class BaseCRMIntegration extends IntegrationBase {
         if (phoneIdsChanged) {
             if (!this.quo?.api) {
                 console.warn(
-                    '[Config Update] Phone IDs changed but Quo API not configured, skipping webhook update'
+                    '[Config Update] Phone IDs changed but Quo API not configured, skipping webhook update',
                 );
             } else {
-                console.log('[Config Update] Phone IDs changed, updating webhooks');
+                console.log(
+                    '[Config Update] Phone IDs changed, updating webhooks',
+                );
                 try {
                     // Pass old and new phone IDs directly to avoid re-reading config
                     const messageWebhookId = this.config?.quoMessageWebhookId;
                     const callWebhookId = this.config?.quoCallWebhookId;
-                    const callSummaryWebhookId = this.config?.quoCallSummaryWebhookId;
+                    const callSummaryWebhookId =
+                        this.config?.quoCallSummaryWebhookId;
 
-                    if (!messageWebhookId || !callWebhookId || !callSummaryWebhookId) {
+                    if (
+                        !messageWebhookId ||
+                        !callWebhookId ||
+                        !callSummaryWebhookId
+                    ) {
                         throw new Error(
-                            'Webhooks not configured - cannot update phone number subscriptions'
+                            'Webhooks not configured - cannot update phone number subscriptions',
                         );
                     }
 
@@ -1523,14 +1582,25 @@ class BaseCRMIntegration extends IntegrationBase {
                     };
 
                     await Promise.all([
-                        this.quo.api.updateWebhook(messageWebhookId, updateData),
+                        this.quo.api.updateWebhook(
+                            messageWebhookId,
+                            updateData,
+                        ),
                         this.quo.api.updateWebhook(callWebhookId, updateData),
-                        this.quo.api.updateWebhook(callSummaryWebhookId, updateData),
+                        this.quo.api.updateWebhook(
+                            callSummaryWebhookId,
+                            updateData,
+                        ),
                     ]);
 
-                    console.log('[Config Update] ✓ Webhooks updated successfully');
+                    console.log(
+                        '[Config Update] ✓ Webhooks updated successfully',
+                    );
                 } catch (error) {
-                    console.error('[Config Update] Failed to update webhooks:', error);
+                    console.error(
+                        '[Config Update] Failed to update webhooks:',
+                        error,
+                    );
                     throw error;
                 }
             }
@@ -1566,7 +1636,10 @@ class BaseCRMIntegration extends IntegrationBase {
                     !Array.isArray(source[key])
                 ) {
                     // Recursively merge nested objects
-                    output[key] = this._deepMerge(target[key] || {}, source[key]);
+                    output[key] = this._deepMerge(
+                        target[key] || {},
+                        source[key],
+                    );
                 } else {
                     // Overwrite primitives and arrays
                     output[key] = source[key];

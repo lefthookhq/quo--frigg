@@ -43,9 +43,7 @@ const Definition = {
             // For Quo API, use API key authentication
             const apiKey = get(params.data, 'apiKey');
             if (!apiKey) {
-                throw new Error(
-                    'API key is required for Quo authentication',
-                );
+                throw new Error('API key is required for Quo authentication');
             }
             return { api_key: apiKey };
         },
@@ -80,7 +78,9 @@ const Definition = {
             const apiKey = api.API_KEY_VALUE;
 
             if (!apiKey) {
-                throw new Error('API key is required for Quo credential details');
+                throw new Error(
+                    'API key is required for Quo credential details',
+                );
             }
 
             const externalId = hashApiKey(apiKey);
@@ -91,14 +91,18 @@ const Definition = {
                     user: userId,
                 },
                 details: {
-                    api_key: apiKey,  // Explicitly include api_key in details to be persisted
+                    api_key: apiKey, // Explicitly include api_key in details to be persisted
                 },
             };
         },
         testAuthRequest: async (api) => {
             // Skip actual API test due to 30-second API key propagation delay
             // The key will be validated when webhooks are set up (delayed by 35 seconds in onCreate)
-            return { status: 'success', message: 'Auth test skipped - API key propagation takes ~30 seconds' };
+            return {
+                status: 'success',
+                message:
+                    'Auth test skipped - API key propagation takes ~30 seconds',
+            };
         },
         setAuthParams: async (api, params) => {
             // For API key authentication, set the key on the API instance

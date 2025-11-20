@@ -33,9 +33,21 @@ describe('BaseCRMIntegration - Phone Number ID Webhook Subscriptions', () => {
             // Arrange
             const mockPhoneNumbers = {
                 data: [
-                    { id: 'phone-id-1', phoneNumber: '+12125551234', name: 'Main Line' },
-                    { id: 'phone-id-2', phoneNumber: '+19175555678', name: 'Support Line' },
-                    { id: 'phone-id-3', phoneNumber: '+14155559999', name: 'Sales Line' },
+                    {
+                        id: 'phone-id-1',
+                        phoneNumber: '+12125551234',
+                        name: 'Main Line',
+                    },
+                    {
+                        id: 'phone-id-2',
+                        phoneNumber: '+19175555678',
+                        name: 'Support Line',
+                    },
+                    {
+                        id: 'phone-id-3',
+                        phoneNumber: '+14155559999',
+                        name: 'Sales Line',
+                    },
                 ],
             };
 
@@ -48,7 +60,11 @@ describe('BaseCRMIntegration - Phone Number ID Webhook Subscriptions', () => {
             expect(mockQuoApi.listPhoneNumbers).toHaveBeenCalledWith({
                 maxResults: 100,
             });
-            expect(phoneIds).toEqual(['phone-id-1', 'phone-id-2', 'phone-id-3']);
+            expect(phoneIds).toEqual([
+                'phone-id-1',
+                'phone-id-2',
+                'phone-id-3',
+            ]);
         });
 
         it('should store enabledPhoneIds in integration config', async () => {
@@ -94,12 +110,12 @@ describe('BaseCRMIntegration - Phone Number ID Webhook Subscriptions', () => {
         it('should handle API errors gracefully', async () => {
             // Arrange
             mockQuoApi.listPhoneNumbers.mockRejectedValue(
-                new Error('Quo API error: Unauthorized')
+                new Error('Quo API error: Unauthorized'),
             );
 
             // Act & Assert
             await expect(
-                integration._fetchAndStoreEnabledPhoneIds()
+                integration._fetchAndStoreEnabledPhoneIds(),
             ).rejects.toThrow('Quo API error');
         });
 
@@ -107,7 +123,11 @@ describe('BaseCRMIntegration - Phone Number ID Webhook Subscriptions', () => {
             // Arrange
             const mockPhoneNumbers = {
                 data: [
-                    { id: 'phone-id-1', phoneNumber: '+12125551234', name: 'Main' },
+                    {
+                        id: 'phone-id-1',
+                        phoneNumber: '+12125551234',
+                        name: 'Main',
+                    },
                 ],
             };
 
@@ -155,7 +175,7 @@ describe('BaseCRMIntegration - Phone Number ID Webhook Subscriptions', () => {
                 expect.objectContaining({
                     url: webhookUrl,
                     resourceIds: ['phone-id-1', 'phone-id-2'],
-                })
+                }),
             );
         });
 
@@ -181,7 +201,7 @@ describe('BaseCRMIntegration - Phone Number ID Webhook Subscriptions', () => {
                 expect.objectContaining({
                     url: webhookUrl,
                     resourceIds: ['phone-id-1', 'phone-id-2'],
-                })
+                }),
             );
         });
 
@@ -207,7 +227,7 @@ describe('BaseCRMIntegration - Phone Number ID Webhook Subscriptions', () => {
                 expect.objectContaining({
                     url: webhookUrl,
                     resourceIds: ['phone-id-1', 'phone-id-2'],
-                })
+                }),
             );
         });
 
@@ -233,7 +253,7 @@ describe('BaseCRMIntegration - Phone Number ID Webhook Subscriptions', () => {
             expect(mockQuoApi.createMessageWebhook).toHaveBeenCalledWith(
                 expect.not.objectContaining({
                     resourceIds: expect.anything(),
-                })
+                }),
             );
         });
 
@@ -252,9 +272,8 @@ describe('BaseCRMIntegration - Phone Number ID Webhook Subscriptions', () => {
             });
 
             // Act
-            const result = await integration._createQuoWebhooksWithPhoneIds(
-                webhookUrl
-            );
+            const result =
+                await integration._createQuoWebhooksWithPhoneIds(webhookUrl);
 
             // Assert
             expect(result).toEqual({
@@ -287,7 +306,8 @@ describe('BaseCRMIntegration - Phone Number ID Webhook Subscriptions', () => {
             });
 
             // Act
-            const hasChanges = await integration._handlePhoneIdUpdate(newConfig);
+            const hasChanges =
+                await integration._handlePhoneIdUpdate(newConfig);
 
             // Assert
             expect(hasChanges).toBe(true);
@@ -318,7 +338,7 @@ describe('BaseCRMIntegration - Phone Number ID Webhook Subscriptions', () => {
                 'webhook-msg-123',
                 expect.objectContaining({
                     resourceIds: ['phone-id-1', 'phone-id-2', 'phone-id-3'],
-                })
+                }),
             );
         });
 
@@ -347,7 +367,7 @@ describe('BaseCRMIntegration - Phone Number ID Webhook Subscriptions', () => {
                 'webhook-call-123',
                 expect.objectContaining({
                     resourceIds: ['phone-id-2'],
-                })
+                }),
             );
         });
 
@@ -376,7 +396,7 @@ describe('BaseCRMIntegration - Phone Number ID Webhook Subscriptions', () => {
                 'webhook-summary-123',
                 expect.objectContaining({
                     resourceIds: ['phone-id-2'],
-                })
+                }),
             );
         });
 
@@ -392,7 +412,8 @@ describe('BaseCRMIntegration - Phone Number ID Webhook Subscriptions', () => {
             };
 
             // Act
-            const hasChanges = await integration._handlePhoneIdUpdate(newConfig);
+            const hasChanges =
+                await integration._handlePhoneIdUpdate(newConfig);
 
             // Assert
             expect(hasChanges).toBe(false);
@@ -424,7 +445,7 @@ describe('BaseCRMIntegration - Phone Number ID Webhook Subscriptions', () => {
                 'webhook-msg-123',
                 expect.objectContaining({
                     resourceIds: ['phone-id-1'],
-                })
+                }),
             );
         });
 
@@ -441,7 +462,7 @@ describe('BaseCRMIntegration - Phone Number ID Webhook Subscriptions', () => {
 
             // Act & Assert
             await expect(
-                integration._handlePhoneIdUpdate(newConfig)
+                integration._handlePhoneIdUpdate(newConfig),
             ).rejects.toThrow('Webhooks not configured');
         });
     });
@@ -467,21 +488,25 @@ describe('BaseCRMIntegration - Phone Number ID Webhook Subscriptions', () => {
                 data: { id: 'webhook-summary-123', key: 'test-key' },
             });
 
-            integration._createQuoWebhooksWithPhoneIds = jest.fn().mockResolvedValue({
-                messageWebhookId: 'webhook-msg-123',
-                callWebhookId: 'webhook-call-123',
-                callSummaryWebhookId: 'webhook-summary-123',
-            });
+            integration._createQuoWebhooksWithPhoneIds = jest
+                .fn()
+                .mockResolvedValue({
+                    messageWebhookId: 'webhook-msg-123',
+                    callWebhookId: 'webhook-call-123',
+                    callSummaryWebhookId: 'webhook-summary-123',
+                });
 
             // Act
             await integration._fetchAndStoreEnabledPhoneIds();
-            await integration._createQuoWebhooksWithPhoneIds('https://test.example.com/webhook');
+            await integration._createQuoWebhooksWithPhoneIds(
+                'https://test.example.com/webhook',
+            );
 
             // Assert
             expect(mockQuoApi.listPhoneNumbers).toHaveBeenCalled();
-            expect(integration._createQuoWebhooksWithPhoneIds).toHaveBeenCalledWith(
-                expect.any(String)
-            );
+            expect(
+                integration._createQuoWebhooksWithPhoneIds,
+            ).toHaveBeenCalledWith(expect.any(String));
         });
     });
 });

@@ -12,7 +12,9 @@ describe('Quo API Module - API Key Authentication', () => {
 
             it('should set baseUrl correctly', () => {
                 const api = new Api({});
-                expect(api.baseUrl).toBe('https://dev-public-api.openphone.dev');
+                expect(api.baseUrl).toBe(
+                    'https://dev-public-api.openphone.dev',
+                );
             });
 
             it('should set API_KEY_NAME to Authorization', () => {
@@ -138,24 +140,37 @@ describe('Quo API Module - API Key Authentication', () => {
             describe('getAuthorizationRequirements', () => {
                 it('should return type apiKey', () => {
                     const api = new Api({});
-                    const result = Definition.requiredAuthMethods.getAuthorizationRequirements(api);
+                    const result =
+                        Definition.requiredAuthMethods.getAuthorizationRequirements(
+                            api,
+                        );
 
                     expect(result.type).toBe('apiKey');
                 });
 
                 it('should have jsonSchema with apiKey property', () => {
                     const api = new Api({});
-                    const result = Definition.requiredAuthMethods.getAuthorizationRequirements(api);
+                    const result =
+                        Definition.requiredAuthMethods.getAuthorizationRequirements(
+                            api,
+                        );
 
-                    expect(result.data.jsonSchema.properties.apiKey).toBeDefined();
+                    expect(
+                        result.data.jsonSchema.properties.apiKey,
+                    ).toBeDefined();
                     expect(result.data.jsonSchema.required).toContain('apiKey');
                 });
 
                 it('should have uiSchema with password widget', () => {
                     const api = new Api({});
-                    const result = Definition.requiredAuthMethods.getAuthorizationRequirements(api);
+                    const result =
+                        Definition.requiredAuthMethods.getAuthorizationRequirements(
+                            api,
+                        );
 
-                    expect(result.data.uiSchema.apiKey['ui:widget']).toBe('password');
+                    expect(result.data.uiSchema.apiKey['ui:widget']).toBe(
+                        'password',
+                    );
                 });
             });
 
@@ -164,7 +179,11 @@ describe('Quo API Module - API Key Authentication', () => {
                     const api = new Api({});
                     const params = { data: { apiKey: 'test-key-123' } };
 
-                    const result = await Definition.requiredAuthMethods.getToken(api, params);
+                    const result =
+                        await Definition.requiredAuthMethods.getToken(
+                            api,
+                            params,
+                        );
 
                     expect(result.api_key).toBe('test-key-123');
                 });
@@ -174,7 +193,7 @@ describe('Quo API Module - API Key Authentication', () => {
                     const params = { data: {} };
 
                     await expect(
-                        Definition.requiredAuthMethods.getToken(api, params)
+                        Definition.requiredAuthMethods.getToken(api, params),
                     ).rejects.toThrow('API key is required');
                 });
 
@@ -182,7 +201,11 @@ describe('Quo API Module - API Key Authentication', () => {
                     const api = new Api({});
                     const params = { data: { apiKey: 'test-key-123' } };
 
-                    const result = await Definition.requiredAuthMethods.getToken(api, params);
+                    const result =
+                        await Definition.requiredAuthMethods.getToken(
+                            api,
+                            params,
+                        );
 
                     expect(result.access_token).toBeUndefined();
                     expect(result.api_key).toBe('test-key-123');
@@ -194,7 +217,10 @@ describe('Quo API Module - API Key Authentication', () => {
                     const api = new Api({});
                     const params = { apiKey: 'test-key-789' };
 
-                    await Definition.requiredAuthMethods.setAuthParams(api, params);
+                    await Definition.requiredAuthMethods.setAuthParams(
+                        api,
+                        params,
+                    );
 
                     expect(api.API_KEY_VALUE).toBe('test-key-789');
                 });
@@ -203,7 +229,11 @@ describe('Quo API Module - API Key Authentication', () => {
                     const api = new Api({});
                     const params = { apiKey: 'test-key-789' };
 
-                    const result = await Definition.requiredAuthMethods.setAuthParams(api, params);
+                    const result =
+                        await Definition.requiredAuthMethods.setAuthParams(
+                            api,
+                            params,
+                        );
 
                     expect(result.api_key).toBe('test-key-789');
                 });
@@ -213,7 +243,10 @@ describe('Quo API Module - API Key Authentication', () => {
                     const params = {};
 
                     await expect(
-                        Definition.requiredAuthMethods.setAuthParams(api, params)
+                        Definition.requiredAuthMethods.setAuthParams(
+                            api,
+                            params,
+                        ),
                     ).rejects.toThrow('API key is required');
                 });
             });
@@ -224,12 +257,13 @@ describe('Quo API Module - API Key Authentication', () => {
                     const tokenResponse = { api_key: 'test-key-123' };
                     const userId = 'user-123';
 
-                    const result = await Definition.requiredAuthMethods.getEntityDetails(
-                        api,
-                        {},
-                        tokenResponse,
-                        userId
-                    );
+                    const result =
+                        await Definition.requiredAuthMethods.getEntityDetails(
+                            api,
+                            {},
+                            tokenResponse,
+                            userId,
+                        );
 
                     expect(result.identifiers.externalId).toBeDefined();
                     expect(typeof result.identifiers.externalId).toBe('string');
@@ -242,21 +276,25 @@ describe('Quo API Module - API Key Authentication', () => {
                     const tokenResponse = { api_key: 'test-key-123' };
                     const userId = 'user-123';
 
-                    const result1 = await Definition.requiredAuthMethods.getEntityDetails(
-                        api,
-                        {},
-                        tokenResponse,
-                        userId
-                    );
+                    const result1 =
+                        await Definition.requiredAuthMethods.getEntityDetails(
+                            api,
+                            {},
+                            tokenResponse,
+                            userId,
+                        );
 
-                    const result2 = await Definition.requiredAuthMethods.getEntityDetails(
-                        api,
-                        {},
-                        tokenResponse,
-                        userId
-                    );
+                    const result2 =
+                        await Definition.requiredAuthMethods.getEntityDetails(
+                            api,
+                            {},
+                            tokenResponse,
+                            userId,
+                        );
 
-                    expect(result1.identifiers.externalId).toBe(result2.identifiers.externalId);
+                    expect(result1.identifiers.externalId).toBe(
+                        result2.identifiers.externalId,
+                    );
                 });
 
                 it('should return proper details structure', async () => {
@@ -264,15 +302,18 @@ describe('Quo API Module - API Key Authentication', () => {
                     const tokenResponse = { api_key: 'test-key-123' };
                     const userId = 'user-123';
 
-                    const result = await Definition.requiredAuthMethods.getEntityDetails(
-                        api,
-                        {},
-                        tokenResponse,
-                        userId
-                    );
+                    const result =
+                        await Definition.requiredAuthMethods.getEntityDetails(
+                            api,
+                            {},
+                            tokenResponse,
+                            userId,
+                        );
 
                     expect(result.details).toBeDefined();
-                    expect(result.details.name).toBe('Quo Workspace (API Key Hash)');
+                    expect(result.details.name).toBe(
+                        'Quo Workspace (API Key Hash)',
+                    );
                 });
             });
 
@@ -281,10 +322,11 @@ describe('Quo API Module - API Key Authentication', () => {
                     const api = new Api({ api_key: 'test-key-456' });
                     const userId = 'user-456';
 
-                    const result = await Definition.requiredAuthMethods.getCredentialDetails(
-                        api,
-                        userId
-                    );
+                    const result =
+                        await Definition.requiredAuthMethods.getCredentialDetails(
+                            api,
+                            userId,
+                        );
 
                     expect(result.identifiers.externalId).toBeDefined();
                     expect(typeof result.identifiers.externalId).toBe('string');
@@ -297,7 +339,10 @@ describe('Quo API Module - API Key Authentication', () => {
                     const userId = 'user-456';
 
                     await expect(
-                        Definition.requiredAuthMethods.getCredentialDetails(api, userId)
+                        Definition.requiredAuthMethods.getCredentialDetails(
+                            api,
+                            userId,
+                        ),
                     ).rejects.toThrow('API key is required');
                 });
             });
@@ -306,7 +351,10 @@ describe('Quo API Module - API Key Authentication', () => {
                 it('should skip actual API test due to propagation delay', async () => {
                     const api = new Api({ api_key: 'test-key-123' });
 
-                    const result = await Definition.requiredAuthMethods.testAuthRequest(api);
+                    const result =
+                        await Definition.requiredAuthMethods.testAuthRequest(
+                            api,
+                        );
 
                     expect(result.status).toBe('success');
                     expect(result.message).toContain('API key propagation');
@@ -315,14 +363,16 @@ describe('Quo API Module - API Key Authentication', () => {
 
             describe('apiPropertiesToPersist', () => {
                 it('should persist api_key in credential', () => {
-                    const props = Definition.requiredAuthMethods.apiPropertiesToPersist;
+                    const props =
+                        Definition.requiredAuthMethods.apiPropertiesToPersist;
 
                     expect(props.credential).toContain('api_key');
                     expect(props.credential).not.toContain('access_token');
                 });
 
                 it('should have empty entity array', () => {
-                    const props = Definition.requiredAuthMethods.apiPropertiesToPersist;
+                    const props =
+                        Definition.requiredAuthMethods.apiPropertiesToPersist;
 
                     expect(props.entity).toEqual([]);
                 });

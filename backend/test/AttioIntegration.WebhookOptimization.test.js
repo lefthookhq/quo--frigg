@@ -77,9 +77,8 @@ describe('AttioIntegration - Webhook Mapping Optimization', () => {
             });
 
             // Act
-            const result = await integration._findAttioContactFromQuoWebhook(
-                quoContact,
-            );
+            const result =
+                await integration._findAttioContactFromQuoWebhook(quoContact);
 
             // Assert
             expect(result).toBe(expectedExternalId);
@@ -110,9 +109,8 @@ describe('AttioIntegration - Webhook Mapping Optimization', () => {
             });
 
             // Act
-            const result = await integration._findAttioContactFromQuoWebhook(
-                quoContact,
-            );
+            const result =
+                await integration._findAttioContactFromQuoWebhook(quoContact);
 
             // Assert
             expect(result).toBe(expectedRecordId);
@@ -163,7 +161,9 @@ describe('AttioIntegration - Webhook Mapping Optimization', () => {
             mockAttioApi.queryRecords.mockResolvedValue({
                 data: [{ id: { record_id: foundRecordId } }],
             });
-            integration.getMapping.mockResolvedValue({ externalId: foundRecordId });
+            integration.getMapping.mockResolvedValue({
+                externalId: foundRecordId,
+            });
 
             // Act
             await integration._findAttioContactFromQuoWebhook(quoContact);
@@ -292,7 +292,8 @@ describe('AttioIntegration - Webhook Mapping Optimization', () => {
             integration.logSMSToActivity = jest.fn().mockResolvedValue({});
 
             // Act
-            const result = await integration._handleQuoMessageEvent(webhookData);
+            const result =
+                await integration._handleQuoMessageEvent(webhookData);
 
             // Assert
             expect(result.logged).toBe(true);

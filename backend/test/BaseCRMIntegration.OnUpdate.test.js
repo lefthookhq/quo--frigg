@@ -23,7 +23,9 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
     beforeEach(() => {
         // Mock Quo API
         mockQuoApi = {
-            updateWebhook: jest.fn().mockResolvedValue({ data: { id: 'updated' } }),
+            updateWebhook: jest
+                .fn()
+                .mockResolvedValue({ data: { id: 'updated' } }),
         };
 
         // Mock Commands
@@ -142,19 +144,19 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
                 'webhook-msg-123',
                 expect.objectContaining({
                     resourceIds: ['phone-1', 'phone-3'],
-                })
+                }),
             );
             expect(mockQuoApi.updateWebhook).toHaveBeenCalledWith(
                 'webhook-call-123',
                 expect.objectContaining({
                     resourceIds: ['phone-1', 'phone-3'],
-                })
+                }),
             );
             expect(mockQuoApi.updateWebhook).toHaveBeenCalledWith(
                 'webhook-summary-123',
                 expect.objectContaining({
                     resourceIds: ['phone-1', 'phone-3'],
-                })
+                }),
             );
         });
 
@@ -178,7 +180,12 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
             // Arrange
             const updateParams = {
                 config: {
-                    enabledPhoneIds: ['phone-1', 'phone-2', 'phone-3', 'phone-4'],
+                    enabledPhoneIds: [
+                        'phone-1',
+                        'phone-2',
+                        'phone-3',
+                        'phone-4',
+                    ],
                 },
             };
 
@@ -191,7 +198,7 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
                 expect.any(String),
                 expect.objectContaining({
                     resourceIds: ['phone-1', 'phone-2', 'phone-3', 'phone-4'],
-                })
+                }),
             );
         });
 
@@ -211,7 +218,7 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
                 expect.any(String),
                 expect.objectContaining({
                     resourceIds: ['phone-1'],
-                })
+                }),
             );
         });
 
@@ -231,7 +238,7 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
                 expect.any(String),
                 expect.objectContaining({
                     resourceIds: [],
-                })
+                }),
             );
         });
     });
@@ -284,7 +291,7 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
 
             // Act & Assert
             await expect(integration.onUpdate(updateParams)).rejects.toThrow(
-                'Validation failed'
+                'Validation failed',
             );
         });
     });
@@ -336,7 +343,7 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
 
             // Act & Assert
             await expect(integration.onUpdate(updateParams)).rejects.toThrow(
-                'Webhooks not configured'
+                'Webhooks not configured',
             );
         });
     });

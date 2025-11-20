@@ -33,9 +33,7 @@ describe('AttioIntegration - 409 Conflict Handling', () => {
                         },
                     ],
                     email_addresses: [],
-                    phone_numbers: [
-                        { phone_number: '+15551234567' }
-                    ],
+                    phone_numbers: [{ phone_number: '+15551234567' }],
                 },
             };
 
@@ -55,9 +53,7 @@ describe('AttioIntegration - 409 Conflict Handling', () => {
                                 defaultFields: {
                                     firstName: 'John',
                                     lastName: 'Doe',
-                                    phoneNumbers: [
-                                        { value: '+15551234567' }
-                                    ]
+                                    phoneNumbers: [{ value: '+15551234567' }],
                                 },
                             },
                         ],
@@ -69,11 +65,9 @@ describe('AttioIntegration - 409 Conflict Handling', () => {
                             defaultFields: {
                                 firstName: 'John',
                                 lastName: 'Doe',
-                                phoneNumbers: [
-                                    { value: '+15551234567' }
-                                ]
-                            }
-                        }
+                                phoneNumbers: [{ value: '+15551234567' }],
+                            },
+                        },
                     }),
                 },
             };
@@ -94,7 +88,7 @@ describe('AttioIntegration - 409 Conflict Handling', () => {
                     quoContactId: 'quo-contact-existing',
                     syncMethod: 'webhook',
                     action: 'conflict_resolved',
-                })
+                }),
             );
         });
 
@@ -110,9 +104,7 @@ describe('AttioIntegration - 409 Conflict Handling', () => {
                         },
                     ],
                     email_addresses: [],
-                    phone_numbers: [
-                        { phone_number: '+15559876543' }
-                    ],
+                    phone_numbers: [{ phone_number: '+15559876543' }],
                 },
             };
 
@@ -124,10 +116,8 @@ describe('AttioIntegration - 409 Conflict Handling', () => {
                             externalId: 'attio-person-new',
                             source: 'attio',
                             defaultFields: {
-                                phoneNumbers: [
-                                    { value: '+15559876543' }
-                                ]
-                            }
+                                phoneNumbers: [{ value: '+15559876543' }],
+                            },
                         },
                     }),
                 },
@@ -144,7 +134,7 @@ describe('AttioIntegration - 409 Conflict Handling', () => {
                     quoContactId: 'quo-contact-new',
                     syncMethod: 'webhook',
                     action: 'created',
-                })
+                }),
             );
         });
 
@@ -178,7 +168,7 @@ describe('AttioIntegration - 409 Conflict Handling', () => {
             };
 
             await expect(
-                integration._syncPersonToQuo(attioRecord, 'created')
+                integration._syncPersonToQuo(attioRecord, 'created'),
             ).rejects.toThrow();
 
             expect(integration._upsertContactMapping).not.toHaveBeenCalled();
@@ -210,7 +200,7 @@ describe('AttioIntegration - 409 Conflict Handling', () => {
             };
 
             await expect(
-                integration._syncPersonToQuo(attioRecord, 'created')
+                integration._syncPersonToQuo(attioRecord, 'created'),
             ).rejects.toMatchObject({
                 status: 500,
             });
@@ -284,10 +274,13 @@ describe('AttioIntegration - 409 Conflict Handling', () => {
                 ],
             });
 
-            const recordId = await integration._findAttioContactByPhone('+19789517449');
+            const recordId =
+                await integration._findAttioContactByPhone('+19789517449');
 
             expect(recordId).toBe('attio-person-123');
-            expect(integration.getMapping).toHaveBeenCalledWith('attio-person-123');
+            expect(integration.getMapping).toHaveBeenCalledWith(
+                'attio-person-123',
+            );
         });
 
         it('should fail to find contact when mapping does not exist (demonstrates bug)', async () => {
@@ -310,9 +303,9 @@ describe('AttioIntegration - 409 Conflict Handling', () => {
             });
 
             await expect(
-                integration._findAttioContactByPhone('+19789517449')
+                integration._findAttioContactByPhone('+19789517449'),
             ).rejects.toThrow(
-                'but none were synced from Attio to Quo. Only synced contacts can receive activity logs.'
+                'but none were synced from Attio to Quo. Only synced contacts can receive activity logs.',
             );
         });
     });

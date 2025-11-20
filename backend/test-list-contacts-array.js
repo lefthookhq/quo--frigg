@@ -7,7 +7,8 @@
 const https = require('https');
 
 const API_KEY = process.argv[2];
-const USE_DEV = process.env.USE_DEV === 'true' || process.argv.includes('--dev');
+const USE_DEV =
+    process.env.USE_DEV === 'true' || process.argv.includes('--dev');
 
 if (!API_KEY) {
     console.error('Usage: node test-list-contacts-array.js <API_KEY> [--dev]');
@@ -23,12 +24,16 @@ const externalIds = [
 
 // Build query string with array notation
 function buildQueryString(externalIds) {
-    return externalIds.map(id => `externalIds[]=${encodeURIComponent(id)}`).join('&');
+    return externalIds
+        .map((id) => `externalIds[]=${encodeURIComponent(id)}`)
+        .join('&');
 }
 
 function makeRequest(queryString) {
     return new Promise((resolve, reject) => {
-        const hostname = USE_DEV ? 'dev-public-api.openphone.dev' : 'api.openphone.com';
+        const hostname = USE_DEV
+            ? 'dev-public-api.openphone.dev'
+            : 'api.openphone.com';
         const path = `/v1/contacts?${queryString}&maxResults=${externalIds.length}`;
 
         const options = {
@@ -37,7 +42,7 @@ function makeRequest(queryString) {
             path: path,
             method: 'GET',
             headers: {
-                'Authorization': API_KEY,
+                Authorization: API_KEY,
                 'Content-Type': 'application/json',
             },
         };
@@ -58,7 +63,10 @@ function makeRequest(queryString) {
 
                 try {
                     const parsed = JSON.parse(data);
-                    console.log(`\nResponse Body:`, JSON.stringify(parsed, null, 2));
+                    console.log(
+                        `\nResponse Body:`,
+                        JSON.stringify(parsed, null, 2),
+                    );
                     resolve(parsed);
                 } catch (e) {
                     console.log(`\nRaw Response:`, data);

@@ -101,15 +101,25 @@ describe('AxisCareIntegration', () => {
 
         it('should have quo module with correct name and label overrides', () => {
             expect(AxisCareIntegration.Definition.modules.quo).toBeDefined();
-            expect(AxisCareIntegration.Definition.modules.quo.definition).toBeDefined();
-            
+            expect(
+                AxisCareIntegration.Definition.modules.quo.definition,
+            ).toBeDefined();
+
             // Test name override
-            expect(AxisCareIntegration.Definition.modules.quo.definition.getName()).toBe('quo-axisCare');
-            expect(AxisCareIntegration.Definition.modules.quo.definition.moduleName).toBe('quo-axisCare');
-            
+            expect(
+                AxisCareIntegration.Definition.modules.quo.definition.getName(),
+            ).toBe('quo-axisCare');
+            expect(
+                AxisCareIntegration.Definition.modules.quo.definition
+                    .moduleName,
+            ).toBe('quo-axisCare');
+
             // Test label override (if display property exists)
             if (AxisCareIntegration.Definition.modules.quo.definition.display) {
-                expect(AxisCareIntegration.Definition.modules.quo.definition.display.label).toBe('Quo (AxisCare)');
+                expect(
+                    AxisCareIntegration.Definition.modules.quo.definition
+                        .display.label,
+                ).toBe('Quo (AxisCare)');
             }
         });
 
@@ -204,14 +214,12 @@ describe('AxisCareIntegration', () => {
                             key: 'message-webhook-key',
                         },
                     });
-                mockQuoApi.api.createCallWebhook = jest
-                    .fn()
-                    .mockResolvedValue({
-                        data: {
-                            id: 'call-webhook-123',
-                            key: 'call-webhook-key',
-                        },
-                    });
+                mockQuoApi.api.createCallWebhook = jest.fn().mockResolvedValue({
+                    data: {
+                        id: 'call-webhook-123',
+                        key: 'call-webhook-key',
+                    },
+                });
                 mockQuoApi.api.createCallSummaryWebhook = jest
                     .fn()
                     .mockResolvedValue({
@@ -382,7 +390,7 @@ describe('AxisCareIntegration', () => {
                     expect.objectContaining({
                         externalId: '123',
                     }),
-                ])
+                ]),
             );
             expect(mockQuoApi.api.createContact).not.toHaveBeenCalled();
         });
@@ -397,14 +405,16 @@ describe('AxisCareIntegration', () => {
             integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
                 successCount: 0,
                 errorCount: 1,
-                errors: [{
-                    error: 'Failed to create contact',
-                    externalId: '456',
-                }],
+                errors: [
+                    {
+                        error: 'Failed to create contact',
+                        externalId: '456',
+                    },
+                ],
             });
 
             await expect(
-                integration._syncPersonToQuo(person, 'created')
+                integration._syncPersonToQuo(person, 'created'),
             ).rejects.toThrow('Failed to created contact');
         });
 
@@ -439,7 +449,7 @@ describe('AxisCareIntegration', () => {
                     expect.objectContaining({
                         externalId: '789',
                     }),
-                ])
+                ]),
             );
             expect(mockQuoApi.api.updateContact).not.toHaveBeenCalled();
         });
@@ -454,14 +464,16 @@ describe('AxisCareIntegration', () => {
             integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
                 successCount: 0,
                 errorCount: 1,
-                errors: [{
-                    error: 'Contact update failed',
-                    externalId: '999',
-                }],
+                errors: [
+                    {
+                        error: 'Contact update failed',
+                        externalId: '999',
+                    },
+                ],
             });
 
             await expect(
-                integration._syncPersonToQuo(person, 'updated')
+                integration._syncPersonToQuo(person, 'updated'),
             ).rejects.toThrow('Failed to updated contact');
         });
     });

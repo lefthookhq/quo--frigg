@@ -70,7 +70,9 @@ describe('BaseCRMIntegration', () => {
                     defaultFields: {
                         firstName: person.firstName,
                         lastName: person.lastName,
-                        phoneNumbers: person.phone ? [{ value: person.phone }] : [],
+                        phoneNumbers: person.phone
+                            ? [{ value: person.phone }]
+                            : [],
                     },
                 });
             }
@@ -120,7 +122,9 @@ describe('BaseCRMIntegration', () => {
             execute: jest.fn(),
         };
         integration.checkIfNeedsConfig = jest.fn().mockResolvedValue(false);
-        integration.validateConfig = jest.fn().mockReturnValue({ isValid: true });
+        integration.validateConfig = jest
+            .fn()
+            .mockReturnValue({ isValid: true });
         integration.commands = {
             queueMessage: jest.fn().mockResolvedValue({}),
             updateIntegrationConfig: jest.fn().mockResolvedValue({}),
@@ -130,22 +134,28 @@ describe('BaseCRMIntegration', () => {
         integration.quo = {
             api: {
                 upsertContact: jest.fn(),
-                bulkCreateContacts: jest.fn().mockImplementation(async (contacts) => {
-                    // Simulate successful bulk create by returning empty response
-                    return {};
-                }),
-                listContacts: jest.fn().mockImplementation(async ({ externalIds }) => {
-                    // Simulate list contacts returning the created contacts
-                    return {
-                        data: externalIds.map((externalId, index) => ({
-                            id: `quo-${externalId}`,
-                            externalId,
-                            defaultFields: {
-                                phoneNumbers: [{ value: `+123456789${index}` }],
-                            },
-                        })),
-                    };
-                }),
+                bulkCreateContacts: jest
+                    .fn()
+                    .mockImplementation(async (contacts) => {
+                        // Simulate successful bulk create by returning empty response
+                        return {};
+                    }),
+                listContacts: jest
+                    .fn()
+                    .mockImplementation(async ({ externalIds }) => {
+                        // Simulate list contacts returning the created contacts
+                        return {
+                            data: externalIds.map((externalId, index) => ({
+                                id: `quo-${externalId}`,
+                                externalId,
+                                defaultFields: {
+                                    phoneNumbers: [
+                                        { value: `+123456789${index}` },
+                                    ],
+                                },
+                            })),
+                        };
+                    }),
             },
         };
 
@@ -159,7 +169,9 @@ describe('BaseCRMIntegration', () => {
             }),
         };
         const userRepoFactory = require('@friggframework/core/user/repositories/user-repository-factory');
-        jest.spyOn(userRepoFactory, 'createUserRepository').mockReturnValue(mockUserRepo);
+        jest.spyOn(userRepoFactory, 'createUserRepository').mockReturnValue(
+            mockUserRepo,
+        );
     });
 
     afterEach(() => {
@@ -270,10 +282,9 @@ describe('BaseCRMIntegration', () => {
             await integration.onCreate({ integrationId: 'integration-123' });
 
             expect(integration.checkIfNeedsConfig).toHaveBeenCalled();
-            expect(integration.updateIntegrationStatus.execute).toHaveBeenCalledWith(
-                'integration-123',
-                'ENABLED',
-            );
+            expect(
+                integration.updateIntegrationStatus.execute,
+            ).toHaveBeenCalledWith('integration-123', 'ENABLED');
         });
 
         it('should handle onCreate with config needed', async () => {
@@ -282,17 +293,19 @@ describe('BaseCRMIntegration', () => {
             await integration.onCreate({ integrationId: 'integration-123' });
 
             expect(integration.checkIfNeedsConfig).toHaveBeenCalled();
-            expect(integration.updateIntegrationStatus.execute).toHaveBeenCalledWith(
-                'integration-123',
-                'NEEDS_CONFIG',
-            );
+            expect(
+                integration.updateIntegrationStatus.execute,
+            ).toHaveBeenCalledWith('integration-123', 'NEEDS_CONFIG');
         });
 
         it('should handle handlePostCreateSetup with correct data destructuring', async () => {
             // Mock the setupWebhooks and startInitialSync methods
             const setupWebhooksSpy = jest
                 .spyOn(integration, 'setupWebhooks')
-                .mockResolvedValue({ status: 'success', webhooks: ['webhook-1'] });
+                .mockResolvedValue({
+                    status: 'success',
+                    webhooks: ['webhook-1'],
+                });
             const startInitialSyncSpy = jest
                 .spyOn(integration, 'startInitialSync')
                 .mockResolvedValue({ processIds: ['process-123'] });
@@ -347,7 +360,6 @@ describe('BaseCRMIntegration', () => {
             expect(startInitialSyncSpy).not.toHaveBeenCalled();
         });
     });
-
 
     describe('public orchestration methods', () => {
         it('should delegate startInitialSync to SyncOrchestrator', async () => {
@@ -623,8 +635,14 @@ describe('BaseCRMIntegration', () => {
 
         it('should handle bulk upsert to Quo with orgId', async () => {
             const contacts = [
-                buildQuoContact({ externalId: 'person-1', defaultFields: { phoneNumbers: [{ value: '+1234567890' }] } }),
-                buildQuoContact({ externalId: 'person-2', defaultFields: { phoneNumbers: [{ value: '+0987654321' }] } }),
+                buildQuoContact({
+                    externalId: 'person-1',
+                    defaultFields: { phoneNumbers: [{ value: '+1234567890' }] },
+                }),
+                buildQuoContact({
+                    externalId: 'person-2',
+                    defaultFields: { phoneNumbers: [{ value: '+0987654321' }] },
+                }),
             ];
 
             // Mock the userId
@@ -639,15 +657,28 @@ describe('BaseCRMIntegration', () => {
 
             // Mock the user repository factory using jest.spyOn on require cache
             const userRepoFactory = require('@friggframework/core/user/repositories/user-repository-factory');
-            const createUserRepositorySpy = jest.spyOn(userRepoFactory, 'createUserRepository')
+            const createUserRepositorySpy = jest
+                .spyOn(userRepoFactory, 'createUserRepository')
                 .mockReturnValue(mockUserRepo);
 
             // Mock quo.api methods for bulk upsert
             integration.quo.api.bulkCreateContacts.mockResolvedValue({});
             integration.quo.api.listContacts.mockResolvedValue({
                 data: [
-                    { id: 'quo-1', externalId: 'person-1', defaultFields: { phoneNumbers: [{ value: '+1234567890' }] } },
-                    { id: 'quo-2', externalId: 'person-2', defaultFields: { phoneNumbers: [{ value: '+0987654321' }] } },
+                    {
+                        id: 'quo-1',
+                        externalId: 'person-1',
+                        defaultFields: {
+                            phoneNumbers: [{ value: '+1234567890' }],
+                        },
+                    },
+                    {
+                        id: 'quo-2',
+                        externalId: 'person-2',
+                        defaultFields: {
+                            phoneNumbers: [{ value: '+0987654321' }],
+                        },
+                    },
                 ],
             });
 
@@ -657,9 +688,14 @@ describe('BaseCRMIntegration', () => {
             const result = await integration.bulkUpsertToQuo(contacts);
 
             // Should call bulkCreateContacts with orgId and contacts
-            expect(integration.quo.api.bulkCreateContacts).toHaveBeenCalledWith('test-org-456', contacts);
+            expect(integration.quo.api.bulkCreateContacts).toHaveBeenCalledWith(
+                'test-org-456',
+                contacts,
+            );
             expect(integration.quo.api.listContacts).toHaveBeenCalled();
-            expect(mockUserRepo.findUserById).toHaveBeenCalledWith('org-user-123');
+            expect(mockUserRepo.findUserById).toHaveBeenCalledWith(
+                'org-user-123',
+            );
             expect(result).toEqual({
                 successCount: 2,
                 errorCount: 0,
@@ -672,8 +708,14 @@ describe('BaseCRMIntegration', () => {
 
         it('should handle bulk upsert errors', async () => {
             const contacts = [
-                buildQuoContact({ externalId: 'person-1', defaultFields: { phoneNumbers: [{ value: '+1234567890' }] } }),
-                buildQuoContact({ externalId: 'person-2', defaultFields: { phoneNumbers: [{ value: '+0987654321' }] } }),
+                buildQuoContact({
+                    externalId: 'person-1',
+                    defaultFields: { phoneNumbers: [{ value: '+1234567890' }] },
+                }),
+                buildQuoContact({
+                    externalId: 'person-2',
+                    defaultFields: { phoneNumbers: [{ value: '+0987654321' }] },
+                }),
             ];
 
             // Mock the userId
@@ -688,11 +730,14 @@ describe('BaseCRMIntegration', () => {
 
             // Mock the user repository factory
             const userRepoFactory = require('@friggframework/core/user/repositories/user-repository-factory');
-            const createUserRepositorySpy = jest.spyOn(userRepoFactory, 'createUserRepository')
+            const createUserRepositorySpy = jest
+                .spyOn(userRepoFactory, 'createUserRepository')
                 .mockReturnValue(mockUserRepo);
 
             // Mock bulkCreateContacts to fail
-            integration.quo.api.bulkCreateContacts.mockRejectedValue(new Error('Quo API error'));
+            integration.quo.api.bulkCreateContacts.mockRejectedValue(
+                new Error('Quo API error'),
+            );
 
             const result = await integration.bulkUpsertToQuo(contacts);
 
@@ -803,21 +848,27 @@ describe('BaseCRMIntegration', () => {
             // Mock Quo API
             cursorIntegration.quo = {
                 api: {
-                    bulkCreateContacts: jest.fn().mockImplementation(async (contacts) => {
-                        return {};
-                    }),
-                    listContacts: jest.fn().mockImplementation(async ({ externalIds }) => {
-                        // Return the contacts that were "created"
-                        return {
-                            data: externalIds.map((externalId, index) => ({
-                                id: `quo-${externalId}`,
-                                externalId,
-                                defaultFields: {
-                                    phoneNumbers: [{ value: `+555010${index}` }],
-                                },
-                            })),
-                        };
-                    }),
+                    bulkCreateContacts: jest
+                        .fn()
+                        .mockImplementation(async (contacts) => {
+                            return {};
+                        }),
+                    listContacts: jest
+                        .fn()
+                        .mockImplementation(async ({ externalIds }) => {
+                            // Return the contacts that were "created"
+                            return {
+                                data: externalIds.map((externalId, index) => ({
+                                    id: `quo-${externalId}`,
+                                    externalId,
+                                    defaultFields: {
+                                        phoneNumbers: [
+                                            { value: `+555010${index}` },
+                                        ],
+                                    },
+                                })),
+                            };
+                        }),
                 },
             };
 
@@ -831,7 +882,9 @@ describe('BaseCRMIntegration', () => {
                 }),
             };
             const userRepoFactory = require('@friggframework/core/user/repositories/user-repository-factory');
-            jest.spyOn(userRepoFactory, 'createUserRepository').mockReturnValue(mockUserRepo);
+            jest.spyOn(userRepoFactory, 'createUserRepository').mockReturnValue(
+                mockUserRepo,
+            );
         });
 
         it('should process pages sequentially', async () => {

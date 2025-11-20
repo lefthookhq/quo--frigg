@@ -26,7 +26,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
         },
         modules: {
             pipedrive: { definition: pipedrive.Definition },
-            quo: { 
+            quo: {
                 definition: {
                     ...quo.Definition,
                     getName: () => 'quo-pipedrive',
@@ -35,7 +35,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                         ...(quo.Definition.display || {}),
                         label: 'Quo (Pipedrive)',
                     },
-                }
+                },
             },
         },
         webhooks: {
@@ -365,7 +365,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
         if (person.phones && person.phones.length > 0) {
             phoneNumbers.push(
                 ...person.phones.map((p) => ({
-                    name: p.label ? p.label.charAt(0).toUpperCase() + p.label.slice(1) : 'Work',
+                    name: p.label
+                        ? p.label.charAt(0).toUpperCase() + p.label.slice(1)
+                        : 'Work',
                     value: p.value,
                     primary: p.primary || false,
                 })),
@@ -376,7 +378,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
         if (person.emails && person.emails.length > 0) {
             emails.push(
                 ...person.emails.map((e) => ({
-                    name: e.label ? e.label.charAt(0).toUpperCase() + e.label.slice(1) : 'Work',
+                    name: e.label
+                        ? e.label.charAt(0).toUpperCase() + e.label.slice(1)
+                        : 'Work',
                     value: e.value,
                     primary: e.primary || false,
                 })),
@@ -729,7 +733,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
             createdWebhooks.push(
                 { type: 'message', id: messageWebhookId },
                 { type: 'call', id: callWebhookId },
-                { type: 'callSummary', id: callSummaryWebhookId }
+                { type: 'callSummary', id: callSummaryWebhookId },
             );
 
             const updatedConfig = {
@@ -874,8 +878,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
             pipedriveResult.status === 'fulfilled' &&
             results.pipedrive.status !== 'failed';
         const quoSuccess =
-            quoResult.status === 'fulfilled' &&
-            results.quo.status !== 'failed';
+            quoResult.status === 'fulfilled' && results.quo.status !== 'failed';
 
         if (pipedriveSuccess && quoSuccess) {
             results.overallStatus = 'success';
@@ -900,7 +903,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
         } else {
             // Both failed
             results.overallStatus = 'failed';
-            console.error('[Webhook Setup] ✗ Failed - Both webhook setups failed');
+            console.error(
+                '[Webhook Setup] ✗ Failed - Both webhook setups failed',
+            );
             throw new Error(
                 'Both Pipedrive and Quo webhook setups failed. Integration cannot function without Quo webhooks.',
             );
@@ -1296,12 +1301,14 @@ class PipedriveIntegration extends BaseCRMIntegration {
         const phoneNumberDetails = await this.quo.api.getPhoneNumber(
             callObject.phoneNumberId,
         );
-        const inboxName = phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
-            ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
-            : phoneNumberDetails.data?.name || 'Quo Line';
+        const inboxName =
+            phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
+                ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
+                : phoneNumberDetails.data?.name || 'Quo Line';
 
         const userDetails = await this.quo.api.getUser(callObject.userId);
-        const userName = `${userDetails.data.firstName || ''} ${userDetails.data.lastName || ''}`.trim() ||
+        const userName =
+            `${userDetails.data.firstName || ''} ${userDetails.data.lastName || ''}`.trim() ||
             'Quo User';
 
         const minutes = Math.floor(callObject.duration / 60);
@@ -1401,16 +1408,16 @@ class PipedriveIntegration extends BaseCRMIntegration {
         const phoneNumberDetails = await this.quo.api.getPhoneNumber(
             messageObject.phoneNumberId,
         );
-        const inboxName = phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
-            ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
-            : phoneNumberDetails.data?.name || 'Quo Inbox';
+        const inboxName =
+            phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
+                ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
+                : phoneNumberDetails.data?.name || 'Quo Inbox';
 
-        const inboxNumber =
-            phoneNumberDetails.data?.number ||
-            messageObject.to;
+        const inboxNumber = phoneNumberDetails.data?.number || messageObject.to;
 
         const userDetails = await this.quo.api.getUser(messageObject.userId);
-        const userName = `${userDetails.data?.firstName || ''} ${userDetails.data?.lastName || ''}`.trim() ||
+        const userName =
+            `${userDetails.data?.firstName || ''} ${userDetails.data?.lastName || ''}`.trim() ||
             'Quo User';
 
         const deepLink = webhookData.data.deepLink || '#';
@@ -1475,9 +1482,10 @@ class PipedriveIntegration extends BaseCRMIntegration {
         const phoneNumberDetails = await this.quo.api.getPhoneNumber(
             callObject.phoneNumberId,
         );
-        const inboxName = phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
-            ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
-            : phoneNumberDetails.data?.name || 'Quo Line';
+        const inboxName =
+            phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
+                ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
+                : phoneNumberDetails.data?.name || 'Quo Line';
         const inboxNumber =
             phoneNumberDetails.data.number ||
             phoneNumberDetails.data.formattedNumber ||

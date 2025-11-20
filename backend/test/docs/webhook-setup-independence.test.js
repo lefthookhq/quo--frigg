@@ -23,23 +23,23 @@ describe('Webhook Setup Independence', () => {
         mockQuoApi = {
             api: {
                 createMessageWebhook: jest.fn().mockResolvedValue({
-                    data: { id: 'msg-webhook-123', key: 'msg-key-abc' }
+                    data: { id: 'msg-webhook-123', key: 'msg-key-abc' },
                 }),
                 createCallWebhook: jest.fn().mockResolvedValue({
-                    data: { id: 'call-webhook-456', key: 'call-key-def' }
+                    data: { id: 'call-webhook-456', key: 'call-key-def' },
                 }),
                 createCallSummaryWebhook: jest.fn().mockResolvedValue({
-                    data: { id: 'summary-webhook-789', key: 'summary-key-ghi' }
+                    data: { id: 'summary-webhook-789', key: 'summary-key-ghi' },
                 }),
                 deleteWebhook: jest.fn().mockResolvedValue({}),
-            }
+            },
         };
 
         // Mock Pipedrive API - will be configured per test
         mockPipedriveApi = {
             api: {
                 createWebhook: jest.fn(),
-            }
+            },
         };
 
         // Mock commands
@@ -49,7 +49,7 @@ describe('Webhook Setup Independence', () => {
 
         // Mock updateIntegrationMessages command
         const mockUpdateMessages = {
-            execute: jest.fn().mockResolvedValue({})
+            execute: jest.fn().mockResolvedValue({}),
         };
 
         // Create integration instance
@@ -63,7 +63,7 @@ describe('Webhook Setup Independence', () => {
         integration.commands = mockCommands;
         integration.updateIntegrationMessages = mockUpdateMessages;
         integration.config = {
-            enabledPhoneIds: ['PHmR5aU', 'PHxY7bZ']
+            enabledPhoneIds: ['PHmR5aU', 'PHxY7bZ'],
         };
         integration.id = 'integration-123';
 
@@ -80,7 +80,7 @@ describe('Webhook Setup Independence', () => {
         it('should create BOTH Pipedrive and Quo webhooks when Pipedrive succeeds', async () => {
             // Setup: Pipedrive webhooks succeed
             mockPipedriveApi.api.createWebhook.mockResolvedValue({
-                data: { id: 1 }
+                data: { id: 1 },
             });
 
             // Execute
@@ -101,7 +101,7 @@ describe('Webhook Setup Independence', () => {
         it('should CREATE Quo webhooks even when Pipedrive setup fails (fixed!)', async () => {
             // Setup: Pipedrive webhooks fail with 403 (like production logs)
             mockPipedriveApi.api.createWebhook.mockRejectedValue(
-                new Error('Scope and URL mismatch')
+                new Error('Scope and URL mismatch'),
             );
 
             // Execute: Should NOT throw (Quo webhooks still work)
@@ -124,18 +124,24 @@ describe('Webhook Setup Independence', () => {
         it('should log warning (not error) for Pipedrive failure', async () => {
             // Setup: Pipedrive webhooks fail
             const pipedriveError = new Error('Failed to create any webhooks');
-            mockPipedriveApi.api.createWebhook.mockRejectedValue(pipedriveError);
+            mockPipedriveApi.api.createWebhook.mockRejectedValue(
+                pipedriveError,
+            );
 
             // Execute
             const result = await integration.setupWebhooks();
 
             // Verify: Pipedrive failure logged as WARNING (non-fatal)
-            expect(integration.updateIntegrationMessages.execute).toHaveBeenCalledWith(
+            expect(
+                integration.updateIntegrationMessages.execute,
+            ).toHaveBeenCalledWith(
                 'integration-123',
                 'warnings',
                 'Pipedrive Webhook Setup Failed',
-                expect.stringContaining('Could not register webhooks with Pipedrive'),
-                expect.any(Number)
+                expect.stringContaining(
+                    'Could not register webhooks with Pipedrive',
+                ),
+                expect.any(Number),
             );
 
             // Verify: Integration continues with partial success
@@ -161,7 +167,7 @@ describe('Webhook Setup Independence', () => {
 
             // Setup: Simulate production 403 errors
             mockPipedriveApi.api.createWebhook.mockRejectedValue(
-                new Error('Scope and URL mismatch')
+                new Error('Scope and URL mismatch'),
             );
 
             // Execute: Should NOT throw (Quo succeeds)
@@ -187,22 +193,22 @@ describe('Webhook Setup Independence', () => {
 
             // Setup: Pipedrive succeeds but Quo fails
             mockPipedriveApi.api.createWebhook.mockResolvedValue({
-                data: { id: 1 }
+                data: { id: 1 },
             });
             // All Quo webhook creation methods must fail
             mockQuoApi.api.createMessageWebhook.mockRejectedValue(
-                new Error('Quo API error')
+                new Error('Quo API error'),
             );
             mockQuoApi.api.createCallWebhook.mockRejectedValue(
-                new Error('Quo API error')
+                new Error('Quo API error'),
             );
             mockQuoApi.api.createCallSummaryWebhook.mockRejectedValue(
-                new Error('Quo API error')
+                new Error('Quo API error'),
             );
 
             // Execute: Should throw since Quo is required
             await expect(integration.setupWebhooks()).rejects.toThrow(
-                'Quo webhook setup failed'
+                'Quo webhook setup failed',
             );
 
             // Verify: Both were attempted
@@ -213,22 +219,22 @@ describe('Webhook Setup Independence', () => {
         it('should throw if BOTH webhook setups fail', async () => {
             // Setup: Both fail
             mockPipedriveApi.api.createWebhook.mockRejectedValue(
-                new Error('Pipedrive API error')
+                new Error('Pipedrive API error'),
             );
             // All Quo webhook creation methods must fail
             mockQuoApi.api.createMessageWebhook.mockRejectedValue(
-                new Error('Quo API error')
+                new Error('Quo API error'),
             );
             mockQuoApi.api.createCallWebhook.mockRejectedValue(
-                new Error('Quo API error')
+                new Error('Quo API error'),
             );
             mockQuoApi.api.createCallSummaryWebhook.mockRejectedValue(
-                new Error('Quo API error')
+                new Error('Quo API error'),
             );
 
             // Execute: Should throw
             await expect(integration.setupWebhooks()).rejects.toThrow(
-                'Both Pipedrive and Quo webhook setups failed'
+                'Both Pipedrive and Quo webhook setups failed',
             );
 
             // Verify: Both were attempted
@@ -239,17 +245,17 @@ describe('Webhook Setup Independence', () => {
         it('should log error (not warning) when Quo webhooks fail', async () => {
             // Setup: Quo fails (Pipedrive succeeds)
             mockPipedriveApi.api.createWebhook.mockResolvedValue({
-                data: { id: 1 }
+                data: { id: 1 },
             });
             // All Quo webhook creation methods must fail
             mockQuoApi.api.createMessageWebhook.mockRejectedValue(
-                new Error('Quo API rate limit')
+                new Error('Quo API rate limit'),
             );
             mockQuoApi.api.createCallWebhook.mockRejectedValue(
-                new Error('Quo API rate limit')
+                new Error('Quo API rate limit'),
             );
             mockQuoApi.api.createCallSummaryWebhook.mockRejectedValue(
-                new Error('Quo API rate limit')
+                new Error('Quo API rate limit'),
             );
 
             // Execute: Will throw
@@ -261,12 +267,14 @@ describe('Webhook Setup Independence', () => {
 
             // Verify: Quo failure logged as ERROR (critical)
             // Note: The actual message differs slightly from our expectation
-            expect(integration.updateIntegrationMessages.execute).toHaveBeenCalledWith(
+            expect(
+                integration.updateIntegrationMessages.execute,
+            ).toHaveBeenCalledWith(
                 'integration-123',
                 'errors',
                 'Quo Webhook Setup Failed',
                 expect.stringContaining('Quo'),
-                expect.any(Number)
+                expect.any(Number),
             );
         });
     });

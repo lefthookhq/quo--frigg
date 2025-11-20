@@ -23,9 +23,8 @@ describe('BaseCRMIntegration - Mapping Lookup Methods', () => {
             });
 
             // Act
-            const result = await integration._getExternalIdFromMappingByPhone(
-                phoneNumber,
-            );
+            const result =
+                await integration._getExternalIdFromMappingByPhone(phoneNumber);
 
             // Assert
             expect(result).toBe(expectedExternalId);
@@ -37,9 +36,10 @@ describe('BaseCRMIntegration - Mapping Lookup Methods', () => {
             integration.getMapping.mockResolvedValue(null);
 
             // Act
-            const result = await integration._getExternalIdFromMappingByPhone(
-                '+19175551234',
-            );
+            const result =
+                await integration._getExternalIdFromMappingByPhone(
+                    '+19175551234',
+                );
 
             // Assert
             expect(result).toBeNull();
@@ -53,9 +53,10 @@ describe('BaseCRMIntegration - Mapping Lookup Methods', () => {
             });
 
             // Act
-            const result = await integration._getExternalIdFromMappingByPhone(
-                '+12125551234',
-            );
+            const result =
+                await integration._getExternalIdFromMappingByPhone(
+                    '+12125551234',
+                );
 
             // Assert
             expect(result).toBeNull();
@@ -68,9 +69,10 @@ describe('BaseCRMIntegration - Mapping Lookup Methods', () => {
             );
 
             // Act
-            const result = await integration._getExternalIdFromMappingByPhone(
-                '+12125551234',
-            );
+            const result =
+                await integration._getExternalIdFromMappingByPhone(
+                    '+12125551234',
+                );
 
             // Assert
             expect(result).toBeNull();
