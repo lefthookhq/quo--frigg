@@ -61,6 +61,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Generate Prisma Client for debian-openssl-1.1.x
+        run: |
+          cd node_modules/@friggframework/core
+          npx prisma generate --schema=./prisma-postgresql/schema.prisma
+        continue-on-error: true
+
       - name: Run tests
         run: npm run test:ci
 
