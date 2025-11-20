@@ -66,6 +66,19 @@ describe('Bulk Sync Mapping Creation', () => {
         integration._processManager = mockProcessManager;
         integration._queueManager = mockQueueManager;
         integration._syncOrchestrator = mockSyncOrchestrator;
+
+        // Mock user repository for bulkUpsertToQuo
+        const mockUserRepo = {
+            findUserById: jest.fn().mockResolvedValue({
+                appOrgId: 'test-org-456',
+            }),
+        };
+        const userRepoFactory = require('@friggframework/core/user/repositories/user-repository-factory');
+        jest.spyOn(userRepoFactory, 'createUserRepository').mockReturnValue(mockUserRepo);
+    });
+
+    afterEach(() => {
+        jest.restoreAllMocks();
     });
 
     describe('Phase 1: bulkUpsertToQuo mapping creation', () => {
@@ -108,11 +121,12 @@ describe('Bulk Sync Mapping Creation', () => {
 
             const result = await integration.bulkUpsertToQuo(contacts);
 
-            expect(integration.quo.api.bulkCreateContacts).toHaveBeenCalledWith(contacts);
+            expect(integration.quo.api.bulkCreateContacts).toHaveBeenCalledWith('test-org-456', contacts);
 
+            // listContacts is now paginated with maxResults: 50 (API limit)
             expect(integration.quo.api.listContacts).toHaveBeenCalledWith({
                 externalIds: ['attio-person-1', 'attio-person-2'],
-                maxResults: 2,
+                maxResults: 50,
             });
 
             expect(integration.upsertMapping).toHaveBeenCalledTimes(2);

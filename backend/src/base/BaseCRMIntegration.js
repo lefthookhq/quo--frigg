@@ -1009,6 +1009,54 @@ class BaseCRMIntegration extends IntegrationBase {
     // ============================================================================
 
     /**
+     * Fetch contacts by external IDs with automatic pagination to respect API limits
+     *
+     * The Quo API has a maxResults limit of 50. This method automatically handles
+     * pagination when fetching more than 50 contacts. All pages are fetched in parallel
+     * for optimal performance.
+     *
+     * @param {string[]} externalIds - Array of external IDs to fetch
+     * @param {number} pageSize - Page size (default: 50, max: 50)
+     * @returns {Promise<Object[]>} Array of fetched contacts
+     * @private
+     */
+    async _fetchContactsByExternalIds(externalIds, pageSize = 50) {
+        const maxPageSize = 50; // Quo API limit
+        const effectivePageSize = Math.min(pageSize, maxPageSize);
+
+        // Split externalIds into chunks
+        const chunks = [];
+        for (let i = 0; i < externalIds.length; i += effectivePageSize) {
+            chunks.push(externalIds.slice(i, i + effectivePageSize));
+        }
+
+        // Fetch all pages in parallel for better performance
+        const fetchPromises = chunks.map((chunk, index) =>
+            this.quo.api.listContacts({
+                externalIds: chunk,
+                maxResults: effectivePageSize,
+            }).catch(error => {
+                // Log error with page info
+                console.error(`Failed to fetch page ${index + 1}:`, error.message);
+                // Rethrow to fail the entire operation
+                throw error;
+            })
+        );
+
+        try {
+            const responses = await Promise.all(fetchPromises);
+
+            // Combine all results
+            const allContacts = responses.flatMap(response => response?.data || []);
+
+            return allContacts;
+        } catch (error) {
+            // If any page fails, the error will bubble up from Promise.all
+            throw error;
+        }
+    }
+
+    /**
      * Bulk upsert contacts to Quo and create mappings
      *
      * @param {Array} contacts - Array of Quo contact objects
@@ -1037,14 +1085,12 @@ class BaseCRMIntegration extends IntegrationBase {
 
             await new Promise(resolve => setTimeout(resolve, 1000));
 
+            // Fetch created contacts using paginated helper
             const externalIds = contacts.map(c => c.externalId);
-            const fetchedContacts = await this.quo.api.listContacts({
-                externalIds: externalIds,
-                maxResults: contacts.length
-            });
+            const fetchedContactsData = await this._fetchContactsByExternalIds(externalIds);
 
-            if (fetchedContacts?.data) {
-                for (const createdContact of fetchedContacts.data) {
+            if (fetchedContactsData) {
+                for (const createdContact of fetchedContactsData) {
                     try {
                         const phoneNumber = createdContact.defaultFields?.phoneNumbers?.[0]?.value;
 
@@ -1081,8 +1127,8 @@ class BaseCRMIntegration extends IntegrationBase {
                 }
             }
 
-            if (fetchedContacts?.data?.length < contacts.length) {
-                const createdExternalIds = new Set(fetchedContacts.data.map(c => c.externalId));
+            if (fetchedContactsData?.length < contacts.length) {
+                const createdExternalIds = new Set(fetchedContactsData.map(c => c.externalId));
                 const failedContacts = contacts.filter(c => !createdExternalIds.has(c.externalId));
 
                 errorCount += failedContacts.length;
