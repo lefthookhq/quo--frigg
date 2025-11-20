@@ -20,9 +20,9 @@ const appDefinition = {
     ],
     user: {
         usePassword: true,
-        primary: 'individual',
+        primary: 'organization',
         individualUserRequired: true,
-        organizationUserRequired: false,
+        organizationUserRequired: true,
         authModes: {
             friggToken: true, // Support web UI login
             sharedSecret: true, // Enable backend-to-backend API communication with x-frigg-api-key

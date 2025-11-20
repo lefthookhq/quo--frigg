@@ -608,11 +608,26 @@ describe('BaseCRMIntegration', () => {
             delete process.env['TEST-CRM_QUEUE_URL'];
         });
 
-        it('should handle bulk upsert to Quo', async () => {
+        it('should handle bulk upsert to Quo with orgId', async () => {
             const contacts = [
                 buildQuoContact({ externalId: 'person-1', defaultFields: { phoneNumbers: [{ value: '+1234567890' }] } }),
                 buildQuoContact({ externalId: 'person-2', defaultFields: { phoneNumbers: [{ value: '+0987654321' }] } }),
             ];
+
+            // Mock the userId
+            integration.userId = 'org-user-123';
+
+            // Create mock user repository
+            const mockUserRepo = {
+                findUserById: jest.fn().mockResolvedValue({
+                    appOrgId: 'test-org-456',
+                }),
+            };
+
+            // Mock the user repository factory using jest.spyOn on require cache
+            const userRepoFactory = require('@friggframework/core/user/repositories/user-repository-factory');
+            const createUserRepositorySpy = jest.spyOn(userRepoFactory, 'createUserRepository')
+                .mockReturnValue(mockUserRepo);
 
             // Mock quo.api methods for bulk upsert
             integration.quo.api.bulkCreateContacts.mockResolvedValue({});
@@ -628,13 +643,18 @@ describe('BaseCRMIntegration', () => {
 
             const result = await integration.bulkUpsertToQuo(contacts);
 
-            expect(integration.quo.api.bulkCreateContacts).toHaveBeenCalledWith(contacts);
+            // Should call bulkCreateContacts with orgId and contacts
+            expect(integration.quo.api.bulkCreateContacts).toHaveBeenCalledWith('test-org-456', contacts);
             expect(integration.quo.api.listContacts).toHaveBeenCalled();
+            expect(mockUserRepo.findUserById).toHaveBeenCalledWith('org-user-123');
             expect(result).toEqual({
                 successCount: 2,
                 errorCount: 0,
                 errors: [],
             });
+
+            // Clean up spy
+            createUserRepositorySpy.mockRestore();
         });
 
         it('should handle bulk upsert errors', async () => {
