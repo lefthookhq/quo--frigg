@@ -1673,69 +1673,19 @@ View in Quo: ${deepLink}`;
             const person = await this._fetchZohoObject(objectType, recordId);
             const quoContact = await this.transformPersonToQuo(person);
 
-            if (operation === 'insert') {
-                const createResponse =
-                    await this.quo.api.createContact(quoContact);
+            // Use bulkUpsertToQuo for both insert and update operations
+            const result = await this.bulkUpsertToQuo([quoContact]);
 
-                if (!createResponse?.data) {
-                    throw new Error(
-                        `Create contact failed: Invalid response from Quo API`,
-                    );
-                }
-
-                console.log(
-                    `[Zoho CRM] ✓ Contact ${createResponse.data.id} created in Quo (externalId: ${quoContact.externalId})`,
+            if (result.errorCount > 0) {
+                const error = result.errors[0];
+                throw new Error(
+                    `Failed to ${operation} contact: ${error?.error || 'Unknown error'}`,
                 );
-            } else if (operation === 'update') {
-                const existingContacts = await this.quo.api.listContacts({
-                    externalIds: [quoContact.externalId],
-                    maxResults: 10,
-                });
-
-                const exactMatch =
-                    existingContacts?.data && existingContacts.data.length > 0
-                        ? existingContacts.data.find(
-                              (contact) =>
-                                  contact.externalId === quoContact.externalId,
-                          )
-                        : null;
-
-                if (exactMatch) {
-                    const quoContactId = exactMatch.id;
-                    const { externalId, ...contactData } = quoContact;
-                    const updateResponse = await this.quo.api.updateContact(
-                        quoContactId,
-                        contactData,
-                    );
-
-                    if (!updateResponse?.data) {
-                        throw new Error(
-                            `Update contact failed: Invalid response from Quo API`,
-                        );
-                    }
-
-                    console.log(
-                        `[Zoho CRM] ✓ Contact ${quoContactId} updated in Quo (externalId: ${externalId})`,
-                    );
-                } else {
-                    console.log(
-                        `[Zoho CRM] Contact with externalId ${quoContact.externalId} not found in Quo, creating as fallback`,
-                    );
-
-                    const createResponse =
-                        await this.quo.api.createContact(quoContact);
-
-                    if (!createResponse?.data) {
-                        throw new Error(
-                            `Create contact failed: Invalid response from Quo API`,
-                        );
-                    }
-
-                    console.log(
-                        `[Zoho CRM] ✓ Contact ${createResponse.data.id} created in Quo as fallback (externalId: ${quoContact.externalId})`,
-                    );
-                }
             }
+
+            console.log(
+                `[Zoho CRM] ✓ Contact synced to Quo via bulkUpsertToQuo (${operation}, externalId: ${quoContact.externalId})`,
+            );
 
             console.log(
                 `[Zoho CRM] ✓ ${objectType} ${externalId} synced to Quo`,

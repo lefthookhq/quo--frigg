@@ -483,5 +483,140 @@ describe('ZohoCRMIntegration (Refactored)', () => {
                 ).rejects.toThrow('Person not found: invalid-id');
             });
         });
+
+        describe('_syncPersonToQuo with bulkUpsertToQuo', () => {
+            beforeEach(() => {
+                mockQuoApi.api.createContact = jest.fn();
+                mockQuoApi.api.updateContact = jest.fn();
+                mockQuoApi.api.listContacts = jest.fn();
+                integration._fetchZohoObject = jest.fn();
+                integration.transformPersonToQuo = jest.fn();
+            });
+
+            it('should use bulkUpsertToQuo for insert operation', async () => {
+                const recordId = 'zoho-123';
+                const objectType = 'Contacts';
+                const operation = 'insert';
+
+                const mockZohoPerson = {
+                    id: recordId,
+                    First_Name: 'John',
+                    Last_Name: 'Doe',
+                };
+
+                const mockQuoContact = {
+                    externalId: recordId,
+                    source: 'openphone-zoho',
+                    defaultFields: {
+                        firstName: 'John',
+                        lastName: 'Doe',
+                        phoneNumbers: [{ name: 'Work', value: '+15551234567' }],
+                    },
+                };
+
+                integration._fetchZohoObject.mockResolvedValue(mockZohoPerson);
+                integration.transformPersonToQuo.mockResolvedValue(mockQuoContact);
+                integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
+                    successCount: 1,
+                    errorCount: 0,
+                    errors: [],
+                });
+
+                await integration._syncPersonToQuo(objectType, recordId, operation);
+
+                expect(integration.bulkUpsertToQuo).toHaveBeenCalledWith(
+                    expect.arrayContaining([
+                        expect.objectContaining({
+                            externalId: recordId,
+                        }),
+                    ])
+                );
+                expect(mockQuoApi.api.createContact).not.toHaveBeenCalled();
+            });
+
+            it('should handle bulkUpsertToQuo errors for insert', async () => {
+                const recordId = 'zoho-error';
+                const objectType = 'Contacts';
+                const operation = 'insert';
+
+                integration._fetchZohoObject.mockResolvedValue({ id: recordId });
+                integration.transformPersonToQuo.mockResolvedValue({
+                    externalId: recordId,
+                    defaultFields: { firstName: 'Test' },
+                });
+                integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
+                    successCount: 0,
+                    errorCount: 1,
+                    errors: [{
+                        error: 'Failed to create contact',
+                        externalId: recordId,
+                    }],
+                });
+
+                await expect(
+                    integration._syncPersonToQuo(objectType, recordId, operation)
+                ).rejects.toThrow('Failed to insert contact');
+            });
+
+            it('should use bulkUpsertToQuo for update operation', async () => {
+                const recordId = 'zoho-456';
+                const objectType = 'Contacts';
+                const operation = 'update';
+
+                const mockQuoContact = {
+                    externalId: recordId,
+                    defaultFields: {
+                        firstName: 'Jane',
+                        lastName: 'Smith',
+                        phoneNumbers: [{ name: 'Mobile', value: '+15559999999' }],
+                    },
+                };
+
+                integration._fetchZohoObject.mockResolvedValue({ id: recordId });
+                integration.transformPersonToQuo.mockResolvedValue(mockQuoContact);
+
+                integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
+                    successCount: 1,
+                    errorCount: 0,
+                    errors: [],
+                });
+
+                await integration._syncPersonToQuo(objectType, recordId, operation);
+
+                expect(integration.bulkUpsertToQuo).toHaveBeenCalledWith(
+                    expect.arrayContaining([
+                        expect.objectContaining({
+                            externalId: recordId,
+                        }),
+                    ])
+                );
+                expect(mockQuoApi.api.updateContact).not.toHaveBeenCalled();
+            });
+
+            it('should handle bulkUpsertToQuo errors for update', async () => {
+                const recordId = 'zoho-789';
+                const objectType = 'Contacts';
+                const operation = 'update';
+
+                integration._fetchZohoObject.mockResolvedValue({ id: recordId });
+                integration.transformPersonToQuo.mockResolvedValue({
+                    externalId: recordId,
+                    defaultFields: { firstName: 'Test' },
+                });
+
+                integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
+                    successCount: 0,
+                    errorCount: 1,
+                    errors: [{
+                        error: 'Contact update failed',
+                        externalId: recordId,
+                    }],
+                });
+
+                await expect(
+                    integration._syncPersonToQuo(objectType, recordId, operation)
+                ).rejects.toThrow('Failed to update contact');
+            });
+        });
     });
 });
