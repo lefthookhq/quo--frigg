@@ -1,24 +1,17 @@
 const { ApiKeyRequester, get } = require('@friggframework/core');
 
 class Api extends ApiKeyRequester {
-    constructor(params) {
+    constructor(params = {}) {
         super(params);
-        this.baseUrl = 'https://dev-public-api.openphone.dev'; //'https://api.openphone.com';
+        this.baseUrl =
+            params.baseUrl ||
+            process.env.QUO_BASE_URL ||
+            'https://dev-public-api.openphone.dev';
 
-        // OpenPhone uses 'Authorization' header for API key
         this.API_KEY_NAME = 'Authorization';
 
-        let apiKey;
-        try {
-            apiKey = get(params, 'access_token');
-        } catch (error) {
-            apiKey = get(params, 'api_key');
-        }
-
-        this.access_token = apiKey;
-
-        if (this.access_token) {
-            this.setApiKey(this.access_token);
+        if (params.api_key) {
+            this.setApiKey(params.api_key);
         }
 
         this.URLs = {
@@ -52,12 +45,12 @@ class Api extends ApiKeyRequester {
             userById: (userId) => `/v1/users/${userId}`,
 
             // Webhook endpoints
-            webhooks: '/v1/webhooks',
-            webhookById: (id) => `/v1/webhooks/${id}`,
-            webhookCalls: '/v1/webhooks/calls',
-            webhookMessages: '/v1/webhooks/messages',
-            webhookCallSummaries: '/v1/webhooks/call-summaries',
-            webhookCallTranscripts: '/v1/webhooks/call-transcripts',
+            webhooks: '/v2/webhooks',
+            webhookById: (id) => `/v2/webhooks/${id}`,
+            webhookCalls: '/v2/webhooks/calls',
+            webhookMessages: '/v2/webhooks/messages',
+            webhookCallSummaries: '/v2/webhooks/call-summaries',
+            webhookCallTranscripts: '/v2/webhooks/call-transcripts',
         };
     }
 
@@ -107,10 +100,31 @@ class Api extends ApiKeyRequester {
 
     // Contact Management
     async listContacts(params = {}) {
-        const options = {
-            url: this.baseUrl + this.URLs.contacts,
-            query: params,
-        };
+        // Build URL with proper array handling for externalIds[] and phoneNumbers[]
+        let url = this.baseUrl + this.URLs.contacts;
+
+        const queryParts = [];
+        for (const [key, value] of Object.entries(params)) {
+            if (Array.isArray(value)) {
+                // Handle arrays with bracket notation: key[]=val1&key[]=val2
+                value.forEach((item) => {
+                    queryParts.push(
+                        `${encodeURIComponent(key)}[]=${encodeURIComponent(item)}`,
+                    );
+                });
+            } else {
+                // Handle regular params
+                queryParts.push(
+                    `${encodeURIComponent(key)}=${encodeURIComponent(value)}`,
+                );
+            }
+        }
+
+        if (queryParts.length > 0) {
+            url += '?' + queryParts.join('&');
+        }
+
+        const options = { url };
         return this._get(options);
     }
 
@@ -185,6 +199,7 @@ class Api extends ApiKeyRequester {
     /**
      * Bulk create multiple contacts in OpenPhone
      *
+     * @param {string} orgId - Organization ID
      * @param {CreateContactData[]} data - Array of contact data objects to create
      * @returns {Promise<Object>} Response containing the created contacts with their ids, externalIds, sources, defaultFields, customFields, createdAt, updatedAt, and createdByUserIds
      * @throws {Error} 400 - Invalid custom field item
@@ -194,13 +209,17 @@ class Api extends ApiKeyRequester {
      * @throws {Error} 409 - Conflict
      * @throws {Error} 500 - Unknown error
      */
-    async bulkCreateContacts(data) {
+    async bulkCreateContacts(orgId, data) {
         const options = {
             url: this.baseUrl + this.URLs.contacts + '/bulk',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: { contacts: data },
+            body: {
+                // orgId,
+                // TODO: Uncomment this when orgId is available
+                contacts: data,
+            },
         };
         return this._post(options);
     }

@@ -26,6 +26,41 @@ describe('ScalingTestIntegration (Refactored)', () => {
         integration = new ScalingTestIntegration();
         integration.id = 'test-integration-id';
         integration.userId = 'test-user-id';
+
+        // Initialize the scale-test module that fetchPersonPage depends on
+        integration['scale-test'] = {
+            api: {
+                listContacts: jest.fn((params) => {
+                    // Mock the API to return data in the expected format
+                    // The API returns items with {id: uuid, firstName, lastName, email, phone, company, updatedAt}
+                    const { cursor, limit = 10 } = params;
+
+                    // Calculate which page we're on based on cursor
+                    const page = cursor ? parseInt(cursor) : 0;
+                    const start = page * limit;
+                    const end = Math.min(start + limit, 10000);
+
+                    const items = [];
+                    for (let i = start; i < end; i++) {
+                        items.push({
+                            id: `uuid-${i + 1}`, // Use UUID format
+                            firstName: `Test${i}`,
+                            lastName: `Contact${i}`,
+                            email: `test${i}@example.com`,
+                            phone: `+1555${String(i).padStart(7, '0')}`,
+                            company: `Company ${Math.floor(i / 10)}`,
+                            updatedAt: new Date().toISOString(),
+                        });
+                    }
+
+                    return Promise.resolve({
+                        items,
+                        nextCursor: end < 10000 ? String(page + 1) : null,
+                    });
+                }),
+                getContact: jest.fn(),
+            },
+        };
     });
 
     describe('Static Configuration', () => {
@@ -38,15 +73,27 @@ describe('ScalingTestIntegration (Refactored)', () => {
 
         it('should have quo module with correct name and label overrides', () => {
             expect(ScalingTestIntegration.Definition.modules.quo).toBeDefined();
-            expect(ScalingTestIntegration.Definition.modules.quo.definition).toBeDefined();
-            
+            expect(
+                ScalingTestIntegration.Definition.modules.quo.definition,
+            ).toBeDefined();
+
             // Test name override
-            expect(ScalingTestIntegration.Definition.modules.quo.definition.getName()).toBe('quo-scalingtest');
-            expect(ScalingTestIntegration.Definition.modules.quo.definition.moduleName).toBe('quo-scalingtest');
-            
+            expect(
+                ScalingTestIntegration.Definition.modules.quo.definition.getName(),
+            ).toBe('quo-scalingtest');
+            expect(
+                ScalingTestIntegration.Definition.modules.quo.definition
+                    .moduleName,
+            ).toBe('quo-scalingtest');
+
             // Test label override (if display property exists)
-            if (ScalingTestIntegration.Definition.modules.quo.definition.display) {
-                expect(ScalingTestIntegration.Definition.modules.quo.definition.display.label).toBe('Quo (Scaling Test)');
+            if (
+                ScalingTestIntegration.Definition.modules.quo.definition.display
+            ) {
+                expect(
+                    ScalingTestIntegration.Definition.modules.quo.definition
+                        .display.label,
+                ).toBe('Quo (Scaling Test)');
             }
         });
 
@@ -73,6 +120,7 @@ describe('ScalingTestIntegration (Refactored)', () => {
                 expect(result.total).toBe(10000);
                 expect(result.hasMore).toBe(true);
                 expect(result.data[0].first_name).toBe('Test0');
+                expect(result.data[0].id).toBe('uuid-1');
             });
 
             it('should handle pagination correctly', async () => {
@@ -84,7 +132,7 @@ describe('ScalingTestIntegration (Refactored)', () => {
 
                 expect(result.data).toHaveLength(10);
                 expect(result.hasMore).toBe(false);
-                expect(result.data[0].id).toBe(9991);
+                expect(result.data[0].id).toBe('uuid-9991');
             });
         });
 
@@ -143,22 +191,22 @@ describe('ScalingTestIntegration (Refactored)', () => {
         });
 
         it('should fetch person by ID', async () => {
-            const person = await integration.fetchPersonById('10');
+            const person = await integration.fetchPersonById('uuid-10');
 
-            expect(person.id).toBe(10);
+            expect(person.id).toBe('uuid-10');
             expect(person.first_name).toBe('Test9');
         });
 
         it('should fetch persons by IDs', async () => {
             const persons = await integration.fetchPersonsByIds([
-                '1',
-                '2',
-                '3',
+                'uuid-1',
+                'uuid-2',
+                'uuid-3',
             ]);
 
             expect(persons).toHaveLength(3);
-            expect(persons[0].id).toBe(1);
-            expect(persons[2].id).toBe(3);
+            expect(persons[0].id).toBe('uuid-1');
+            expect(persons[2].id).toBe('uuid-3');
         });
     });
 });

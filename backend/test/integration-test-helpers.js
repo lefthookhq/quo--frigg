@@ -82,18 +82,21 @@ async function getAuthRequirements(entityType, userId = DEFAULT_USER_ID) {
  * @param {string} entityType - Module type (e.g., 'quo', 'attio')
  * @param {Object} credentials - Credentials for the module (e.g., { apiKey: '...' })
  * @param {string} [userId] - User ID for authentication
+ * @param {string} [orgId] - App org ID for x-frigg-appOrgId header
  * @returns {Promise<Object>} Created entity details (includes entity.id)
  */
 async function authenticateModule(
     entityType,
     credentials,
     userId = DEFAULT_USER_ID,
+    orgId = null,
 ) {
     const res = await makeAuthenticatedRequest(
         'POST',
         '/api/authorize',
         { entityType, data: credentials },
         userId,
+        orgId,
     );
 
     if (res.status !== 200) {
@@ -111,6 +114,7 @@ async function authenticateModule(
  * @param {Object} entities - Map of entity types to entity IDs (e.g., { quo: 'entity-id-1', scaletest: 'entity-id-2' })
  * @param {Object} [config] - Integration configuration
  * @param {string} [userId] - User ID for authentication
+ * @param {string} [orgId] - App org ID for x-frigg-appOrgId header
  * @returns {Promise<Object>} Created integration
  */
 async function createIntegration(
@@ -118,6 +122,7 @@ async function createIntegration(
     entities,
     config = {},
     userId = DEFAULT_USER_ID,
+    orgId = null,
 ) {
     const integrationConfig = {
         type: integrationType,
@@ -132,6 +137,7 @@ async function createIntegration(
             entities,
         },
         userId,
+        orgId,
     );
 
     if (res.status !== 201) {

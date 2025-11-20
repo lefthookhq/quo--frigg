@@ -24,7 +24,7 @@ class ScalingTestIntegration extends BaseCRMIntegration {
             icon: '',
         },
         modules: {
-            quo: { 
+            quo: {
                 definition: {
                     ...QuoDefinition,
                     getName: () => 'quo-scalingtest',
@@ -33,7 +33,7 @@ class ScalingTestIntegration extends BaseCRMIntegration {
                         ...(QuoDefinition.display || {}),
                         label: 'Quo (Scaling Test)',
                     },
-                }
+                },
             },
             'scale-test': {
                 definition: crmScaleTest.Definition,

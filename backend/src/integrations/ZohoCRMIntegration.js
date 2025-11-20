@@ -18,7 +18,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             icon: '',
         },
         modules: {
-            quo: { 
+            quo: {
                 definition: {
                     ...QuoDefinition,
                     getName: () => 'quo-zohoCrm',
@@ -27,7 +27,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                         ...(QuoDefinition.display || {}),
                         label: 'Quo (Zoho CRM)',
                     },
-                }
+                },
             },
             zohoCrm: {
                 definition: zohoCrm.Definition,
@@ -214,11 +214,15 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         const company = this._extractCompany(person, objectType);
 
         const externalId = String(person.id || person.Id || 'unknown');
-        const source = 'zoho';
+        const source = 'openphone-zoho';
+
+        // Generate sourceUrl for linking back to Zoho CRM
+        const sourceUrl = `https://crm.zoho.com/crm/org/tab/Contacts/${externalId}`;
 
         return {
             externalId,
             source,
+            sourceUrl,
             defaultFields: {
                 firstName,
                 lastName: person.Last_Name || '',
@@ -242,11 +246,11 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         const phones = [];
 
         if (person.Phone) {
-            phones.push({ name: 'work', value: person.Phone });
+            phones.push({ name: 'Work', value: person.Phone });
         }
 
         if (objectType === 'Contact' && person.Mobile) {
-            phones.push({ name: 'mobile', value: person.Mobile });
+            phones.push({ name: 'Mobile', value: person.Mobile });
         }
 
         return phones;
@@ -256,7 +260,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         const emails = [];
 
         if (objectType === 'Contact' && person.Email) {
-            emails.push({ name: 'work', value: person.Email });
+            emails.push({ name: 'Work', value: person.Email });
         }
 
         return emails;
@@ -461,7 +465,8 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             const notificationConfig = {
                 watch: [
                     {
-                        channel_id: this.constructor.ZOHO_NOTIFICATION_CHANNEL_ID,
+                        channel_id:
+                            this.constructor.ZOHO_NOTIFICATION_CHANNEL_ID,
                         events: ['Accounts.all', 'Contacts.all'],
                         notify_url: notificationUrl,
                         token: notificationToken,
@@ -497,7 +502,8 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
 
             const updatedConfig = {
                 ...this.config,
-                zohoNotificationChannelId: this.constructor.ZOHO_NOTIFICATION_CHANNEL_ID,
+                zohoNotificationChannelId:
+                    this.constructor.ZOHO_NOTIFICATION_CHANNEL_ID,
                 zohoNotificationToken: notificationToken,
                 zohoNotificationUrl: notificationUrl,
                 notificationCreatedAt: new Date().toISOString(),
@@ -637,99 +643,21 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 `[Quo] Registering message and call webhooks at: ${webhookUrl}`,
             );
 
-            const messageWebhookResponse =
-                await this.quo.api.createMessageWebhook({
-                    url: webhookUrl,
-                    events: this.constructor.WEBHOOK_EVENTS.QUO_MESSAGES,
-                    label: this.constructor.WEBHOOK_LABELS.QUO_MESSAGES,
-                    status: 'enabled',
-                });
+            // Use base class method to create webhooks with resourceIds support
+            const {
+                messageWebhookId,
+                messageWebhookKey,
+                callWebhookId,
+                callWebhookKey,
+                callSummaryWebhookId,
+                callSummaryWebhookKey,
+            } = await this._createQuoWebhooksWithPhoneIds(webhookUrl);
 
-            if (!messageWebhookResponse?.data?.id) {
-                throw new Error(
-                    'Invalid Quo message webhook response: missing webhook ID',
-                );
-            }
-
-            if (!messageWebhookResponse.data.key) {
-                throw new Error(
-                    'Invalid Quo message webhook response: missing webhook key',
-                );
-            }
-
-            const messageWebhookId = messageWebhookResponse.data.id;
-            const messageWebhookKey = messageWebhookResponse.data.key;
-
-            createdWebhooks.push({
-                type: 'message',
-                id: messageWebhookId,
-            });
-
-            console.log(
-                `[Quo] ✓ Message webhook registered with ID: ${messageWebhookId}`,
-            );
-
-            const callWebhookResponse = await this.quo.api.createCallWebhook({
-                url: webhookUrl,
-                events: this.constructor.WEBHOOK_EVENTS.QUO_CALLS,
-                label: this.constructor.WEBHOOK_LABELS.QUO_CALLS,
-                status: 'enabled',
-            });
-
-            if (!callWebhookResponse?.data?.id) {
-                throw new Error(
-                    'Invalid Quo call webhook response: missing webhook ID',
-                );
-            }
-
-            if (!callWebhookResponse.data.key) {
-                throw new Error(
-                    'Invalid Quo call webhook response: missing webhook key',
-                );
-            }
-
-            const callWebhookId = callWebhookResponse.data.id;
-            const callWebhookKey = callWebhookResponse.data.key;
-
-            createdWebhooks.push({
-                type: 'call',
-                id: callWebhookId,
-            });
-
-            console.log(
-                `[Quo] ✓ Call webhook registered with ID: ${callWebhookId}`,
-            );
-
-            const callSummaryWebhookResponse =
-                await this.quo.api.createCallSummaryWebhook({
-                    url: webhookUrl,
-                    events: this.constructor.WEBHOOK_EVENTS.QUO_CALL_SUMMARIES,
-                    label: this.constructor.WEBHOOK_LABELS.QUO_CALL_SUMMARIES,
-                    status: 'enabled',
-                });
-
-            if (!callSummaryWebhookResponse?.data?.id) {
-                throw new Error(
-                    'Invalid Quo call-summary webhook response: missing webhook ID',
-                );
-            }
-
-            if (!callSummaryWebhookResponse.data.key) {
-                throw new Error(
-                    'Invalid Quo call-summary webhook response: missing webhook key',
-                );
-            }
-
-            const callSummaryWebhookId = callSummaryWebhookResponse.data.id;
-            const callSummaryWebhookKey = callSummaryWebhookResponse.data.key;
-
-            createdWebhooks.push({
-                type: 'callSummary',
-                id: callSummaryWebhookId,
-            });
-
-            console.log(
-                `[Quo] ✓ Call-summary webhook registered with ID: ${callSummaryWebhookId}`,
+            // Track created webhooks for rollback on error
+            createdWebhooks.push(
+                { type: 'message', id: messageWebhookId },
+                { type: 'call', id: callWebhookId },
+                { type: 'callSummary', id: callSummaryWebhookId },
             );
 
             const updatedConfig = {
@@ -802,7 +730,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
     /**
      * Setup webhooks with both Zoho CRM and Quo
      * Called during onCreate lifecycle (BaseCRMIntegration)
-     * Orchestrates webhook setup for both services - BOTH required for success
+     * Orchestrates webhook setup for both services
      * @returns {Promise<Object>} Setup result
      */
     async setupWebhooks() {
@@ -812,43 +740,102 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             overallStatus: 'success',
         };
 
-        try {
-            results.zoho = await this.setupZohoNotifications();
-            results.quo = await this.setupQuoWebhook();
+        // Use Promise.allSettled to attempt both webhook setups independently
+        // This ensures Quo webhooks are created even if Zoho setup fails
+        const [zohoResult, quoResult] = await Promise.allSettled([
+            this.setupZohoNotifications(),
+            this.setupQuoWebhook(),
+        ]);
 
-            // BOTH required - fail if either fails
-            if (
-                results.zoho.status === 'failed' ||
-                results.quo.status === 'failed'
-            ) {
-                results.overallStatus = 'failed';
-                const failedServices = [];
-                if (results.zoho.status === 'failed')
-                    failedServices.push('Zoho CRM');
-                if (results.quo.status === 'failed') failedServices.push('Quo');
-
-                throw new Error(
-                    `Webhook setup failed for: ${failedServices.join(', ')}. Both Zoho CRM and Quo webhooks are required for integration to function.`,
-                );
-            }
-
-            console.log(
-                '[Webhook Setup] ✓ All webhooks configured successfully',
+        // Process Zoho notification result
+        if (zohoResult.status === 'fulfilled') {
+            results.zoho = zohoResult.value;
+            console.log('[Webhook Setup] ✓ Zoho CRM notifications configured');
+        } else {
+            results.zoho = {
+                status: 'failed',
+                error: zohoResult.reason.message,
+            };
+            console.error(
+                '[Webhook Setup] ✗ Zoho CRM notification setup failed:',
+                zohoResult.reason.message,
             );
-            return results;
-        } catch (error) {
-            console.error('[Webhook Setup] Failed:', error);
 
+            // Log warning for Zoho failure (non-fatal)
+            await this.updateIntegrationMessages.execute(
+                this.id,
+                'warnings',
+                'Zoho CRM Notification Setup Failed',
+                `Could not register notifications with Zoho CRM: ${zohoResult.reason.message}. Integration will function without Zoho notifications, but changes in Zoho CRM will not sync automatically.`,
+                Date.now(),
+            );
+        }
+
+        // Process Quo webhook result
+        if (quoResult.status === 'fulfilled') {
+            results.quo = quoResult.value;
+            console.log('[Webhook Setup] ✓ Quo webhooks configured');
+        } else {
+            results.quo = {
+                status: 'failed',
+                error: quoResult.reason.message,
+            };
+            console.error(
+                '[Webhook Setup] ✗ Quo webhook setup failed:',
+                quoResult.reason.message,
+            );
+
+            // Quo webhooks are critical - log as error
             await this.updateIntegrationMessages.execute(
                 this.id,
                 'errors',
-                'Webhook Setup Failed',
-                `Failed to setup webhooks: ${error.message}`,
+                'Quo Webhook Setup Failed',
+                `Failed to register webhooks with Quo: ${quoResult.reason.message}. Quo webhooks are required for receiving calls and messages.`,
                 Date.now(),
             );
-
-            throw error; // Re-throw since both are required
         }
+
+        // Determine overall status
+        // Note: Both methods catch errors and return {status: 'failed'} instead of throwing
+        // So we check both Promise fulfillment AND the result.status field
+        const zohoSuccess =
+            zohoResult.status === 'fulfilled' &&
+            results.zoho.status !== 'failed';
+        const quoSuccess =
+            quoResult.status === 'fulfilled' && results.quo.status !== 'failed';
+
+        if (zohoSuccess && quoSuccess) {
+            results.overallStatus = 'success';
+            console.log(
+                '[Webhook Setup] ✓ All webhooks configured successfully',
+            );
+        } else if (quoSuccess) {
+            // Quo webhooks working is sufficient for basic functionality
+            results.overallStatus = 'partial';
+            console.log(
+                '[Webhook Setup] ⚠ Partial success - Quo webhooks configured, Zoho CRM notifications failed',
+            );
+        } else if (zohoSuccess) {
+            // Zoho notifications alone are not sufficient (need Quo for core functionality)
+            results.overallStatus = 'failed';
+            console.error(
+                '[Webhook Setup] ✗ Failed - Quo webhooks required for integration to function',
+            );
+            throw new Error(
+                'Quo webhook setup failed. Quo webhooks are required for integration to function.',
+            );
+        } else {
+            // Both failed
+            results.overallStatus = 'failed';
+            console.error(
+                '[Webhook Setup] ✗ Failed - Both webhook setups failed',
+            );
+            throw new Error(
+                'Both Zoho CRM and Quo webhook setups failed. Integration cannot function without Quo webhooks.',
+            );
+        }
+
+        return results;
     }
 
     /**
@@ -1236,7 +1223,9 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         const contactId = await this._findZohoContactByPhone(contactPhone);
 
         if (!contactId) {
-            console.log(`[Quo Webhook] ℹ️ No contact found for phone ${contactPhone} in Zoho CRM, skipping call sync`);
+            console.log(
+                `[Quo Webhook] ℹ️ No contact found for phone ${contactPhone} in Zoho CRM, skipping call sync`,
+            );
             return;
         }
 
@@ -1246,14 +1235,12 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             callObject.phoneNumberId,
         );
         const inboxName =
-            phoneNumberDetails.data.users.length > 0
-                ? phoneNumberDetails.data.users[0].firstName +
-                  ' ' +
-                  phoneNumberDetails.data.users[0].lastName
-                : 'Quo Line';
+            phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
+                ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
+                : phoneNumberDetails.data?.name || 'Quo Line';
         const inboxNumber =
-            phoneNumberDetails.data.number ||
-            phoneNumberDetails.data.formattedNumber ||
+            phoneNumberDetails.data?.number ||
+            phoneNumberDetails.data?.formattedNumber ||
             participants[callObject.direction === 'outgoing' ? 0 : 1];
 
         const userDetails = await this.quo.api.getUser(callObject.userId);
@@ -1282,27 +1269,40 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
 
         let formattedNote;
         if (callObject.direction === 'outgoing') {
-            formattedNote = `☎️ Call: Quo 📱 ${inboxName} (${inboxNumber}) → ${contactPhone}
+            formattedNote = `${statusDescription}
 
-Status: ${statusDescription}
-
-View in Quo: ${deepLink}`;
+[View the call activity in Quo](${deepLink})`;
         } else {
-            formattedNote = `☎️ Call: ${contactPhone} → Quo 📱 ${inboxName} (${inboxNumber})
+            // Incoming call
+            let statusLine = statusDescription;
 
-Status: ${statusDescription}`;
-
+            // Add recording indicator if completed with duration
             if (callObject.status === 'completed' && callObject.duration > 0) {
-                formattedNote += ` / ▶️ Recording (${durationFormatted})`;
+                statusLine += ` / ▶️ Recording (${durationFormatted})`;
             }
 
-            formattedNote += `
+            // Add voicemail indicator if present
+            if (callObject.voicemail) {
+                const voicemailDuration = callObject.voicemail.duration || 0;
+                const vmMinutes = Math.floor(voicemailDuration / 60);
+                const vmSeconds = voicemailDuration % 60;
+                const vmFormatted = `${vmMinutes}:${vmSeconds.toString().padStart(2, '0')}`;
+                statusLine += ` / ➿ Voicemail (${vmFormatted})`;
+            }
 
-View in Quo: ${deepLink}`;
+            formattedNote = `${statusLine}
+
+[View the call activity in Quo](${deepLink})`;
         }
 
+        // Create title with phone numbers
+        const callTitle =
+            callObject.direction === 'outgoing'
+                ? `☎️  Call ${inboxName} ${inboxNumber} → ${contactPhone}`
+                : `☎️  Call ${contactPhone} → ${inboxName} ${inboxNumber}`;
+
         await this.zohoCrm.api.createNote('Contacts', contactId, {
-            Note_Title: `Call: ${callObject.direction} (${durationFormatted})`,
+            Note_Title: callTitle,
             Note_Content: formattedNote,
         });
 
@@ -1351,7 +1351,9 @@ View in Quo: ${deepLink}`;
         const contactId = await this._findZohoContactByPhone(contactPhone);
 
         if (!contactId) {
-            console.log(`[Quo Webhook] ℹ️ No contact found for phone ${contactPhone} in Zoho CRM, skipping message sync`);
+            console.log(
+                `[Quo Webhook] ℹ️ No contact found for phone ${contactPhone} in Zoho CRM, skipping message sync`,
+            );
             return;
         }
 
@@ -1359,15 +1361,13 @@ View in Quo: ${deepLink}`;
             messageObject.phoneNumberId,
         );
         const inboxName =
-            phoneNumberDetails.data.users.length > 0
-                ? phoneNumberDetails.data.users[0].firstName +
-                  ' ' +
-                  phoneNumberDetails.data.users[0].lastName
-                : 'Quo Inbox';
+            phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
+                ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
+                : phoneNumberDetails.data?.name || 'Quo Inbox';
 
         const inboxNumber =
-            phoneNumberDetails.data.number ||
-            phoneNumberDetails.data.formattedNumber ||
+            phoneNumberDetails.data?.number ||
+            phoneNumberDetails.data?.formattedNumber ||
             messageObject.to;
 
         const userDetails = await this.quo.api.getUser(messageObject.userId);
@@ -1379,26 +1379,26 @@ View in Quo: ${deepLink}`;
 
         let formattedNote;
         if (messageObject.direction === 'outgoing') {
-            formattedNote = `💬 Message: ${inboxName} (${inboxNumber}) → ${contactPhone}
+            formattedNote = `${userName} sent: ${messageObject.text || '(no text)'}
 
-${userName} sent:
-"${messageObject.text || '(no text)'}"
-
-View in Quo: ${deepLink}`;
+[View the message activity in Quo](${deepLink})`;
         } else {
-            formattedNote = `💬 Message: ${contactPhone} → ${inboxName} (${inboxNumber})
+            formattedNote = `Received: ${messageObject.text || '(no text)'}
 
-Received:
-"${messageObject.text || '(no text)'}"
-
-View in Quo: ${deepLink}`;
+[View the message activity in Quo](${deepLink})`;
         }
+
+        // Create title with phone numbers
+        const messageTitle =
+            messageObject.direction === 'outgoing'
+                ? `💬 Message ${inboxName} ${inboxNumber} → ${contactPhone}`
+                : `💬 Message ${contactPhone} → ${inboxName} ${inboxNumber}`;
 
         const noteResponse = await this.zohoCrm.api.createNote(
             'Contacts',
             contactId,
             {
-                Note_Title: `SMS: ${messageObject.direction}`,
+                Note_Title: messageTitle,
                 Note_Content: formattedNote,
             },
         );
@@ -1445,7 +1445,9 @@ View in Quo: ${deepLink}`;
         const contactId = await this._findZohoContactByPhone(contactPhone);
 
         if (!contactId) {
-            console.log(`[Quo Webhook] ℹ️ No contact found for phone ${contactPhone} in Zoho CRM, skipping call summary sync`);
+            console.log(
+                `[Quo Webhook] ℹ️ No contact found for phone ${contactPhone} in Zoho CRM, skipping call summary sync`,
+            );
             return;
         }
 
@@ -1453,14 +1455,12 @@ View in Quo: ${deepLink}`;
             callObject.phoneNumberId,
         );
         const inboxName =
-            phoneNumberDetails.data.users.length > 0
-                ? phoneNumberDetails.data.users[0].firstName +
-                  ' ' +
-                  phoneNumberDetails.data.users[0].lastName
-                : 'Quo Line';
+            phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
+                ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
+                : phoneNumberDetails.data?.name || 'Quo Line';
         const inboxNumber =
-            phoneNumberDetails.data.number ||
-            phoneNumberDetails.data.formattedNumber ||
+            phoneNumberDetails.data?.number ||
+            phoneNumberDetails.data?.formattedNumber ||
             participants[callObject.direction === 'outgoing' ? 0 : 1];
 
         const userDetails = await this.quo.api.getUser(callObject.userId);
@@ -1554,7 +1554,12 @@ View in Quo: ${deepLink}`;
         };
     }
 
-    async _handlePersonWebhook({ objectType, recordId, moduleName, operation }) {
+    async _handlePersonWebhook({
+        objectType,
+        recordId,
+        moduleName,
+        operation,
+    }) {
         console.log(`[Zoho CRM Webhook] Handling ${objectType}: ${recordId}`);
 
         try {
@@ -1593,7 +1598,9 @@ View in Quo: ${deepLink}`;
 
             if (Array.isArray(response.data)) {
                 if (response.data.length === 0) {
-                    throw new Error(`Contact ${recordId} not found (empty array)`);
+                    throw new Error(
+                        `Contact ${recordId} not found (empty array)`,
+                    );
                 }
                 person = response.data[0];
             } else {
@@ -1608,7 +1615,9 @@ View in Quo: ${deepLink}`;
 
             if (Array.isArray(response.data)) {
                 if (response.data.length === 0) {
-                    throw new Error(`Account ${recordId} not found (empty array)`);
+                    throw new Error(
+                        `Account ${recordId} not found (empty array)`,
+                    );
                 }
                 person = response.data[0];
             } else {
@@ -1667,69 +1676,19 @@ View in Quo: ${deepLink}`;
             const person = await this._fetchZohoObject(objectType, recordId);
             const quoContact = await this.transformPersonToQuo(person);
 
-            if (operation === 'insert') {
-                const createResponse =
-                    await this.quo.api.createContact(quoContact);
+            // Use bulkUpsertToQuo for both insert and update operations
+            const result = await this.bulkUpsertToQuo([quoContact]);
 
-                if (!createResponse?.data) {
-                    throw new Error(
-                        `Create contact failed: Invalid response from Quo API`,
-                    );
-                }
-
-                console.log(
-                    `[Zoho CRM] ✓ Contact ${createResponse.data.id} created in Quo (externalId: ${quoContact.externalId})`,
+            if (result.errorCount > 0) {
+                const error = result.errors[0];
+                throw new Error(
+                    `Failed to ${operation} contact: ${error?.error || 'Unknown error'}`,
                 );
-            } else if (operation === 'update') {
-                const existingContacts = await this.quo.api.listContacts({
-                    externalIds: [quoContact.externalId],
-                    maxResults: 10,
-                });
-
-                const exactMatch =
-                    existingContacts?.data && existingContacts.data.length > 0
-                        ? existingContacts.data.find(
-                              (contact) =>
-                                  contact.externalId === quoContact.externalId,
-                          )
-                        : null;
-
-                if (exactMatch) {
-                    const quoContactId = exactMatch.id;
-                    const { externalId, ...contactData } = quoContact;
-                    const updateResponse = await this.quo.api.updateContact(
-                        quoContactId,
-                        contactData,
-                    );
-
-                    if (!updateResponse?.data) {
-                        throw new Error(
-                            `Update contact failed: Invalid response from Quo API`,
-                        );
-                    }
-
-                    console.log(
-                        `[Zoho CRM] ✓ Contact ${quoContactId} updated in Quo (externalId: ${externalId})`,
-                    );
-                } else {
-                    console.log(
-                        `[Zoho CRM] Contact with externalId ${quoContact.externalId} not found in Quo, creating as fallback`,
-                    );
-
-                    const createResponse =
-                        await this.quo.api.createContact(quoContact);
-
-                    if (!createResponse?.data) {
-                        throw new Error(
-                            `Create contact failed: Invalid response from Quo API`,
-                        );
-                    }
-
-                    console.log(
-                        `[Zoho CRM] ✓ Contact ${createResponse.data.id} created in Quo as fallback (externalId: ${quoContact.externalId})`,
-                    );
-                }
             }
+
+            console.log(
+                `[Zoho CRM] ✓ Contact synced to Quo via bulkUpsertToQuo (${operation}, externalId: ${quoContact.externalId})`,
+            );
 
             console.log(
                 `[Zoho CRM] ✓ ${objectType} ${externalId} synced to Quo`,

@@ -6,6 +6,7 @@ const PORT = process.env.PORT || 5173;
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
 const FRIGG_API_KEY = process.env.FRIGG_API_KEY || '';
 const FRIGG_APP_USER_ID = process.env.FRIGG_APP_USER_ID || 'test-user-oauth';
+const FRIGG_APP_ORG_ID = process.env.FRIGG_APP_ORG_ID || 'test-org-oauth';
 
 // Handle OAuth redirect callback
 app.get('/redirect/:appId', async (req, res) => {
@@ -48,6 +49,7 @@ app.get('/redirect/:appId', async (req, res) => {
             console.log(`Using x-frigg-api-key header for authentication`);
             headers['x-frigg-api-key'] = FRIGG_API_KEY;
             headers['x-frigg-appUserId'] = FRIGG_APP_USER_ID;
+            headers['x-frigg-appOrgId'] = FRIGG_APP_ORG_ID;
         }
 
         const response = await fetch(`${BACKEND_URL}/api/authorize`, {

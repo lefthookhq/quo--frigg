@@ -379,26 +379,32 @@ class BaseCRMIntegration extends IntegrationBase {
     /**
      * Called when integration is created
      * Override to customize behavior
-     * 
+     *
      * IMPORTANT: This method handles Quo (OpenPhone) API key propagation delay (~30 seconds).
      * Webhook setup and initial sync are delayed by 35 seconds to ensure API key is active.
-     * 
+     *
      * @param {Object} params
      * @param {string} params.integrationId - Integration ID
      */
     async onCreate({ integrationId }) {
         const integrationName = this.constructor.Definition?.name;
         if (!integrationName) {
-            throw new Error('Integration Definition.name is required but not defined');
+            throw new Error(
+                'Integration Definition.name is required but not defined',
+            );
         }
 
-        console.log(`[${integrationName}] onCreate called for ${integrationId}`);
+        console.log(
+            `[${integrationName}] onCreate called for ${integrationId}`,
+        );
 
         // Check if we need user configuration
         const needsConfig = await this.checkIfNeedsConfig();
 
         if (needsConfig) {
-            console.log(`[${integrationName}] Integration ${integrationId} needs configuration`);
+            console.log(
+                `[${integrationName}] Integration ${integrationId} needs configuration`,
+            );
             await this.updateIntegrationStatus.execute(
                 integrationId,
                 'NEEDS_CONFIG',
@@ -407,19 +413,21 @@ class BaseCRMIntegration extends IntegrationBase {
         }
 
         // Update status to ENABLED immediately
-        console.log(`[${integrationName}] Marking integration ${integrationId} as ENABLED`);
-        await this.updateIntegrationStatus.execute(
-            integrationId,
-            'ENABLED',
+        console.log(
+            `[${integrationName}] Marking integration ${integrationId} as ENABLED`,
         );
+        await this.updateIntegrationStatus.execute(integrationId, 'ENABLED');
 
         // ⚠️ TEMPORARY WORKAROUND - SCHEDULED FOR REMOVAL ⚠️
         // Queue delayed webhook setup + initial sync to allow Quo API key propagation
         // Quo (OpenPhone) API keys take ~30 seconds to activate after creation
         // Without this delay, webhook creation fails with 401/403 errors
         // TODO: Remove this delay mechanism (and QueuerUtilWrapper) once Quo implements instant API key propagation
-        const delaySeconds = this.constructor.CRMConfig?.onCreateDelaySeconds || 35;
-        console.log(`[${integrationName}] Queueing delayed webhook setup + initial sync for ${integrationId} (${delaySeconds} second delay for Quo API key propagation)`);
+        const delaySeconds =
+            this.constructor.CRMConfig?.onCreateDelaySeconds || 35;
+        console.log(
+            `[${integrationName}] Queueing delayed webhook setup + initial sync for ${integrationId} (${delaySeconds} second delay for Quo API key propagation)`,
+        );
 
         try {
             await this.queueManager.queueMessage({
@@ -427,9 +435,14 @@ class BaseCRMIntegration extends IntegrationBase {
                 integrationId,
                 delaySeconds,
             });
-            console.log(`[${integrationName}] Delayed webhook setup + initial sync queued successfully for ${integrationId}`);
+            console.log(
+                `[${integrationName}] Delayed webhook setup + initial sync queued successfully for ${integrationId}`,
+            );
         } catch (error) {
-            console.error(`[${integrationName}] Failed to queue delayed webhook setup for ${integrationId}:`, error);
+            console.error(
+                `[${integrationName}] Failed to queue delayed webhook setup for ${integrationId}:`,
+                error,
+            );
             // Non-fatal - webhooks and sync can be triggered manually later
         }
     }
@@ -487,19 +500,19 @@ class BaseCRMIntegration extends IntegrationBase {
     /**
      * Handle post-creation setup: webhook registration and initial sync
      * This is triggered by the POST_CREATE_SETUP queue message from onCreate
-     * 
+     *
      * Runs after a delay (default 35 seconds) to handle Quo API key propagation (~30 seconds).
      * By the time this runs, the API key should be active.
-     * 
+     *
      * IMPORTANT: This handler is called from a queue worker context where the integration
      * instance is NOT hydrated (no entities, userId, or API instances). The integration
      * is passed through as integrationId only, which the caller must use to hydrate if needed.
-     * 
+     *
      * For POST_CREATE_SETUP, we rely on the integrationId parameter being passed to
      * startInitialSync, which handles its own hydration through SyncOrchestrator.
      * setupWebhooks() should also handle integration lookup internally if it needs
      * the full integration record.
-     * 
+     *
      * @param {Object} event - Queue event with integrationId
      * @param {Object} event.data - Event data
      * @param {string} event.data.integrationId - Integration ID to setup
@@ -509,10 +522,14 @@ class BaseCRMIntegration extends IntegrationBase {
         const { integrationId } = data;
         const integrationName = this.constructor.Definition?.name;
         if (!integrationName) {
-            throw new Error('Integration Definition.name is required but not defined');
+            throw new Error(
+                'Integration Definition.name is required but not defined',
+            );
         }
 
-        console.log(`[${integrationName}] Starting post-create setup (webhook + sync) for ${integrationId}`);
+        console.log(
+            `[${integrationName}] Starting post-create setup (webhook + sync) for ${integrationId}`,
+        );
 
         const results = {
             webhooks: null,
@@ -523,9 +540,15 @@ class BaseCRMIntegration extends IntegrationBase {
             try {
                 // Pass integrationId to setupWebhooks so it can hydrate if needed
                 results.webhooks = await this.setupWebhooks({ integrationId });
-                console.log(`[${integrationName}] Webhook setup completed for ${integrationId}:`, results.webhooks);
+                console.log(
+                    `[${integrationName}] Webhook setup completed for ${integrationId}:`,
+                    results.webhooks,
+                );
             } catch (error) {
-                console.error(`[${integrationName}] Webhook setup failed for ${integrationId}:`, error);
+                console.error(
+                    `[${integrationName}] Webhook setup failed for ${integrationId}:`,
+                    error,
+                );
                 results.webhooks = {
                     status: 'failed',
                     error: error.message,
@@ -533,16 +556,31 @@ class BaseCRMIntegration extends IntegrationBase {
                 // Continue to try initial sync even if webhooks fail
             }
         } else {
-            console.log(`[${integrationName}] Webhooks not enabled, skipping webhook setup`);
-            results.webhooks = { status: 'skipped', message: 'Webhooks not enabled' };
+            console.log(
+                `[${integrationName}] Webhooks not enabled, skipping webhook setup`,
+            );
+            results.webhooks = {
+                status: 'skipped',
+                message: 'Webhooks not enabled',
+            };
         }
 
         try {
-            console.log(`[${integrationName}] Starting initial sync for ${integrationId}`);
-            results.initialSync = await this.startInitialSync({ integrationId });
-            console.log(`[${integrationName}] Initial sync started for ${integrationId}:`, results.initialSync);
+            console.log(
+                `[${integrationName}] Starting initial sync for ${integrationId}`,
+            );
+            results.initialSync = await this.startInitialSync({
+                integrationId,
+            });
+            console.log(
+                `[${integrationName}] Initial sync started for ${integrationId}:`,
+                results.initialSync,
+            );
         } catch (error) {
-            console.error(`[${integrationName}] Failed to start initial sync for ${integrationId}:`, error);
+            console.error(
+                `[${integrationName}] Failed to start initial sync for ${integrationId}:`,
+                error,
+            );
             results.initialSync = {
                 status: 'failed',
                 error: error.message,
@@ -1008,9 +1046,65 @@ class BaseCRMIntegration extends IntegrationBase {
     // ============================================================================
 
     /**
-     * Bulk upsert contacts to Quo
+     * Fetch contacts by external IDs with automatic pagination to respect API limits
+     *
+     * The Quo API has a maxResults limit of 50. This method automatically handles
+     * pagination when fetching more than 50 contacts. All pages are fetched in parallel
+     * for optimal performance.
+     *
+     * @param {string[]} externalIds - Array of external IDs to fetch
+     * @param {number} pageSize - Page size (default: 50, max: 50)
+     * @returns {Promise<Object[]>} Array of fetched contacts
+     * @private
+     */
+    async _fetchContactsByExternalIds(externalIds, pageSize = 50) {
+        const maxPageSize = 50; // Quo API limit
+        const effectivePageSize = Math.min(pageSize, maxPageSize);
+
+        // Split externalIds into chunks
+        const chunks = [];
+        for (let i = 0; i < externalIds.length; i += effectivePageSize) {
+            chunks.push(externalIds.slice(i, i + effectivePageSize));
+        }
+
+        // Fetch all pages in parallel for better performance
+        const fetchPromises = chunks.map((chunk, index) =>
+            this.quo.api
+                .listContacts({
+                    externalIds: chunk,
+                    maxResults: effectivePageSize,
+                })
+                .catch((error) => {
+                    // Log error with page info
+                    console.error(
+                        `Failed to fetch page ${index + 1}:`,
+                        error.message,
+                    );
+                    // Rethrow to fail the entire operation
+                    throw error;
+                }),
+        );
+
+        try {
+            const responses = await Promise.all(fetchPromises);
+
+            // Combine all results
+            const allContacts = responses.flatMap(
+                (response) => response?.data || [],
+            );
+
+            return allContacts;
+        } catch (error) {
+            // If any page fails, the error will bubble up from Promise.all
+            throw error;
+        }
+    }
+
+    /**
+     * Bulk upsert contacts to Quo and create mappings
+     *
      * @param {Array} contacts - Array of Quo contact objects
-     * @returns {Promise<Object>} Upsert results
+     * @returns {Promise<Object>} Upsert results with successCount, errorCount, errors
      */
     async bulkUpsertToQuo(contacts) {
         let successCount = 0;
@@ -1018,8 +1112,91 @@ class BaseCRMIntegration extends IntegrationBase {
         const errors = [];
 
         try {
-            await this.quo.api.bulkCreateContacts(contacts);
-            successCount = contacts.length;
+            // Get orgId from Frigg user table
+            const {
+                createUserRepository,
+            } = require('@friggframework/core/user/repositories/user-repository-factory');
+            const userRepo = createUserRepository();
+
+            // Get the organization user (this.userId points to org user when primary: 'organization')
+            const orgUser = await userRepo.findUserById(this.userId);
+            const orgId = orgUser.appOrgId;
+
+            if (!orgId) {
+                throw new Error('Organization ID not found for user');
+            }
+
+            // Call bulkCreateContacts with orgId and contacts
+            await this.quo.api.bulkCreateContacts(orgId, contacts);
+
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+
+            // Fetch created contacts using paginated helper
+            const externalIds = contacts.map((c) => c.externalId);
+            const fetchedContactsData =
+                await this._fetchContactsByExternalIds(externalIds);
+
+            if (fetchedContactsData) {
+                for (const createdContact of fetchedContactsData) {
+                    try {
+                        const phoneNumber =
+                            createdContact.defaultFields?.phoneNumbers?.[0]
+                                ?.value;
+
+                        if (phoneNumber) {
+                            // Store mapping by phone number (contains both IDs)
+                            const mappingData = {
+                                externalId: createdContact.externalId,
+                                quoContactId: createdContact.id,
+                                phoneNumber: phoneNumber,
+                                entityType: 'people',
+                                lastSyncedAt: new Date().toISOString(),
+                                syncMethod: 'bulk',
+                                action: 'created',
+                            };
+
+                            await this.upsertMapping(phoneNumber, mappingData);
+                            successCount++;
+                        } else {
+                            console.warn(
+                                `No phone number for ${createdContact.externalId}, skipping mapping`,
+                            );
+                            errorCount++;
+                            errors.push({
+                                error: 'No phone number available',
+                                externalId: createdContact.externalId,
+                            });
+                        }
+                    } catch (mappingError) {
+                        console.error(
+                            `Failed to create mapping for ${createdContact.externalId}:`,
+                            mappingError,
+                        );
+                        errorCount++;
+                        errors.push({
+                            error: mappingError.message,
+                            externalId: createdContact.externalId,
+                        });
+                    }
+                }
+            }
+
+            if (fetchedContactsData?.length < contacts.length) {
+                const createdExternalIds = new Set(
+                    fetchedContactsData.map((c) => c.externalId),
+                );
+                const failedContacts = contacts.filter(
+                    (c) => !createdExternalIds.has(c.externalId),
+                );
+
+                errorCount += failedContacts.length;
+                failedContacts.forEach((c) => {
+                    errors.push({
+                        error: 'Contact not found after bulk create',
+                        externalId: c.externalId,
+                    });
+                });
+            }
         } catch (error) {
             errorCount = contacts.length;
             console.error('Bulk upsert error:', error);
@@ -1040,6 +1217,437 @@ class BaseCRMIntegration extends IntegrationBase {
     getQueueUrl() {
         const integrationName = this.constructor.Definition.name;
         return process.env[`${integrationName.toUpperCase()}_QUEUE_URL`];
+    }
+
+    // ============================================================================
+    // WEBHOOK LOOKUP OPTIMIZATION (Mapping-First Pattern)
+    // ============================================================================
+
+    /**
+     * Get external CRM ID from mapping by phone number (for webhook → CRM lookup)
+     *
+     * Uses Frigg's integrationMappingRepository for O(1) lookup.
+     * Quo webhooks provide phone numbers, not contact IDs, so we use phone as the lookup key.
+     *
+     * @param {string} phoneNumber - Normalized phone number from Quo webhook
+     * @returns {Promise<string|null>} External CRM ID or null if not found
+     */
+    async _getExternalIdFromMappingByPhone(phoneNumber) {
+        try {
+            // Use Frigg's mapping repository with phone number as sourceId
+            const mapping = await this.getMapping(phoneNumber);
+
+            if (mapping?.externalId) {
+                console.log(
+                    `[Mapping Lookup] ✓ Found externalId: ${mapping.externalId} for phone: ${phoneNumber}`,
+                );
+                return mapping.externalId;
+            }
+
+            console.log(
+                `[Mapping Lookup] ✗ No mapping found for phone: ${phoneNumber}`,
+            );
+            return null;
+        } catch (error) {
+            console.error(`[Mapping Lookup] Error: ${error.message}`);
+            return null;
+        }
+    }
+
+    /**
+     * Find external contact by phone number (OVERRIDE IN CHILD CLASSES)
+     *
+     * Default implementation throws error. Integrations that support
+     * phone-based contact lookup should override this method.
+     *
+     * Examples:
+     * - Attio: Implements phone search via queryRecords API
+     * - AxisCare: Does NOT support phone search, throws error
+     *
+     * @param {string} phoneNumber - Phone number to search
+     * @returns {Promise<string>} External CRM ID
+     * @throws {Error} If contact not found or search not supported
+     */
+    async _findContactByPhone(phoneNumber) {
+        throw new Error(
+            `${this.constructor.name} does not support phone-based contact lookup for ${phoneNumber}. ` +
+                `Contact mapping is required for webhook activity logging.`,
+        );
+    }
+
+    /**
+     * Fetch phone numbers from Quo API and store their IDs in config
+     * This is called during the delayed setup hook to prepare for webhook subscriptions
+     * with resourceIds filtering.
+     *
+     * All CRM integrations can use this method to enable phone-number-specific
+     * webhook subscriptions.
+     *
+     * @returns {Promise<string[]>} Array of phone number IDs
+     * @throws {Error} If Quo API is not configured
+     */
+    async _fetchAndStoreEnabledPhoneIds() {
+        if (!this.quo?.api) {
+            throw new Error(
+                'Quo API not configured - cannot fetch phone numbers',
+            );
+        }
+
+        console.log('[Quo] Fetching phone numbers for webhook subscriptions');
+
+        const response = await this.quo.api.listPhoneNumbers({
+            maxResults: 100,
+        });
+
+        const phoneIds = response.data.map((phone) => phone.id);
+
+        console.log(
+            `[Quo] Found ${phoneIds.length} phone number(s): ${phoneIds.join(', ')}`,
+        );
+
+        // Store both phone IDs and metadata in config
+        const updatedConfig = {
+            ...this.config,
+            enabledPhoneIds: phoneIds,
+            phoneNumbersMetadata: response.data,
+            phoneNumbersFetchedAt: new Date().toISOString(),
+        };
+
+        await this.commands.updateIntegrationConfig({
+            integrationId: this.id,
+            config: updatedConfig,
+        });
+
+        this.config = updatedConfig;
+
+        console.log('[Quo] ✓ Phone number IDs stored in config');
+
+        return phoneIds;
+    }
+
+    /**
+     * Create Quo webhooks with phone number IDs as resourceIds
+     * This enables filtering webhook events to specific phone numbers only.
+     *
+     * All CRM integrations can use this method to create webhooks with
+     * phone-number-specific filtering.
+     *
+     * @param {string} webhookUrl - The URL to receive webhook events
+     * @returns {Promise<{messageWebhookId: string, callWebhookId: string, callSummaryWebhookId: string}>}
+     * @throws {Error} If Quo API is not configured or webhook creation fails
+     */
+    async _createQuoWebhooksWithPhoneIds(webhookUrl) {
+        if (!this.quo?.api) {
+            throw new Error('Quo API not configured - cannot create webhooks');
+        }
+
+        const phoneIds = this.config?.enabledPhoneIds || [];
+        const webhookData = {
+            url: webhookUrl,
+            status: 'enabled',
+        };
+
+        // Only add resourceIds if phone IDs are configured
+        if (phoneIds.length > 0) {
+            webhookData.resourceIds = phoneIds;
+            console.log(
+                `[Quo] Creating webhooks with ${phoneIds.length} phone number ID(s)`,
+            );
+        } else {
+            console.warn(
+                '[Quo] No phone IDs configured, creating webhooks without resourceIds',
+            );
+        }
+
+        // Get webhook events and labels from child class
+        const WEBHOOK_EVENTS = this.constructor.WEBHOOK_EVENTS;
+        const WEBHOOK_LABELS = this.constructor.WEBHOOK_LABELS;
+
+        if (!WEBHOOK_EVENTS || !WEBHOOK_LABELS) {
+            throw new Error(
+                `${this.constructor.name} must define static WEBHOOK_EVENTS and WEBHOOK_LABELS constants`,
+            );
+        }
+
+        // Create message webhook
+        const messageWebhookResponse = await this.quo.api.createMessageWebhook({
+            ...webhookData,
+            events: WEBHOOK_EVENTS.QUO_MESSAGES,
+            label: WEBHOOK_LABELS.QUO_MESSAGES,
+        });
+
+        if (!messageWebhookResponse?.data?.id) {
+            throw new Error(
+                'Invalid Quo message webhook response: missing webhook ID',
+            );
+        }
+
+        if (!messageWebhookResponse.data.key) {
+            throw new Error(
+                'Invalid Quo message webhook response: missing webhook key',
+            );
+        }
+
+        const messageWebhookId = messageWebhookResponse.data.id;
+        const messageWebhookKey = messageWebhookResponse.data.key;
+
+        // Create call webhook
+        const callWebhookResponse = await this.quo.api.createCallWebhook({
+            ...webhookData,
+            events: WEBHOOK_EVENTS.QUO_CALLS,
+            label: WEBHOOK_LABELS.QUO_CALLS,
+        });
+
+        if (!callWebhookResponse?.data?.id) {
+            throw new Error(
+                'Invalid Quo call webhook response: missing webhook ID',
+            );
+        }
+
+        if (!callWebhookResponse.data.key) {
+            throw new Error(
+                'Invalid Quo call webhook response: missing webhook key',
+            );
+        }
+
+        const callWebhookId = callWebhookResponse.data.id;
+        const callWebhookKey = callWebhookResponse.data.key;
+
+        // Create call summary webhook
+        const callSummaryWebhookResponse =
+            await this.quo.api.createCallSummaryWebhook({
+                ...webhookData,
+                events: WEBHOOK_EVENTS.QUO_CALL_SUMMARIES,
+                label: WEBHOOK_LABELS.QUO_CALL_SUMMARIES,
+            });
+
+        if (!callSummaryWebhookResponse?.data?.id) {
+            throw new Error(
+                'Invalid Quo call-summary webhook response: missing webhook ID',
+            );
+        }
+
+        if (!callSummaryWebhookResponse.data.key) {
+            throw new Error(
+                'Invalid Quo call-summary webhook response: missing webhook key',
+            );
+        }
+
+        const callSummaryWebhookId = callSummaryWebhookResponse.data.id;
+        const callSummaryWebhookKey = callSummaryWebhookResponse.data.key;
+
+        console.log('[Quo] ✓ Webhooks created with phone number IDs');
+
+        return {
+            messageWebhookId,
+            messageWebhookKey,
+            callWebhookId,
+            callWebhookKey,
+            callSummaryWebhookId,
+            callSummaryWebhookKey,
+        };
+    }
+
+    /**
+     * Handle updates to enabledPhoneIds by updating webhook subscriptions
+     * This is called during config updates to synchronize webhook resourceIds.
+     *
+     * All CRM integrations can use this method to handle phone ID changes.
+     *
+     * @param {Object} newConfig - New configuration with potentially updated enabledPhoneIds
+     * @returns {Promise<boolean>} True if changes were detected and webhooks updated
+     * @throws {Error} If Quo API is not configured or webhooks are not set up
+     */
+    async _handlePhoneIdUpdate(newConfig) {
+        if (!this.quo?.api) {
+            throw new Error('Quo API not configured - cannot update webhooks');
+        }
+
+        const oldPhoneIds = this.config?.enabledPhoneIds || [];
+        const newPhoneIds = newConfig?.enabledPhoneIds || [];
+
+        // Check if phone IDs have changed
+        const hasChanges =
+            JSON.stringify(oldPhoneIds.sort()) !==
+            JSON.stringify(newPhoneIds.sort());
+
+        if (!hasChanges) {
+            console.log('[Quo] No changes detected in enabledPhoneIds');
+            return false;
+        }
+
+        console.log(
+            `[Quo] Phone ID changes detected: ${oldPhoneIds.length} → ${newPhoneIds.length}`,
+        );
+
+        // Verify webhooks are configured
+        const messageWebhookId = this.config?.quoMessageWebhookId;
+        const callWebhookId = this.config?.quoCallWebhookId;
+        const callSummaryWebhookId = this.config?.quoCallSummaryWebhookId;
+
+        if (!messageWebhookId || !callWebhookId || !callSummaryWebhookId) {
+            throw new Error(
+                'Webhooks not configured - cannot update phone number subscriptions',
+            );
+        }
+
+        // Update all three webhooks with new resourceIds
+        const updateData = {
+            resourceIds: newPhoneIds,
+        };
+
+        console.log(
+            `[Quo] Updating webhooks with ${newPhoneIds.length} phone number ID(s)`,
+        );
+
+        await Promise.all([
+            this.quo.api.updateWebhook(messageWebhookId, updateData),
+            this.quo.api.updateWebhook(callWebhookId, updateData),
+            this.quo.api.updateWebhook(callSummaryWebhookId, updateData),
+        ]);
+
+        console.log('[Quo] ✓ Webhook subscriptions updated with new phone IDs');
+
+        return true;
+    }
+
+    /**
+     * Handle integration configuration updates
+     * This is called by Frigg framework's ON_UPDATE event
+     *
+     * Implements PATCH semantics:
+     * - Preserves fields not referenced in update
+     * - Updates fields that ARE referenced
+     * - Detects enabledPhoneIds changes and updates webhook subscriptions
+     *
+     * @param {Object} params - Update parameters
+     * @param {Object} params.config - New configuration (partial update)
+     * @returns {Promise<Object>} Validation result
+     */
+    async onUpdate(params) {
+        const updateConfig = params?.config || {};
+
+        console.log('[Config Update] Processing configuration update');
+
+        // PATCH semantics: Merge update into existing config (deep merge for nested objects)
+        const patchedConfig = this._deepMerge(this.config, updateConfig);
+
+        // Check if enabledPhoneIds changed (before updating config)
+        const oldPhoneIds = this.config?.enabledPhoneIds || [];
+        const newPhoneIds = patchedConfig?.enabledPhoneIds || [];
+        const phoneIdsChanged =
+            JSON.stringify([...oldPhoneIds].sort()) !==
+            JSON.stringify([...newPhoneIds].sort());
+
+        // Update integration config in database
+        await this.commands.updateIntegrationConfig({
+            integrationId: this.id,
+            config: patchedConfig,
+        });
+
+        // Update local config
+        this.config = patchedConfig;
+
+        console.log('[Config Update] ✓ Configuration patched and persisted');
+
+        // If phone IDs changed, update webhook subscriptions
+        if (phoneIdsChanged) {
+            if (!this.quo?.api) {
+                console.warn(
+                    '[Config Update] Phone IDs changed but Quo API not configured, skipping webhook update',
+                );
+            } else {
+                console.log(
+                    '[Config Update] Phone IDs changed, updating webhooks',
+                );
+                try {
+                    // Pass old and new phone IDs directly to avoid re-reading config
+                    const messageWebhookId = this.config?.quoMessageWebhookId;
+                    const callWebhookId = this.config?.quoCallWebhookId;
+                    const callSummaryWebhookId =
+                        this.config?.quoCallSummaryWebhookId;
+
+                    if (
+                        !messageWebhookId ||
+                        !callWebhookId ||
+                        !callSummaryWebhookId
+                    ) {
+                        throw new Error(
+                            'Webhooks not configured - cannot update phone number subscriptions',
+                        );
+                    }
+
+                    const updateData = {
+                        resourceIds: newPhoneIds,
+                    };
+
+                    await Promise.all([
+                        this.quo.api.updateWebhook(
+                            messageWebhookId,
+                            updateData,
+                        ),
+                        this.quo.api.updateWebhook(callWebhookId, updateData),
+                        this.quo.api.updateWebhook(
+                            callSummaryWebhookId,
+                            updateData,
+                        ),
+                    ]);
+
+                    console.log(
+                        '[Config Update] ✓ Webhooks updated successfully',
+                    );
+                } catch (error) {
+                    console.error(
+                        '[Config Update] Failed to update webhooks:',
+                        error,
+                    );
+                    throw error;
+                }
+            }
+        }
+
+        // Validate the patched config
+        const validationResult = await this.validateConfig();
+
+        console.log('[Config Update] ✓ Update complete');
+
+        return validationResult;
+    }
+
+    /**
+     * Deep merge two objects (helper for PATCH semantics)
+     * @private
+     * @param {Object} target - Target object (existing config)
+     * @param {Object} source - Source object (update config)
+     * @returns {Object} Merged object
+     */
+    _deepMerge(target, source) {
+        const output = { ...target };
+
+        if (!source) {
+            return output;
+        }
+
+        for (const key in source) {
+            if (source.hasOwnProperty(key)) {
+                if (
+                    source[key] &&
+                    typeof source[key] === 'object' &&
+                    !Array.isArray(source[key])
+                ) {
+                    // Recursively merge nested objects
+                    output[key] = this._deepMerge(
+                        target[key] || {},
+                        source[key],
+                    );
+                } else {
+                    // Overwrite primitives and arrays
+                    output[key] = source[key];
+                }
+            }
+        }
+
+        return output;
     }
 }
 

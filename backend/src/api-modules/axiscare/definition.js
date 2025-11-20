@@ -94,10 +94,12 @@ const Definition = {
             const accessToken = api.apiKey || api.access_token;
 
             if (!accessToken) {
-                throw new Error('Access token is required for AxisCare credential details');
+                throw new Error(
+                    'Access token is required for AxisCare credential details',
+                );
             }
 
-            const externalId = hashAccessToken(accessToken)
+            const externalId = hashAccessToken(accessToken);
 
             try {
                 const credentialTest = await api.listClients();

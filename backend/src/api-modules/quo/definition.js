@@ -1,7 +1,12 @@
 require('dotenv').config();
+const crypto = require('crypto');
 const { Api } = require('./api');
 const { get } = require('@friggframework/core');
 const config = require('./defaultConfig.json');
+
+const hashApiKey = (apiKey) => {
+    return crypto.createHash('sha256').update(apiKey).digest('hex');
+};
 
 const Definition = {
     API: Api,
@@ -35,31 +40,12 @@ const Definition = {
             };
         },
         getToken: async (api, params) => {
-            // For OpenPhone API, use API key authentication
-            const apiKey =
-                get(params.data, 'apiKey') || get(params.data, 'access_token');
-            if (!apiKey) {
-                throw new Error(
-                    'API key is required for OpenPhone authentication',
-                );
-            }
-            return { access_token: apiKey };
-        },
-        setAuthParams: async (api, params) => {
-            // For API key authentication, set the key on the API instance
-            // params IS the data object, so access apiKey directly
-            const apiKey = params.apiKey || params.access_token;
-            console.log(
-                '[Quo setAuthParams] Received params:',
-                JSON.stringify(params, null, 2),
-            );
-            console.log('[Quo setAuthParams] Using apiKey:', apiKey);
+            // For Quo API, use API key authentication
+            const apiKey = get(params.data, 'apiKey');
             if (!apiKey) {
                 throw new Error('API key is required for Quo authentication');
             }
-            api.setApiKey(apiKey);
-            console.log('[Quo setAuthParams] API key set on API instance');
-            return { access_token: apiKey };
+            return { api_key: apiKey };
         },
         getEntityDetails: async (
             api,
@@ -67,71 +53,72 @@ const Definition = {
             tokenResponse,
             userId,
         ) => {
-            try {
-                // Get the first user as a way to validate the connection
-                const usersResponse = await api.listUsers({ maxResults: 1 });
-                const firstUser = usersResponse?.data?.[0];
+            const apiKey = api.API_KEY_VALUE;
 
-                return {
-                    identifiers: {
-                        externalId: firstUser?.id || 'openphone-workspace',
-                        user: userId,
-                    },
-                    details: {
-                        name:
-                            firstUser?.name ||
-                            firstUser?.email ||
-                            'OpenPhone Workspace',
-                        email: firstUser?.email,
-                    },
-                };
-            } catch (error) {
-                // If we can't get user details, use a generic identifier
-                return {
-                    identifiers: {
-                        externalId: 'openphone-workspace',
-                        user: userId,
-                    },
-                    details: { name: 'OpenPhone Workspace' },
-                };
-            }
+            const externalId = hashApiKey(apiKey);
+
+            return {
+                identifiers: {
+                    externalId,
+                    user: userId,
+                },
+                details: {
+                    name: 'Quo Workspace (API Key Hash)',
+                },
+            };
         },
         apiPropertiesToPersist: {
-            credential: ['access_token'],
+            // TODO: Currently api_key is NOT auto-encrypted by Frigg core
+            // See GitHub issue: https://github.com/friggframework/frigg/issues/500
+            // Once fixed, api_key will be automatically encrypted like access_token
+            credential: ['api_key'],
             entity: [],
         },
         getCredentialDetails: async (api, userId) => {
-            try {
-                const usersResponse = await api.listUsers({ maxResults: 1 });
-                const firstUser = usersResponse?.data?.[0];
+            const apiKey = api.API_KEY_VALUE;
 
-                return {
-                    identifiers: {
-                        externalId: firstUser?.id || 'openphone-workspace',
-                        user: userId,
-                    },
-                    details: {},
-                };
-            } catch (error) {
-                return {
-                    identifiers: {
-                        externalId: 'openphone-workspace',
-                        user: userId,
-                    },
-                    details: {},
-                };
+            if (!apiKey) {
+                throw new Error(
+                    'API key is required for Quo credential details',
+                );
             }
+
+            const externalId = hashApiKey(apiKey);
+
+            return {
+                identifiers: {
+                    externalId,
+                    user: userId,
+                },
+                details: {
+                    api_key: apiKey, // Explicitly include api_key in details to be persisted
+                },
+            };
         },
         testAuthRequest: async (api) => {
             // Skip actual API test due to 30-second API key propagation delay
             // The key will be validated when webhooks are set up (delayed by 35 seconds in onCreate)
-            console.log('[Quo testAuthRequest] Skipping API test - API key propagation takes ~30 seconds');
-            return { status: 'success', message: 'Auth test skipped - will validate during webhook setup' };
+            return {
+                status: 'success',
+                message:
+                    'Auth test skipped - API key propagation takes ~30 seconds',
+            };
+        },
+        setAuthParams: async (api, params) => {
+            // For API key authentication, set the key on the API instance
+            // Accept both apiKey (from UI) and api_key (from persisted credential)
+            const apiKey = params.apiKey || params.api_key;
+
+            if (!apiKey) {
+                throw new Error('API key is required for Quo authentication');
+            }
+
+            api.setApiKey(apiKey);
+
+            return { api_key: apiKey };
         },
     },
-    env: {
-        api_key: process.env.OPENPHONE_API_KEY || process.env.QUO_API_KEY,
-    },
+    env: {},
 };
 
 module.exports = { Definition };

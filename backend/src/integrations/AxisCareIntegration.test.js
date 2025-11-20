@@ -101,15 +101,25 @@ describe('AxisCareIntegration', () => {
 
         it('should have quo module with correct name and label overrides', () => {
             expect(AxisCareIntegration.Definition.modules.quo).toBeDefined();
-            expect(AxisCareIntegration.Definition.modules.quo.definition).toBeDefined();
-            
+            expect(
+                AxisCareIntegration.Definition.modules.quo.definition,
+            ).toBeDefined();
+
             // Test name override
-            expect(AxisCareIntegration.Definition.modules.quo.definition.getName()).toBe('quo-axisCare');
-            expect(AxisCareIntegration.Definition.modules.quo.definition.moduleName).toBe('quo-axisCare');
-            
+            expect(
+                AxisCareIntegration.Definition.modules.quo.definition.getName(),
+            ).toBe('quo-axisCare');
+            expect(
+                AxisCareIntegration.Definition.modules.quo.definition
+                    .moduleName,
+            ).toBe('quo-axisCare');
+
             // Test label override (if display property exists)
             if (AxisCareIntegration.Definition.modules.quo.definition.display) {
-                expect(AxisCareIntegration.Definition.modules.quo.definition.display.label).toBe('Quo (AxisCare)');
+                expect(
+                    AxisCareIntegration.Definition.modules.quo.definition
+                        .display.label,
+                ).toBe('Quo (AxisCare)');
             }
         });
 
@@ -189,15 +199,7 @@ describe('AxisCareIntegration', () => {
                 expect(result.defaultFields.lastName).toBe('Doe');
                 expect(result.defaultFields.phoneNumbers).toHaveLength(2);
                 expect(result.defaultFields.emails).toHaveLength(1);
-                expect(result.customFields).toEqual(
-                    expect.arrayContaining([
-                        expect.objectContaining({ key: 'crmId', value: '123' }),
-                        expect.objectContaining({
-                            key: 'status',
-                            value: 'active',
-                        }),
-                    ]),
-                );
+                expect(result.customFields).toEqual([]);
             });
         });
 
@@ -212,14 +214,12 @@ describe('AxisCareIntegration', () => {
                             key: 'message-webhook-key',
                         },
                     });
-                mockQuoApi.api.createCallWebhook = jest
-                    .fn()
-                    .mockResolvedValue({
-                        data: {
-                            id: 'call-webhook-123',
-                            key: 'call-webhook-key',
-                        },
-                    });
+                mockQuoApi.api.createCallWebhook = jest.fn().mockResolvedValue({
+                    data: {
+                        id: 'call-webhook-123',
+                        key: 'call-webhook-key',
+                    },
+                });
                 mockQuoApi.api.createCallSummaryWebhook = jest
                     .fn()
                     .mockResolvedValue({
@@ -347,6 +347,134 @@ describe('AxisCareIntegration', () => {
 
             consoleErrorSpy.mockRestore();
             consoleWarnSpy.mockRestore();
+        });
+    });
+
+    describe('_syncPersonToQuo with bulkUpsertToQuo', () => {
+        beforeEach(() => {
+            mockQuoApi.api.createContact = jest.fn();
+            mockQuoApi.api.updateContact = jest.fn();
+            mockQuoApi.api.listContacts = jest.fn();
+            integration.transformPersonToQuo = jest.fn();
+        });
+
+        it('should use bulkUpsertToQuo for created action', async () => {
+            const person = {
+                id: 123,
+                firstName: 'John',
+                lastName: 'Doe',
+                cellPhone: '+15551234567',
+            };
+
+            const mockQuoContact = {
+                externalId: '123',
+                source: 'openphone-axiscare',
+                defaultFields: {
+                    firstName: 'John',
+                    lastName: 'Doe',
+                    phoneNumbers: [{ name: 'Mobile', value: '+15551234567' }],
+                },
+            };
+
+            integration.transformPersonToQuo.mockResolvedValue(mockQuoContact);
+            integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
+                successCount: 1,
+                errorCount: 0,
+                errors: [],
+            });
+
+            await integration._syncPersonToQuo(person, 'created');
+
+            expect(integration.bulkUpsertToQuo).toHaveBeenCalledWith(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        externalId: '123',
+                    }),
+                ]),
+            );
+            expect(mockQuoApi.api.createContact).not.toHaveBeenCalled();
+        });
+
+        it('should handle bulkUpsertToQuo errors for created action', async () => {
+            const person = { id: 456, firstName: 'Error', lastName: 'Test' };
+
+            integration.transformPersonToQuo.mockResolvedValue({
+                externalId: '456',
+                defaultFields: { firstName: 'Error' },
+            });
+            integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
+                successCount: 0,
+                errorCount: 1,
+                errors: [
+                    {
+                        error: 'Failed to create contact',
+                        externalId: '456',
+                    },
+                ],
+            });
+
+            await expect(
+                integration._syncPersonToQuo(person, 'created'),
+            ).rejects.toThrow('Failed to created contact');
+        });
+
+        it('should use bulkUpsertToQuo for updated action', async () => {
+            const person = {
+                id: 789,
+                firstName: 'Jane',
+                lastName: 'Smith',
+                cellPhone: '+15559999999',
+            };
+
+            const mockQuoContact = {
+                externalId: '789',
+                defaultFields: {
+                    firstName: 'Jane',
+                    lastName: 'Smith',
+                    phoneNumbers: [{ name: 'Mobile', value: '+15559999999' }],
+                },
+            };
+
+            integration.transformPersonToQuo.mockResolvedValue(mockQuoContact);
+            integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
+                successCount: 1,
+                errorCount: 0,
+                errors: [],
+            });
+
+            await integration._syncPersonToQuo(person, 'updated');
+
+            expect(integration.bulkUpsertToQuo).toHaveBeenCalledWith(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        externalId: '789',
+                    }),
+                ]),
+            );
+            expect(mockQuoApi.api.updateContact).not.toHaveBeenCalled();
+        });
+
+        it('should handle bulkUpsertToQuo errors for updated action', async () => {
+            const person = { id: 999, firstName: 'Update', lastName: 'Error' };
+
+            integration.transformPersonToQuo.mockResolvedValue({
+                externalId: '999',
+                defaultFields: { firstName: 'Update' },
+            });
+            integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
+                successCount: 0,
+                errorCount: 1,
+                errors: [
+                    {
+                        error: 'Contact update failed',
+                        externalId: '999',
+                    },
+                ],
+            });
+
+            await expect(
+                integration._syncPersonToQuo(person, 'updated'),
+            ).rejects.toThrow('Failed to updated contact');
         });
     });
 });

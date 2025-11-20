@@ -40,6 +40,10 @@ temp/
 layers/
 backend/layers/
 
+# Security & SSH keys
+backend/security/
+postgres-tunnel.sh
+
 # Claude AI files
 *.claude
 *.claude-flow
@@ -48,3 +52,4 @@ backend/.claude/
 .claude/
 /backend/.claude-flow
 backend/.frigg-infrastructure-cache.json
+backend/.env.local.local

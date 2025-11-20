@@ -17,6 +17,11 @@ process.env.AWS_REGION = 'us-east-1';
 process.env.S3_BUCKET_NAME = 'test-bucket';
 process.env.SQS_QUEUE_URL =
     'https://sqs.us-east-1.amazonaws.com/123456789/test-queue';
+// Prisma needs DATABASE_URL even in tests (used by bulkUpsertToQuo)
+// This is a mock URL that won't actually be used since Prisma calls are mocked
+process.env.DATABASE_URL =
+    process.env.DATABASE_URL ||
+    'postgresql://test:test@localhost:5432/test_db';
 
 jest.mock('aws-sdk', () => ({
     S3: jest.fn(() => ({
@@ -39,6 +44,24 @@ jest.mock('aws-sdk', () => ({
     })),
 }));
 
+// Mock Prisma Client to avoid database connections in tests
+jest.mock('@prisma/client', () => ({
+    PrismaClient: jest.fn().mockImplementation(() => ({
+        user: {
+            findUnique: jest.fn().mockResolvedValue({
+                id: 'test-user-id',
+                appOrgId: 'test-org-id',
+            }),
+            findMany: jest.fn().mockResolvedValue([]),
+            create: jest.fn().mockResolvedValue({}),
+            update: jest.fn().mockResolvedValue({}),
+            delete: jest.fn().mockResolvedValue({}),
+        },
+        $connect: jest.fn().mockResolvedValue(undefined),
+        $disconnect: jest.fn().mockResolvedValue(undefined),
+    })),
+}));
+
 jest.mock('@friggframework/core', () => ({
     IntegrationBase: class IntegrationBase {
         constructor() {
@@ -48,6 +71,17 @@ jest.mock('@friggframework/core', () => ({
     Entity: class Entity {},
     UserModel: class UserModel {},
     IntegrationModel: class IntegrationModel {},
+    get: (obj, path) => {
+        // Simple lodash.get implementation for testing
+        if (!obj || !path) return undefined;
+        const keys = path.split('.');
+        let result = obj;
+        for (const key of keys) {
+            result = result?.[key];
+            if (result === undefined) return undefined;
+        }
+        return result;
+    },
     Requester: class Requester {
         constructor(params = {}) {
             this.baseUrl = params.baseUrl || '';
@@ -58,7 +92,26 @@ jest.mock('@friggframework/core', () => ({
         constructor(params = {}) {
             this.baseUrl = params.baseUrl || '';
             this.headers = params.headers || {};
-            this.apiKey = params.apiKey || '';
+            this.requesterType = 'apiKey';
+            this.API_KEY_NAME = 'key';
+            this.API_KEY_VALUE = null;
+        }
+        async addAuthHeaders(headers) {
+            if (this.API_KEY_VALUE) {
+                headers[this.API_KEY_NAME] = this.API_KEY_VALUE;
+            }
+            return headers;
+        }
+        isAuthenticated() {
+            return (
+                this.API_KEY_VALUE !== null &&
+                this.API_KEY_VALUE !== undefined &&
+                this.API_KEY_VALUE.trim &&
+                this.API_KEY_VALUE.trim().length > 0
+            );
+        }
+        setApiKey(api_key) {
+            this.API_KEY_VALUE = api_key;
         }
     },
     OAuth2Requester: class OAuth2Requester {

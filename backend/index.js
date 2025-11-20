@@ -20,9 +20,9 @@ const appDefinition = {
     ],
     user: {
         usePassword: true,
-        primary: 'individual',
+        primary: 'organization',
         individualUserRequired: true,
-        organizationUserRequired: false,
+        organizationUserRequired: true,
         authModes: {
             friggToken: true, // Support web UI login
             sharedSecret: true, // Enable backend-to-backend API communication with x-frigg-api-key
@@ -64,15 +64,16 @@ const appDefinition = {
         AWS_REGION: true,
         S3_BUCKET_NAME: true,
 
-        QUO_API_KEY: true,
         QUO_BASE_URL: true,
-        AXISCARE_API_KEY: true,
-        AXISCARE_BASE_URL: true,
         ATTIO_CLIENT_ID: true,
         ATTIO_CLIENT_SECRET: true,
-        PIPEDRIVE_API_KEY: true,
+        ATTIO_SCOPE: true,
+        PIPEDRIVE_CLIENT_ID: true,
+        PIPEDRIVE_CLIENT_SECRET: true,
+        PIPEDRIVE_SCOPE: true,
         ZOHO_CLIENT_ID: true,
         ZOHO_CLIENT_SECRET: true,
+        ZOHO_SCOPE: true,
         SCALE_TEST_API_KEY: true,
     },
 };

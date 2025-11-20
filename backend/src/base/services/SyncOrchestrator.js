@@ -182,15 +182,16 @@ class SyncOrchestrator {
      * @returns {Promise<Object>} Webhook handling result
      */
     async handleWebhook({ integration, data }) {
-        const webhookData = Array.isArray(data) ? data : [data];
-
-        if (webhookData.length === 0) {
+        // Handle null/undefined data
+        if (!data || (Array.isArray(data) && data.length === 0)) {
             return {
                 status: 'skipped',
                 message: 'No data in webhook',
                 count: 0,
             };
         }
+
+        const webhookData = Array.isArray(data) ? data : [data];
 
         // Defensive: Resolve userId from multiple sources
         const userId =
