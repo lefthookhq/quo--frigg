@@ -1815,7 +1815,7 @@ class AttioIntegration extends BaseCRMIntegration {
 
     /**
      * Handle Quo call.summary.completed webhook event
-     * Stores call summary for later enrichment of call activity logs
+     * Creates a note in Attio with the AI-generated call summary
      *
      * @private
      * @param {Object} webhookData - Quo webhook payload
@@ -1837,14 +1837,140 @@ class AttioIntegration extends BaseCRMIntegration {
             `[Quo Webhook] Call summary status: ${status}, ${summary.length} summary points, ${nextSteps.length} next steps`,
         );
 
-        // Note: Call summaries arrive AFTER call.completed events
-        // The call activity has already been logged to Attio
-        // For now, we just acknowledge receipt
-        // Future enhancement: Store summaries and retroactively update call activities
+        // Fetch the original call details to get contact info and metadata
+        const callDetails = await this.quo.api.getCall(callId);
+        if (!callDetails?.data) {
+            console.warn(
+                `[Quo Webhook] Call ${callId} not found, cannot create summary note`,
+            );
+            return {
+                received: true,
+                callId,
+                logged: false,
+                error: 'Call not found',
+            };
+        }
+
+        const callObject = callDetails.data;
+
+        // Find the contact phone number (same logic as _handleQuoCallEvent)
+        const participants = callObject.participants || [];
+        if (participants.length < 2) {
+            console.warn(
+                `[Quo Webhook] Call ${callId} has insufficient participants`,
+            );
+            return {
+                received: true,
+                callId,
+                logged: false,
+                error: 'Insufficient participants',
+            };
+        }
+
+        const contactPhone =
+            callObject.direction === 'outgoing'
+                ? participants[1]
+                : participants[0];
+
+        // Find Attio contact
+        const attioRecordId =
+            await this._findAttioContactFromQuoWebhook(contactPhone);
+
+        // Fetch phone number and user details for formatting
+        const phoneNumberDetails = await this.quo.api.getPhoneNumber(
+            callObject.phoneNumberId,
+        );
+        const inboxName =
+            phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
+                ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
+                : phoneNumberDetails.data?.name || 'Quo Line';
+        const inboxNumber =
+            phoneNumberDetails.data?.number ||
+            participants[callObject.direction === 'outgoing' ? 0 : 1];
+
+        const userDetails = await this.quo.api.getUser(callObject.userId);
+        const userName =
+            `${userDetails.data?.firstName || ''} ${userDetails.data?.lastName || ''}`.trim() ||
+            'Quo User';
+
+        // Format call duration
+        const minutes = Math.floor(callObject.duration / 60);
+        const seconds = callObject.duration % 60;
+        const durationFormatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+        // Build status line (similar to call.completed handler)
+        let statusDescription;
+        if (callObject.status === 'completed') {
+            statusDescription =
+                callObject.direction === 'outgoing'
+                    ? `Outgoing initiated by ${userName}`
+                    : `Incoming answered by ${userName}`;
+        } else if (
+            callObject.status === 'no-answer' ||
+            callObject.status === 'missed'
+        ) {
+            statusDescription = 'Incoming missed';
+        } else if (callObject.status === 'forwarded') {
+            statusDescription = callObject.forwardedTo
+                ? `Incoming forwarded to ${callObject.forwardedTo}`
+                : 'Incoming forwarded by phone menu';
+        } else {
+            statusDescription = `${callObject.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} ${callObject.status}`;
+        }
+
+        // Add recording indicator if completed with duration
+        if (callObject.status === 'completed' && callObject.duration > 0) {
+            statusDescription += ` / ▶️ Recording (${durationFormatted})`;
+        }
+
+        // Format summary content
+        let summaryContent = statusDescription;
+
+        if (summary.length > 0) {
+            summaryContent += '\n\n**Summary:**\n';
+            summary.forEach((point) => {
+                summaryContent += `• ${point}\n`;
+            });
+        }
+
+        if (nextSteps.length > 0) {
+            summaryContent += '\n**Next Steps:**\n';
+            nextSteps.forEach((step) => {
+                summaryContent += `• ${step}\n`;
+            });
+        }
+
+        // Add deep link
+        const deepLink = webhookData.data.deepLink || '#';
+        summaryContent += `\n[View the call activity in Quo](${deepLink})`;
+
+        // Build title
+        let title;
+        if (callObject.direction === 'outgoing') {
+            title = `☎️  Call Summary: ${inboxName} ${inboxNumber} → ${contactPhone}`;
+        } else {
+            title = `☎️  Call Summary: ${contactPhone} → ${inboxName} ${inboxNumber}`;
+        }
+
+        // Create the note in Attio
+        const activityData = {
+            contactExternalId: attioRecordId,
+            title: title,
+            summary: summaryContent,
+            timestamp: callObject.createdAt,
+        };
+
+        await this.logCallToActivity(activityData);
+
+        console.log(
+            `[Quo Webhook] ✓ Call summary logged for contact ${attioRecordId}`,
+        );
 
         return {
             received: true,
             callId,
+            logged: true,
+            contactId: attioRecordId,
             summaryPoints: summary.length,
             nextStepsCount: nextSteps.length,
         };
@@ -2149,45 +2275,17 @@ class AttioIntegration extends BaseCRMIntegration {
                     `[Attio] ✓ Contact created in Quo via bulkUpsertToQuo (externalId: ${quoContact.externalId})`,
                 );
             } else {
-                const existingContacts = await this.quo.api.listContacts({
-                    externalIds: [quoContact.externalId],
-                    maxResults: 10,
-                });
+                const result = await this.bulkUpsertToQuo([quoContact]);
 
-                if (
-                    !existingContacts?.data ||
-                    existingContacts.data.length === 0
-                ) {
+                if (result.errorCount > 0) {
+                    const error = result.errors[0];
                     throw new Error(
-                        `Contact with externalId ${quoContact.externalId} not found in Quo`,
-                    );
-                }
-
-                const exactMatch = existingContacts.data.find(
-                    (contact) => contact.externalId === quoContact.externalId,
-                );
-
-                if (!exactMatch) {
-                    throw new Error(
-                        `No exact match for externalId ${quoContact.externalId} in Quo (found ${existingContacts.data.length} results)`,
-                    );
-                }
-
-                const quoContactId = exactMatch.id;
-                const { externalId, ...contactData } = quoContact;
-                const updateResponse = await this.quo.api.updateContact(
-                    quoContactId,
-                    contactData,
-                );
-
-                if (!updateResponse?.data) {
-                    throw new Error(
-                        `Update contact failed: Invalid response from Quo API`,
+                        `Failed to update contact: ${error?.error || 'Unknown error'}`,
                     );
                 }
 
                 console.log(
-                    `[Attio] ✓ Contact ${quoContactId} updated in Quo (externalId: ${externalId})`,
+                    `[Attio] ✓ Contact updated in Quo via bulkUpsertToQuo (externalId: ${quoContact.externalId})`,
                 );
             }
 
