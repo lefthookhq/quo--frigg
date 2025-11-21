@@ -2,6 +2,7 @@ const { BaseCRMIntegration } = require('../base/BaseCRMIntegration');
 const { createFriggCommands } = require('@friggframework/core');
 const axisCare = require('../api-modules/axiscare');
 const quo = require('../api-modules/quo');
+const CallSummaryEnrichmentService = require('../base/services/CallSummaryEnrichmentService');
 
 /**
  * AxisCareIntegration - Refactored to extend BaseCRMIntegration
@@ -903,13 +904,27 @@ View the call activity in Quo: ${deepLink}`;
             callerName: axiscareContact.name,
         };
 
-        await this.logCallToActivity(activityData);
+        const callLogId = await this.logCallToActivity(activityData);
+
+        // Store mapping: call ID -> call log ID (for later enrichment in call.summary.completed)
+        if (callLogId) {
+            await this.upsertMapping(callObject.id, {
+                callLogId,
+                callId: callObject.id,
+                axiscareContactId: axiscareContact.id,
+                axiscareContactType: axiscareContact.type,
+                createdAt: new Date().toISOString(),
+            });
+            console.log(
+                `[Quo Webhook] ✓ Mapping stored: call ${callObject.id} -> call log ${callLogId}`,
+            );
+        }
 
         console.log(
             `[Quo Webhook] ✓ Call logged for ${axiscareContact.type} ${axiscareContact.id}`,
         );
 
-        return { logged: true, contactId: axiscareContact.id };
+        return { logged: true, contactId: axiscareContact.id, callLogId };
     }
 
     /**
@@ -1018,11 +1033,143 @@ View in Quo: ${deepLink}`;
             `[Quo Webhook] Call summary status: ${status}, ${summary.length} summary points, ${nextSteps.length} next steps`,
         );
 
+        // Fetch the original call details to get contact info and metadata
+        const callDetails = await this.quo.api.getCall(callId);
+        if (!callDetails?.data) {
+            console.warn(
+                `[Quo Webhook] Call ${callId} not found, cannot create summary`,
+            );
+            return {
+                received: true,
+                callId,
+                logged: false,
+                error: 'Call not found',
+            };
+        }
+
+        const callObject = callDetails.data;
+
+        // Find the contact phone number (same logic as _handleQuoCallEvent)
+        const participants = callObject.participants || [];
+        if (participants.length < 2) {
+            console.warn(
+                `[Quo Webhook] Call ${callId} has insufficient participants`,
+            );
+            return {
+                received: true,
+                callId,
+                logged: false,
+                error: 'Insufficient participants',
+            };
+        }
+
+        const contactPhone =
+            callObject.direction === 'outgoing'
+                ? participants[1]
+                : participants[0];
+
+        // Find AxisCare contact
+        const axiscareContact =
+            await this._findAxisCareContactByPhone(contactPhone);
+
+        const deepLink = webhookData.data.deepLink || '#';
+
+        const phoneNumberDetails = await this.quo.api.getPhoneNumber(
+            callObject.phoneNumberId,
+        );
+        const inboxName = phoneNumberDetails.data?.name || 'Quo Line';
+        const inboxNumber =
+            phoneNumberDetails.data?.number ||
+            participants[callObject.direction === 'outgoing' ? 0 : 1];
+
+        const userDetails = await this.quo.api.getUser(callObject.userId);
+        const userName =
+            userDetails.data?.name ||
+            `${userDetails.data?.firstName || ''} ${userDetails.data?.lastName || ''}`.trim() ||
+            'Quo User';
+
+        // Use CallSummaryEnrichmentService to enrich the call log
+        const enrichmentResult = await CallSummaryEnrichmentService.enrichCallNote({
+            callId,
+            summaryData: { summary, nextSteps },
+            callDetails: callObject,
+            quoApi: this.quo.api,
+            crmAdapter: {
+                canUpdateNote: () => true, // AxisCare supports call log updates!
+                createNote: async ({ contactId, content, title, timestamp }) => {
+                    const activityData = {
+                        contactId: axiscareContact.id,
+                        contactType: axiscareContact.type,
+                        direction:
+                            callObject.direction === 'outgoing'
+                                ? 'outbound'
+                                : 'inbound',
+                        timestamp,
+                        duration: callObject.duration,
+                        subject: title,
+                        summary: content,
+                        callerPhone: contactPhone,
+                        callerName: axiscareContact.name,
+                    };
+                    return await this.logCallToActivity(activityData);
+                },
+                updateNote: async (callLogId, { content, title }) => {
+                    return await this.axisCare.api.updateCallLog(callLogId, {
+                        subject: title,
+                        notes: content,
+                    });
+                },
+            },
+            mappingRepo: {
+                get: async (id) => await this.getMapping(id),
+                upsert: async (id, data) => await this.upsertMapping(id, data),
+            },
+            contactId: axiscareContact.id,
+            formatters: {
+                formatCallHeader: (call) => {
+                    let statusDescription;
+                    if (call.status === 'completed') {
+                        statusDescription =
+                            call.direction === 'outgoing'
+                                ? `Outgoing initiated by ${userName}`
+                                : `Incoming answered by ${userName}`;
+                    } else if (
+                        call.status === 'no-answer' ||
+                        call.status === 'missed'
+                    ) {
+                        statusDescription = 'Incoming missed';
+                    } else {
+                        statusDescription = `${call.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} ${call.status}`;
+                    }
+                    return statusDescription;
+                },
+                formatTitle: (call) => {
+                    if (call.direction === 'outgoing') {
+                        return `Call Summary: Quo ${inboxName} (${inboxNumber}) → ${contactPhone}`;
+                    } else {
+                        return `Call Summary: ${contactPhone} → Quo ${inboxName} (${inboxNumber})`;
+                    }
+                },
+                formatDeepLink: () => {
+                    return `\n\nView the call activity in Quo: ${deepLink}`;
+                },
+            },
+        });
+
+        console.log(
+            `[Quo Webhook] ✓ Call summary enrichment complete for ${axiscareContact.type} ${axiscareContact.id}`,
+        );
+
         return {
             received: true,
             callId,
+            logged: true,
+            contactId: axiscareContact.id,
+            callLogId: enrichmentResult.noteId, // noteId is generic name, but it's callLogId for AxisCare
             summaryPoints: summary.length,
             nextStepsCount: nextSteps.length,
+            recordingsCount: enrichmentResult.recordingsCount,
+            hasVoicemail: enrichmentResult.hasVoicemail,
         };
     }
 
@@ -1187,7 +1334,7 @@ View in Quo: ${deepLink}`;
                 callerPhone: activity.callerPhone,
                 followUp: false,
                 dateTime: activity.timestamp,
-                subject: `Call: ${activity.direction} (${activity.duration}s)`,
+                subject: activity.subject || `Call: ${activity.direction} (${activity.duration}s)`,
                 notes: activity.summary || 'Phone call',
                 tags: [
                     {
@@ -1197,11 +1344,14 @@ View in Quo: ${deepLink}`;
                 ],
             };
 
-            await this.axisCare.api.createCallLog(callLogData);
+            const response = await this.axisCare.api.createCallLog(callLogData);
 
             console.log(
                 `[Quo Webhook] ✓ Call logged to AxisCare ${activity.contactType} ${activity.contactId}`,
             );
+
+            // Return the created call log ID
+            return response?.id || null;
         } catch (error) {
             console.error('Failed to log call activity to AxisCare:', error);
             throw error;

@@ -2,6 +2,7 @@ const { BaseCRMIntegration } = require('../base/BaseCRMIntegration');
 const { createFriggCommands } = require('@friggframework/core');
 const attio = require('@friggframework/api-module-attio');
 const quo = require('../api-modules/quo');
+const CallSummaryEnrichmentService = require('../base/services/CallSummaryEnrichmentService');
 
 /**
  * AttioIntegration - Refactored to extend BaseCRMIntegration
@@ -905,7 +906,7 @@ class AttioIntegration extends BaseCRMIntegration {
                 console.warn(
                     `Person not found for call logging: ${activity.contactExternalId}`,
                 );
-                return;
+                return null;
             }
 
             const noteData = {
@@ -919,7 +920,10 @@ class AttioIntegration extends BaseCRMIntegration {
                 created_at: activity.timestamp,
             };
 
-            await this.attio.api.createNote(noteData);
+            const noteResponse = await this.attio.api.createNote(noteData);
+
+            // Return the created note ID
+            return noteResponse?.data?.id?.note_id || null;
         } catch (error) {
             console.error('Failed to log call activity to Attio:', error);
             throw error;
@@ -1730,11 +1734,24 @@ class AttioIntegration extends BaseCRMIntegration {
             summary: formattedSummary,
         };
 
-        await this.logCallToActivity(activityData);
+        const noteId = await this.logCallToActivity(activityData);
+
+        // Store mapping: call ID -> note ID (for later enrichment in call.summary.completed)
+        if (noteId) {
+            await this.upsertMapping(callObject.id, {
+                noteId,
+                callId: callObject.id,
+                attioContactId: attioRecordId,
+                createdAt: new Date().toISOString(),
+            });
+            console.log(
+                `[Quo Webhook] ✓ Mapping stored: call ${callObject.id} -> note ${noteId}`,
+            );
+        }
 
         console.log(`[Quo Webhook] ✓ Call logged for contact ${attioRecordId}`);
 
-        return { logged: true, contactId: attioRecordId };
+        return { logged: true, contactId: attioRecordId, noteId };
     }
 
     /**
@@ -1893,77 +1910,71 @@ class AttioIntegration extends BaseCRMIntegration {
             `${userDetails.data?.firstName || ''} ${userDetails.data?.lastName || ''}`.trim() ||
             'Quo User';
 
-        // Format call duration
-        const minutes = Math.floor(callObject.duration / 60);
-        const seconds = callObject.duration % 60;
-        const durationFormatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-
-        // Build status line (similar to call.completed handler)
-        let statusDescription;
-        if (callObject.status === 'completed') {
-            statusDescription =
-                callObject.direction === 'outgoing'
-                    ? `Outgoing initiated by ${userName}`
-                    : `Incoming answered by ${userName}`;
-        } else if (
-            callObject.status === 'no-answer' ||
-            callObject.status === 'missed'
-        ) {
-            statusDescription = 'Incoming missed';
-        } else if (callObject.status === 'forwarded') {
-            statusDescription = callObject.forwardedTo
-                ? `Incoming forwarded to ${callObject.forwardedTo}`
-                : 'Incoming forwarded by phone menu';
-        } else {
-            statusDescription = `${callObject.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} ${callObject.status}`;
-        }
-
-        // Add recording indicator if completed with duration
-        if (callObject.status === 'completed' && callObject.duration > 0) {
-            statusDescription += ` / ▶️ Recording (${durationFormatted})`;
-        }
-
-        // Format summary content
-        let summaryContent = statusDescription;
-
-        if (summary.length > 0) {
-            summaryContent += '\n\n**Summary:**\n';
-            summary.forEach((point) => {
-                summaryContent += `• ${point}\n`;
-            });
-        }
-
-        if (nextSteps.length > 0) {
-            summaryContent += '\n**Next Steps:**\n';
-            nextSteps.forEach((step) => {
-                summaryContent += `• ${step}\n`;
-            });
-        }
-
-        // Add deep link
-        const deepLink = webhookData.data.deepLink || '#';
-        summaryContent += `\n[View the call activity in Quo](${deepLink})`;
-
-        // Build title
-        let title;
-        if (callObject.direction === 'outgoing') {
-            title = `☎️  Call Summary: ${inboxName} ${inboxNumber} → ${contactPhone}`;
-        } else {
-            title = `☎️  Call Summary: ${contactPhone} → ${inboxName} ${inboxNumber}`;
-        }
-
-        // Create the note in Attio
-        const activityData = {
-            contactExternalId: attioRecordId,
-            title: title,
-            summary: summaryContent,
-            timestamp: callObject.createdAt,
-        };
-
-        await this.logCallToActivity(activityData);
+        // Use CallSummaryEnrichmentService to enrich the note
+        const enrichmentResult = await CallSummaryEnrichmentService.enrichCallNote({
+            callId,
+            summaryData: { summary, nextSteps },
+            callDetails: callObject,
+            quoApi: this.quo.api,
+            crmAdapter: {
+                canUpdateNote: () => false, // Attio doesn't support note updates
+                createNote: async ({ contactId, content, title, timestamp }) => {
+                    const activityData = {
+                        contactExternalId: contactId,
+                        title,
+                        summary: content,
+                        timestamp,
+                    };
+                    return await this.logCallToActivity(activityData);
+                },
+                deleteNote: async (noteId) => {
+                    return await this.attio.api.deleteNote(noteId);
+                },
+            },
+            mappingRepo: {
+                get: async (id) => await this.getMapping(id),
+                upsert: async (id, data) => await this.upsertMapping(id, data),
+            },
+            contactId: attioRecordId,
+            formatters: {
+                formatCallHeader: (call) => {
+                    // Build status line
+                    let statusDescription;
+                    if (call.status === 'completed') {
+                        statusDescription =
+                            call.direction === 'outgoing'
+                                ? `Outgoing initiated by ${userName}`
+                                : `Incoming answered by ${userName}`;
+                    } else if (
+                        call.status === 'no-answer' ||
+                        call.status === 'missed'
+                    ) {
+                        statusDescription = 'Incoming missed';
+                    } else if (call.status === 'forwarded') {
+                        statusDescription = call.forwardedTo
+                            ? `Incoming forwarded to ${call.forwardedTo}`
+                            : 'Incoming forwarded by phone menu';
+                    } else {
+                        statusDescription = `${call.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} ${call.status}`;
+                    }
+                    return statusDescription;
+                },
+                formatTitle: (call) => {
+                    if (call.direction === 'outgoing') {
+                        return `☎️  Call Summary: ${inboxName} ${inboxNumber} → ${contactPhone}`;
+                    } else {
+                        return `☎️  Call Summary: ${contactPhone} → ${inboxName} ${inboxNumber}`;
+                    }
+                },
+                formatDeepLink: () => {
+                    const deepLink = webhookData.data.deepLink || '#';
+                    return `\n\n[View the call activity in Quo](${deepLink})`;
+                },
+            },
+        });
 
         console.log(
-            `[Quo Webhook] ✓ Call summary logged for contact ${attioRecordId}`,
+            `[Quo Webhook] ✓ Call summary enrichment complete for contact ${attioRecordId}`,
         );
 
         return {
@@ -1971,8 +1982,12 @@ class AttioIntegration extends BaseCRMIntegration {
             callId,
             logged: true,
             contactId: attioRecordId,
+            noteId: enrichmentResult.noteId,
+            oldNoteId: enrichmentResult.oldNoteId,
             summaryPoints: summary.length,
             nextStepsCount: nextSteps.length,
+            recordingsCount: enrichmentResult.recordingsCount,
+            hasVoicemail: enrichmentResult.hasVoicemail,
         };
     }
 
