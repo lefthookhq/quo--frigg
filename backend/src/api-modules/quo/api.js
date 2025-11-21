@@ -199,7 +199,6 @@ class Api extends ApiKeyRequester {
     /**
      * Bulk create multiple contacts in OpenPhone
      *
-     * @param {string} orgId - Organization ID
      * @param {CreateContactData[]} data - Array of contact data objects to create
      * @returns {Promise<Object>} Response containing the created contacts with their ids, externalIds, sources, defaultFields, customFields, createdAt, updatedAt, and createdByUserIds
      * @throws {Error} 400 - Invalid custom field item
@@ -209,15 +208,14 @@ class Api extends ApiKeyRequester {
      * @throws {Error} 409 - Conflict
      * @throws {Error} 500 - Unknown error
      */
-    async bulkCreateContacts(orgId, data) {
+    async bulkCreateContacts(data) {
         const options = {
             url: this.baseUrl + this.URLs.contacts + '/bulk',
             headers: {
                 'Content-Type': 'application/json',
+                'x-frigg-api-key': process.env.FRIGG_API_KEY,
             },
             body: {
-                // orgId,
-                // TODO: Uncomment this when orgId is available
                 contacts: data,
             },
         };

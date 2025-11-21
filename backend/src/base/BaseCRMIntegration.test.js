@@ -161,17 +161,6 @@ describe('BaseCRMIntegration', () => {
 
         // Mock upsertMapping
         integration.upsertMapping = jest.fn().mockResolvedValue();
-
-        // Mock user repository for bulkUpsertToQuo
-        const mockUserRepo = {
-            findUserById: jest.fn().mockResolvedValue({
-                appOrgId: 'test-org-456',
-            }),
-        };
-        const userRepoFactory = require('@friggframework/core/user/repositories/user-repository-factory');
-        jest.spyOn(userRepoFactory, 'createUserRepository').mockReturnValue(
-            mockUserRepo,
-        );
     });
 
     afterEach(() => {
@@ -645,22 +634,6 @@ describe('BaseCRMIntegration', () => {
                 }),
             ];
 
-            // Mock the userId
-            integration.userId = 'org-user-123';
-
-            // Create mock user repository
-            const mockUserRepo = {
-                findUserById: jest.fn().mockResolvedValue({
-                    appOrgId: 'test-org-456',
-                }),
-            };
-
-            // Mock the user repository factory using jest.spyOn on require cache
-            const userRepoFactory = require('@friggframework/core/user/repositories/user-repository-factory');
-            const createUserRepositorySpy = jest
-                .spyOn(userRepoFactory, 'createUserRepository')
-                .mockReturnValue(mockUserRepo);
-
             // Mock quo.api methods for bulk upsert
             integration.quo.api.bulkCreateContacts.mockResolvedValue({});
             integration.quo.api.listContacts.mockResolvedValue({
@@ -687,23 +660,16 @@ describe('BaseCRMIntegration', () => {
 
             const result = await integration.bulkUpsertToQuo(contacts);
 
-            // Should call bulkCreateContacts with orgId and contacts
+            // Should call bulkCreateContacts with contacts only (no orgId)
             expect(integration.quo.api.bulkCreateContacts).toHaveBeenCalledWith(
-                'test-org-456',
                 contacts,
             );
             expect(integration.quo.api.listContacts).toHaveBeenCalled();
-            expect(mockUserRepo.findUserById).toHaveBeenCalledWith(
-                'org-user-123',
-            );
             expect(result).toEqual({
                 successCount: 2,
                 errorCount: 0,
                 errors: [],
             });
-
-            // Clean up spy
-            createUserRepositorySpy.mockRestore();
         });
 
         it('should handle bulk upsert errors', async () => {
@@ -717,22 +683,6 @@ describe('BaseCRMIntegration', () => {
                     defaultFields: { phoneNumbers: [{ value: '+0987654321' }] },
                 }),
             ];
-
-            // Mock the userId
-            integration.userId = 'org-user-123';
-
-            // Create mock user repository
-            const mockUserRepo = {
-                findUserById: jest.fn().mockResolvedValue({
-                    appOrgId: 'test-org-456',
-                }),
-            };
-
-            // Mock the user repository factory
-            const userRepoFactory = require('@friggframework/core/user/repositories/user-repository-factory');
-            const createUserRepositorySpy = jest
-                .spyOn(userRepoFactory, 'createUserRepository')
-                .mockReturnValue(mockUserRepo);
 
             // Mock bulkCreateContacts to fail
             integration.quo.api.bulkCreateContacts.mockRejectedValue(
@@ -752,9 +702,6 @@ describe('BaseCRMIntegration', () => {
                     },
                 ],
             });
-
-            // Clean up spy
-            createUserRepositorySpy.mockRestore();
         });
     });
 
@@ -874,17 +821,6 @@ describe('BaseCRMIntegration', () => {
 
             // Mock upsertMapping
             cursorIntegration.upsertMapping = jest.fn().mockResolvedValue();
-
-            // Mock user repository for bulkUpsertToQuo
-            const mockUserRepo = {
-                findUserById: jest.fn().mockResolvedValue({
-                    appOrgId: 'test-org-456',
-                }),
-            };
-            const userRepoFactory = require('@friggframework/core/user/repositories/user-repository-factory');
-            jest.spyOn(userRepoFactory, 'createUserRepository').mockReturnValue(
-                mockUserRepo,
-            );
         });
 
         it('should process pages sequentially', async () => {

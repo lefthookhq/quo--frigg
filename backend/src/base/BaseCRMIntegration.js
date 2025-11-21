@@ -1112,22 +1112,8 @@ class BaseCRMIntegration extends IntegrationBase {
         const errors = [];
 
         try {
-            // Get orgId from Frigg user table
-            const {
-                createUserRepository,
-            } = require('@friggframework/core/user/repositories/user-repository-factory');
-            const userRepo = createUserRepository();
-
-            // Get the organization user (this.userId points to org user when primary: 'organization')
-            const orgUser = await userRepo.findUserById(this.userId);
-            const orgId = orgUser.appOrgId;
-
-            if (!orgId) {
-                throw new Error('Organization ID not found for user');
-            }
-
-            // Call bulkCreateContacts with orgId and contacts
-            await this.quo.api.bulkCreateContacts(orgId, contacts);
+            // Call bulkCreateContacts with contacts
+            await this.quo.api.bulkCreateContacts(contacts);
 
             await new Promise((resolve) => setTimeout(resolve, 1000));
 
