@@ -774,3 +774,206 @@ describe('Call Summary Enrichment - AxisCare Integration', () => {
         });
     });
 });
+
+describe('Call Summary Enrichment - Zoho CRM Integration', () => {
+    let integration;
+    let mockZohoCrmApi;
+    let mockQuoApi;
+    let mockCommands;
+
+    // Import at describe level to avoid issues
+    const ZohoCRMIntegration = require('../src/integrations/ZohoCRMIntegration');
+
+    beforeEach(() => {
+        mockZohoCrmApi = {
+            api: {
+                createNote: jest.fn(),
+                updateNote: jest.fn(),
+                deleteNote: jest.fn(),
+                searchRecordsByCriteria: jest.fn(),
+            },
+        };
+
+        mockQuoApi = {
+            api: {
+                getCall: jest.fn(),
+                getCallRecordings: jest.fn(),
+                getCallVoicemails: jest.fn(),
+                getPhoneNumber: jest.fn(),
+                getUser: jest.fn(),
+            },
+        };
+
+        mockCommands = {
+            updateIntegrationConfig: jest.fn().mockResolvedValue({}),
+        };
+
+        integration = new ZohoCRMIntegration({
+            userId: 'test-user',
+            id: 'test-integration-id',
+        });
+
+        integration.zohoCrm = mockZohoCrmApi;
+        integration.quo = mockQuoApi;
+        integration.commands = mockCommands;
+        integration.config = { quoCallWebhookKey: 'test-key' };
+
+        integration.upsertMapping = jest.fn().mockResolvedValue({});
+        integration.getMapping = jest.fn().mockResolvedValue(null);
+    });
+
+    describe('Phase 3: Zoho CRM - Update Existing Note with Enriched Summary', () => {
+        it('should update existing note with enriched summary (Zoho CRM supports updates)', async () => {
+            // Arrange
+            const webhookData = {
+                type: 'call.summary.completed',
+                data: {
+                    object: {
+                        callId: 'call-zoho-123',
+                        summary: ['Discussed product demo', 'Reviewed pricing'],
+                        nextSteps: ['Send quote', 'Schedule follow-up'],
+                        status: 'completed',
+                    },
+                    deepLink: 'https://app.openphone.com/calls/call-zoho-123',
+                },
+            };
+
+            // Existing mapping from Phase 1
+            integration.getMapping.mockResolvedValue({
+                noteId: 'zoho-note-456',
+                callId: 'call-zoho-123',
+                zohoContactId: 'zoho-contact-789',
+            });
+
+            mockQuoApi.api.getCall.mockResolvedValue({
+                data: {
+                    id: 'call-zoho-123',
+                    direction: 'outgoing',
+                    status: 'completed',
+                    duration: 300,
+                    participants: ['+15559876543', '+15551234567'],
+                    phoneNumberId: 'pn-zoho',
+                    userId: 'user-zoho',
+                    createdAt: '2025-01-15T11:00:00Z',
+                },
+            });
+
+            mockQuoApi.api.getCallRecordings.mockResolvedValue({
+                data: [
+                    {
+                        url: 'https://storage.example.com/zoho-recording.mp3',
+                        duration: 300,
+                    },
+                ],
+            });
+
+            mockQuoApi.api.getCallVoicemails.mockResolvedValue({ data: null });
+
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue({
+                data: { name: 'Sales Line', number: '+15559876543' },
+            });
+
+            mockQuoApi.api.getUser.mockResolvedValue({
+                data: { firstName: 'Alex', lastName: 'Johnson' },
+            });
+
+            mockZohoCrmApi.api.updateNote.mockResolvedValue({
+                data: [{ details: { id: 'zoho-note-456' } }],
+            });
+
+            // Mock _findZohoContactByPhone to return the contact ID
+            integration._findZohoContactByPhone = jest
+                .fn()
+                .mockResolvedValue('zoho-contact-789');
+
+            // Act
+            await integration._handleQuoCallSummaryEvent(webhookData);
+
+            // Assert - updateNote called (NOT create + delete)
+            expect(mockZohoCrmApi.api.updateNote).toHaveBeenCalledWith(
+                'Contacts',
+                'zoho-contact-789',
+                'zoho-note-456',
+                expect.objectContaining({
+                    Note_Content: expect.stringMatching(/Summary:.*Discussed product demo/s),
+                }),
+            );
+
+            // Assert - Notes include recording URL
+            const updateCall = mockZohoCrmApi.api.updateNote.mock.calls[0][3];
+            expect(updateCall.Note_Content).toContain('https://storage.example.com/zoho-recording.mp3');
+
+            // Assert - createNote NOT called (update only)
+            expect(mockZohoCrmApi.api.createNote).not.toHaveBeenCalled();
+        });
+
+        it('should handle voicemail transcripts in Zoho CRM note updates', async () => {
+            // Arrange
+            const webhookData = {
+                type: 'call.summary.completed',
+                data: {
+                    object: {
+                        callId: 'call-zoho-vm',
+                        summary: ['Customer left voicemail'],
+                        nextSteps: ['Return call'],
+                        status: 'completed',
+                    },
+                    deepLink: 'https://app.openphone.com/calls/call-zoho-vm',
+                },
+            };
+
+            integration.getMapping.mockResolvedValue({
+                noteId: 'zoho-note-vm',
+                callId: 'call-zoho-vm',
+                zohoContactId: 'zoho-contact-vm',
+            });
+
+            mockQuoApi.api.getCall.mockResolvedValue({
+                data: {
+                    id: 'call-zoho-vm',
+                    direction: 'incoming',
+                    status: 'missed',
+                    duration: 0,
+                    participants: ['+15551234567', '+15559876543'],
+                    phoneNumberId: 'pn-zoho-vm',
+                    userId: 'user-zoho-vm',
+                    createdAt: '2025-01-15T12:00:00Z',
+                },
+            });
+
+            mockQuoApi.api.getCallRecordings.mockResolvedValue({ data: [] });
+
+            mockQuoApi.api.getCallVoicemails.mockResolvedValue({
+                data: {
+                    recordingUrl: 'https://storage.example.com/zoho-vm.mp3',
+                    transcript: 'Hi, please call me back about the proposal',
+                    duration: 25,
+                },
+            });
+
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue({
+                data: { name: 'Main Line', number: '+15559876543' },
+            });
+
+            mockQuoApi.api.getUser.mockResolvedValue({
+                data: { firstName: 'Sam', lastName: 'Wilson' },
+            });
+
+            mockZohoCrmApi.api.updateNote.mockResolvedValue({
+                data: [{ details: { id: 'zoho-note-vm' } }],
+            });
+
+            integration._findZohoContactByPhone = jest
+                .fn()
+                .mockResolvedValue('zoho-contact-vm');
+
+            // Act
+            await integration._handleQuoCallSummaryEvent(webhookData);
+
+            // Assert - Voicemail URL and transcript included
+            const updateCall = mockZohoCrmApi.api.updateNote.mock.calls[0][3];
+            expect(updateCall.Note_Content).toContain('https://storage.example.com/zoho-vm.mp3');
+            expect(updateCall.Note_Content).toContain('Hi, please call me back about the proposal');
+        });
+    });
+});

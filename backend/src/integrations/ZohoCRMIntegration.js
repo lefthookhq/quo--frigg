@@ -2,6 +2,7 @@ const { BaseCRMIntegration } = require('../base/BaseCRMIntegration');
 const { Definition: QuoDefinition } = require('../api-modules/quo/definition');
 const zohoCrm = require('@friggframework/api-module-zoho-crm');
 const { createFriggCommands } = require('@friggframework/core');
+const CallSummaryEnrichmentService = require('../base/services/CallSummaryEnrichmentService');
 
 class ZohoCRMIntegration extends BaseCRMIntegration {
     static Definition = {
@@ -1301,10 +1302,26 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 ? `☎️  Call ${inboxName} ${inboxNumber} → ${contactPhone}`
                 : `☎️  Call ${contactPhone} → ${inboxName} ${inboxNumber}`;
 
-        await this.zohoCrm.api.createNote('Contacts', contactId, {
+        const noteResponse = await this.zohoCrm.api.createNote('Contacts', contactId, {
             Note_Title: callTitle,
             Note_Content: formattedNote,
         });
+
+        // Extract note ID from response
+        const noteId = noteResponse?.data?.[0]?.details?.id || null;
+
+        // Store mapping: call ID -> note ID (for later enrichment in call.summary.completed)
+        if (noteId) {
+            await this.upsertMapping(callObject.id, {
+                noteId,
+                callId: callObject.id,
+                zohoContactId: contactId,
+                createdAt: new Date().toISOString(),
+            });
+            console.log(
+                `[Quo Webhook] ✓ Mapping stored: call ${callObject.id} -> note ${noteId}`,
+            );
+        }
 
         console.log(
             `[Quo Webhook] ✓ Call logged as note for contact ${contactId}`,
@@ -1314,6 +1331,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             logged: true,
             contactId: contactId,
             callId: callObject.id,
+            noteId,
         };
     }
 
@@ -1417,7 +1435,8 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
 
     /**
      * Handle Quo call.summary.completed webhook event
-     * Creates a Zoho CRM note with call context, summary, and next steps
+     * Enriches existing Zoho CRM note with AI summary, recordings, and voicemails
+     * using the CallSummaryEnrichmentService
      *
      * @private
      * @param {Object} webhookData - Quo webhook payload
@@ -1433,23 +1452,55 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             `[Quo Webhook] Processing call summary for call: ${callId}, ${summary.length} summary points, ${nextSteps.length} next steps`,
         );
 
-        const callResponse = await this.quo.api.getCall(callId);
-        const callObject = callResponse.data;
+        // Fetch the original call details
+        const callDetails = await this.quo.api.getCall(callId);
+        if (!callDetails?.data) {
+            console.warn(
+                `[Quo Webhook] Call ${callId} not found, cannot create summary`,
+            );
+            return {
+                received: true,
+                callId,
+                logged: false,
+                error: 'Call not found',
+            };
+        }
+
+        const callObject = callDetails.data;
 
         const participants = callObject.participants || [];
+        if (participants.length < 2) {
+            console.warn(
+                `[Quo Webhook] Call ${callId} has insufficient participants`,
+            );
+            return {
+                received: true,
+                callId,
+                logged: false,
+                error: 'Insufficient participants',
+            };
+        }
+
         const contactPhone =
             callObject.direction === 'outgoing'
                 ? participants[1]
                 : participants[0];
 
-        const contactId = await this._findZohoContactByPhone(contactPhone);
+        const zohoContactId = await this._findZohoContactByPhone(contactPhone);
 
-        if (!contactId) {
+        if (!zohoContactId) {
             console.log(
                 `[Quo Webhook] ℹ️ No contact found for phone ${contactPhone} in Zoho CRM, skipping call summary sync`,
             );
-            return;
+            return {
+                received: true,
+                callId,
+                logged: false,
+                error: 'No Zoho contact found',
+            };
         }
+
+        const deepLink = webhookData.data.deepLink || '#';
 
         const phoneNumberDetails = await this.quo.api.getPhoneNumber(
             callObject.phoneNumberId,
@@ -1468,89 +1519,88 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             `${userDetails.data.firstName || ''} ${userDetails.data.lastName || ''}`.trim() ||
             'Quo User';
 
-        const minutes = Math.floor(callObject.duration / 60);
-        const seconds = callObject.duration % 60;
-        const durationFormatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-
-        let statusDescription;
-        if (callObject.status === 'completed') {
-            statusDescription =
-                callObject.direction === 'outgoing'
-                    ? `Outgoing initiated by ${userName}`
-                    : `Incoming answered by ${userName}`;
-        } else if (
-            callObject.status === 'no-answer' ||
-            callObject.status === 'missed'
-        ) {
-            statusDescription = 'Incoming missed';
-        } else {
-            statusDescription = `${callObject.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} ${callObject.status}`;
-        }
-
-        const deepLink = webhookData.data.deepLink || '#';
-
-        let formattedNote = '';
-
-        if (callObject.direction === 'outgoing') {
-            formattedNote = `☎️ Call: Quo 📱 ${inboxName} (${inboxNumber}) → ${contactPhone}`;
-        } else {
-            formattedNote = `☎️ Call: ${contactPhone} → Quo 📱 ${inboxName} (${inboxNumber})`;
-        }
-
-        formattedNote += `
-
-Status: ${statusDescription}`;
-        if (callObject.status === 'completed' && callObject.duration > 0) {
-            formattedNote += ` / ▶️ Recording (${durationFormatted})`;
-        }
-
-        if (summary.length > 0) {
-            formattedNote += `
-
-📝 Summary:`;
-            for (const point of summary) {
-                const text =
-                    typeof point === 'string'
-                        ? point
-                        : point.text || point.content || '';
-                formattedNote += `
-• ${text}`;
-            }
-        }
-
-        if (nextSteps.length > 0) {
-            formattedNote += `
-
-✅ Next Steps:`;
-            for (const step of nextSteps) {
-                const text =
-                    typeof step === 'string'
-                        ? step
-                        : step.text || step.content || '';
-                formattedNote += `
-• ${text}`;
-            }
-        }
-
-        formattedNote += `
-
-View in Quo: ${deepLink}`;
-
-        await this.zohoCrm.api.createNote('Contacts', contactId, {
-            Note_Title: `Call Summary: ${callObject.direction} (${durationFormatted})`,
-            Note_Content: formattedNote,
+        // Use CallSummaryEnrichmentService to enrich the note
+        const enrichmentResult = await CallSummaryEnrichmentService.enrichCallNote({
+            callId,
+            summaryData: { summary, nextSteps },
+            callDetails: callObject,
+            quoApi: this.quo.api,
+            crmAdapter: {
+                canUpdateNote: () => true, // Zoho CRM supports note updates!
+                createNote: async ({ contactId, content, title, timestamp }) => {
+                    const noteResponse = await this.zohoCrm.api.createNote(
+                        'Contacts',
+                        contactId,
+                        {
+                            Note_Title: title,
+                            Note_Content: content,
+                        },
+                    );
+                    return noteResponse?.data?.[0]?.details?.id || null;
+                },
+                updateNote: async (noteId, { content, title }) => {
+                    return await this.zohoCrm.api.updateNote(
+                        'Contacts',
+                        zohoContactId,
+                        noteId,
+                        {
+                            Note_Title: title,
+                            Note_Content: content,
+                        },
+                    );
+                },
+            },
+            mappingRepo: {
+                get: async (id) => await this.getMapping(id),
+                upsert: async (id, data) => await this.upsertMapping(id, data),
+            },
+            contactId: zohoContactId,
+            formatters: {
+                formatCallHeader: (call) => {
+                    let statusDescription;
+                    if (call.status === 'completed') {
+                        statusDescription =
+                            call.direction === 'outgoing'
+                                ? `Outgoing initiated by ${userName}`
+                                : `Incoming answered by ${userName}`;
+                    } else if (
+                        call.status === 'no-answer' ||
+                        call.status === 'missed'
+                    ) {
+                        statusDescription = 'Incoming missed';
+                    } else {
+                        statusDescription = `${call.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} ${call.status}`;
+                    }
+                    return statusDescription;
+                },
+                formatTitle: (call) => {
+                    if (call.direction === 'outgoing') {
+                        return `☎️ Call Summary: ${inboxName} (${inboxNumber}) → ${contactPhone}`;
+                    } else {
+                        return `☎️ Call Summary: ${contactPhone} → ${inboxName} (${inboxNumber})`;
+                    }
+                },
+                formatDeepLink: () => {
+                    return `\n\nView in Quo: ${deepLink}`;
+                },
+            },
         });
 
         console.log(
-            `[Quo Webhook] ✓ Call summary logged as note for contact ${contactId}`,
+            `[Quo Webhook] ✓ Call summary enrichment complete for contact ${zohoContactId}`,
         );
 
         return {
-            logged: true,
-            contactId: contactId,
+            received: true,
             callId,
+            logged: true,
+            contactId: zohoContactId,
+            noteId: enrichmentResult.noteId,
+            oldNoteId: enrichmentResult.oldNoteId,
             summaryPoints: summary.length,
             nextStepsCount: nextSteps.length,
+            recordingsCount: enrichmentResult.recordingsCount,
+            hasVoicemail: enrichmentResult.hasVoicemail,
         };
     }
 
