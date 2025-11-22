@@ -1446,18 +1446,10 @@ View in Quo: ${deepLink}`;
                 throw new Error('Quo API not available');
             }
 
-            // Use bulkUpsertToQuo for both created and updated operations
-            const result = await this.bulkUpsertToQuo([quoContact]);
-
-            if (result.errorCount > 0) {
-                const error = result.errors[0];
-                throw new Error(
-                    `Failed to ${action} contact: ${error?.error || 'Unknown error'}`,
-                );
-            }
+            const result = await this.upsertContactToQuo(quoContact);
 
             console.log(
-                `[AxisCare] ✓ Contact synced to Quo via bulkUpsertToQuo (${action}, externalId: ${quoContact.externalId})`,
+                `[AxisCare] ✓ Contact ${result.action} in Quo (externalId: ${quoContact.externalId}, quoContactId: ${result.quoContactId})`,
             );
 
             console.log(`[AxisCare] ✓ Person ${person.id} synced to Quo`);

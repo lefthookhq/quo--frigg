@@ -670,7 +670,7 @@ describe('PipedriveIntegration (Refactored)', () => {
             });
         });
 
-        describe('_syncPersonToQuo with bulkUpsertToQuo', () => {
+        describe('_syncPersonToQuo with upsertContactToQuo', () => {
             beforeEach(() => {
                 mockQuoApi.api.createContact = jest.fn();
                 mockQuoApi.api.updateContact = jest.fn();
@@ -678,7 +678,7 @@ describe('PipedriveIntegration (Refactored)', () => {
                 integration.transformPersonToQuo = jest.fn();
             });
 
-            it('should use bulkUpsertToQuo for added action', async () => {
+            it('should use upsertContactToQuo for added action', async () => {
                 const person = {
                     id: 123,
                     first_name: 'John',
@@ -699,25 +699,23 @@ describe('PipedriveIntegration (Refactored)', () => {
                 integration.transformPersonToQuo.mockResolvedValue(
                     mockQuoContact,
                 );
-                integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
-                    successCount: 1,
-                    errorCount: 0,
-                    errors: [],
+                integration.upsertContactToQuo = jest.fn().mockResolvedValue({
+                    action: 'created',
+                    quoContactId: 'quo-contact-123',
+                    externalId: '123',
                 });
 
                 await integration._syncPersonToQuo(person, 'added');
 
-                expect(integration.bulkUpsertToQuo).toHaveBeenCalledWith(
-                    expect.arrayContaining([
-                        expect.objectContaining({
-                            externalId: '123',
-                        }),
-                    ]),
+                expect(integration.upsertContactToQuo).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        externalId: '123',
+                    }),
                 );
                 expect(mockQuoApi.api.createContact).not.toHaveBeenCalled();
             });
 
-            it('should handle bulkUpsertToQuo errors for added action', async () => {
+            it('should handle upsertContactToQuo errors for added action', async () => {
                 const person = {
                     id: 456,
                     first_name: 'Error',
@@ -728,23 +726,16 @@ describe('PipedriveIntegration (Refactored)', () => {
                     externalId: '456',
                     defaultFields: { firstName: 'Error' },
                 });
-                integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
-                    successCount: 0,
-                    errorCount: 1,
-                    errors: [
-                        {
-                            error: 'Failed to create contact',
-                            externalId: '456',
-                        },
-                    ],
-                });
+                integration.upsertContactToQuo = jest
+                    .fn()
+                    .mockRejectedValue(new Error('Failed to create contact'));
 
                 await expect(
                     integration._syncPersonToQuo(person, 'added'),
-                ).rejects.toThrow('Failed to added contact');
+                ).rejects.toThrow('Failed to create contact');
             });
 
-            it('should use bulkUpsertToQuo for updated action', async () => {
+            it('should use upsertContactToQuo for updated action', async () => {
                 const person = {
                     id: 789,
                     first_name: 'Jane',
@@ -766,25 +757,23 @@ describe('PipedriveIntegration (Refactored)', () => {
                 integration.transformPersonToQuo.mockResolvedValue(
                     mockQuoContact,
                 );
-                integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
-                    successCount: 1,
-                    errorCount: 0,
-                    errors: [],
+                integration.upsertContactToQuo = jest.fn().mockResolvedValue({
+                    action: 'updated',
+                    quoContactId: 'quo-contact-789',
+                    externalId: '789',
                 });
 
                 await integration._syncPersonToQuo(person, 'updated');
 
-                expect(integration.bulkUpsertToQuo).toHaveBeenCalledWith(
-                    expect.arrayContaining([
-                        expect.objectContaining({
-                            externalId: '789',
-                        }),
-                    ]),
+                expect(integration.upsertContactToQuo).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        externalId: '789',
+                    }),
                 );
                 expect(mockQuoApi.api.updateContact).not.toHaveBeenCalled();
             });
 
-            it('should handle bulkUpsertToQuo errors for updated action', async () => {
+            it('should handle upsertContactToQuo errors for updated action', async () => {
                 const person = {
                     id: 999,
                     first_name: 'Update',
@@ -795,20 +784,13 @@ describe('PipedriveIntegration (Refactored)', () => {
                     externalId: '999',
                     defaultFields: { firstName: 'Update' },
                 });
-                integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
-                    successCount: 0,
-                    errorCount: 1,
-                    errors: [
-                        {
-                            error: 'Contact update failed',
-                            externalId: '999',
-                        },
-                    ],
-                });
+                integration.upsertContactToQuo = jest
+                    .fn()
+                    .mockRejectedValue(new Error('Contact update failed'));
 
                 await expect(
                     integration._syncPersonToQuo(person, 'updated'),
-                ).rejects.toThrow('Failed to updated contact');
+                ).rejects.toThrow('Contact update failed');
             });
         });
     });

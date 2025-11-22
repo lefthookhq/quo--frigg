@@ -51,6 +51,10 @@ class Api extends ApiKeyRequester {
             webhookMessages: '/v2/webhooks/messages',
             webhookCallSummaries: '/v2/webhooks/call-summaries',
             webhookCallTranscripts: '/v2/webhooks/call-transcripts',
+
+            // Frigg-specific endpoints (require x-frigg-api-key header)
+            friggContacts: '/frigg/contacts',
+            friggContactById: (id) => `/frigg/contacts/${id}`,
         };
     }
 
@@ -227,6 +231,45 @@ class Api extends ApiKeyRequester {
             url: this.baseUrl + this.URLs.contactById(id),
             headers: {
                 'Content-Type': 'application/json',
+            },
+            body: data,
+        };
+        return this._patch(options);
+    }
+
+    /**
+     * Create a contact via Frigg-authenticated endpoint
+     * Uses /frigg/contacts which requires x-frigg-api-key header
+     *
+     * @param {CreateContactData} data - The contact data to create
+     * @returns {Promise<Object>} The created contact
+     */
+    async createFriggContact(data) {
+        const options = {
+            url: this.baseUrl + this.URLs.friggContacts,
+            headers: {
+                'Content-Type': 'application/json',
+                'x-frigg-api-key': process.env.FRIGG_API_KEY,
+            },
+            body: data,
+        };
+        return this._post(options);
+    }
+
+    /**
+     * Update a contact via Frigg-authenticated endpoint
+     * Uses /frigg/contacts/:id which requires x-frigg-api-key header
+     *
+     * @param {string} id - The Quo contact ID to update
+     * @param {Object} data - The contact data to update
+     * @returns {Promise<Object>} The updated contact
+     */
+    async updateFriggContact(id, data) {
+        const options = {
+            url: this.baseUrl + this.URLs.friggContactById(id),
+            headers: {
+                'Content-Type': 'application/json',
+                'x-frigg-api-key': process.env.FRIGG_API_KEY,
             },
             body: data,
         };

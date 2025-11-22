@@ -995,4 +995,228 @@ describe('BaseCRMIntegration', () => {
             );
         });
     });
+
+    describe('upsertContactToQuo', () => {
+        beforeEach(() => {
+            integration.quo = {
+                api: {
+                    listContacts: jest.fn(),
+                    createFriggContact: jest.fn(),
+                    updateFriggContact: jest.fn(),
+                },
+            };
+            integration.upsertMapping = jest.fn().mockResolvedValue();
+        });
+
+        it('should create contact when none exists with matching externalId', async () => {
+            const quoContact = {
+                externalId: 'crm-123',
+                defaultFields: {
+                    firstName: 'John',
+                    lastName: 'Doe',
+                    phoneNumbers: [{ name: 'mobile', value: '+15551234567' }],
+                },
+            };
+
+            integration.quo.api.listContacts.mockResolvedValue({ data: [] });
+            integration.quo.api.createFriggContact.mockResolvedValue({
+                data: { id: 'quo-contact-new', ...quoContact },
+            });
+
+            const result = await integration.upsertContactToQuo(quoContact);
+
+            expect(integration.quo.api.listContacts).toHaveBeenCalledWith({
+                externalIds: ['crm-123'],
+                maxResults: 1,
+            });
+            expect(integration.quo.api.createFriggContact).toHaveBeenCalledWith(
+                quoContact,
+            );
+            expect(integration.quo.api.updateFriggContact).not.toHaveBeenCalled();
+            expect(result).toEqual({
+                action: 'created',
+                quoContactId: 'quo-contact-new',
+                externalId: 'crm-123',
+            });
+        });
+
+        it('should update contact when one exists with matching externalId', async () => {
+            const quoContact = {
+                externalId: 'crm-456',
+                defaultFields: {
+                    firstName: 'Jane',
+                    lastName: 'Smith',
+                    phoneNumbers: [{ name: 'work', value: '+15559876543' }],
+                },
+            };
+
+            integration.quo.api.listContacts.mockResolvedValue({
+                data: [{ id: 'quo-existing-id', externalId: 'crm-456' }],
+            });
+            integration.quo.api.updateFriggContact.mockResolvedValue({
+                data: { id: 'quo-existing-id', ...quoContact },
+            });
+
+            const result = await integration.upsertContactToQuo(quoContact);
+
+            expect(integration.quo.api.listContacts).toHaveBeenCalledWith({
+                externalIds: ['crm-456'],
+                maxResults: 1,
+            });
+            expect(integration.quo.api.updateFriggContact).toHaveBeenCalledWith(
+                'quo-existing-id',
+                quoContact,
+            );
+            expect(integration.quo.api.createFriggContact).not.toHaveBeenCalled();
+            expect(result).toEqual({
+                action: 'updated',
+                quoContactId: 'quo-existing-id',
+                externalId: 'crm-456',
+            });
+        });
+
+        it('should store mapping after creating contact', async () => {
+            const quoContact = {
+                externalId: 'crm-789',
+                defaultFields: {
+                    firstName: 'Bob',
+                    phoneNumbers: [{ name: 'mobile', value: '+15551112222' }],
+                },
+            };
+
+            integration.quo.api.listContacts.mockResolvedValue({ data: [] });
+            integration.quo.api.createFriggContact.mockResolvedValue({
+                data: { id: 'quo-new-id', externalId: 'crm-789' },
+            });
+
+            await integration.upsertContactToQuo(quoContact);
+
+            expect(integration.upsertMapping).toHaveBeenCalledWith(
+                '+15551112222',
+                expect.objectContaining({
+                    externalId: 'crm-789',
+                    quoContactId: 'quo-new-id',
+                    phoneNumber: '+15551112222',
+                    action: 'created',
+                }),
+            );
+        });
+
+        it('should store mapping after updating contact', async () => {
+            const quoContact = {
+                externalId: 'crm-999',
+                defaultFields: {
+                    firstName: 'Alice',
+                    phoneNumbers: [{ name: 'home', value: '+15553334444' }],
+                },
+            };
+
+            integration.quo.api.listContacts.mockResolvedValue({
+                data: [{ id: 'quo-existing-999', externalId: 'crm-999' }],
+            });
+            integration.quo.api.updateFriggContact.mockResolvedValue({
+                data: { id: 'quo-existing-999', externalId: 'crm-999' },
+            });
+
+            await integration.upsertContactToQuo(quoContact);
+
+            expect(integration.upsertMapping).toHaveBeenCalledWith(
+                '+15553334444',
+                expect.objectContaining({
+                    externalId: 'crm-999',
+                    quoContactId: 'quo-existing-999',
+                    phoneNumber: '+15553334444',
+                    action: 'updated',
+                }),
+            );
+        });
+
+        it('should throw error when Quo API is not available', async () => {
+            integration.quo = null;
+
+            await expect(
+                integration.upsertContactToQuo({ externalId: 'test' }),
+            ).rejects.toThrow('Quo API not available');
+        });
+
+        it('should throw error when contact has no externalId', async () => {
+            await expect(
+                integration.upsertContactToQuo({ defaultFields: { firstName: 'Test' } }),
+            ).rejects.toThrow('Contact must have an externalId');
+        });
+
+        it('should skip mapping when contact has no phone numbers', async () => {
+            const quoContact = {
+                externalId: 'crm-no-phone',
+                defaultFields: {
+                    firstName: 'NoPhone',
+                },
+            };
+
+            integration.quo.api.listContacts.mockResolvedValue({ data: [] });
+            integration.quo.api.createFriggContact.mockResolvedValue({
+                data: { id: 'quo-no-phone-id', externalId: 'crm-no-phone' },
+            });
+
+            const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+
+            await integration.upsertContactToQuo(quoContact);
+
+            expect(integration.upsertMapping).not.toHaveBeenCalled();
+            expect(consoleSpy).toHaveBeenCalledWith(
+                expect.stringContaining('No phone number'),
+            );
+
+            consoleSpy.mockRestore();
+        });
+
+        it('should handle listContacts API errors gracefully', async () => {
+            const quoContact = {
+                externalId: 'crm-error',
+                defaultFields: { firstName: 'Error' },
+            };
+
+            integration.quo.api.listContacts.mockRejectedValue(
+                new Error('API connection failed'),
+            );
+
+            await expect(
+                integration.upsertContactToQuo(quoContact),
+            ).rejects.toThrow('API connection failed');
+        });
+
+        it('should handle createFriggContact API errors', async () => {
+            const quoContact = {
+                externalId: 'crm-create-error',
+                defaultFields: { firstName: 'CreateError' },
+            };
+
+            integration.quo.api.listContacts.mockResolvedValue({ data: [] });
+            integration.quo.api.createFriggContact.mockRejectedValue(
+                new Error('Create failed'),
+            );
+
+            await expect(
+                integration.upsertContactToQuo(quoContact),
+            ).rejects.toThrow('Create failed');
+        });
+
+        it('should handle updateFriggContact API errors', async () => {
+            const quoContact = {
+                externalId: 'crm-update-error',
+                defaultFields: { firstName: 'UpdateError' },
+            };
+
+            integration.quo.api.listContacts.mockResolvedValue({
+                data: [{ id: 'existing-id', externalId: 'crm-update-error' }],
+            });
+            integration.quo.api.updateFriggContact.mockRejectedValue(
+                new Error('Update failed'),
+            );
+
+            await expect(
+                integration.upsertContactToQuo(quoContact),
+            ).rejects.toThrow('Update failed');
+        });
+    });
 });

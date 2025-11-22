@@ -1726,18 +1726,10 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             const person = await this._fetchZohoObject(objectType, recordId);
             const quoContact = await this.transformPersonToQuo(person);
 
-            // Use bulkUpsertToQuo for both insert and update operations
-            const result = await this.bulkUpsertToQuo([quoContact]);
-
-            if (result.errorCount > 0) {
-                const error = result.errors[0];
-                throw new Error(
-                    `Failed to ${operation} contact: ${error?.error || 'Unknown error'}`,
-                );
-            }
+            const result = await this.upsertContactToQuo(quoContact);
 
             console.log(
-                `[Zoho CRM] ✓ Contact synced to Quo via bulkUpsertToQuo (${operation}, externalId: ${quoContact.externalId})`,
+                `[Zoho CRM] ✓ Contact ${result.action} in Quo (externalId: ${quoContact.externalId}, quoContactId: ${result.quoContactId})`,
             );
 
             console.log(

@@ -1046,6 +1046,83 @@ class BaseCRMIntegration extends IntegrationBase {
     // ============================================================================
 
     /**
+     * Upsert a single contact to Quo using Frigg-authenticated endpoints
+     *
+     * This method implements the lookup-then-create/update pattern:
+     * 1. Look up contact by externalId using listContacts
+     * 2. If found, update using updateFriggContact
+     * 3. If not found, create using createFriggContact
+     * 4. Store mapping by phone number
+     *
+     * Uses /frigg/contacts endpoints which require x-frigg-api-key header.
+     *
+     * @param {Object} quoContact - Contact data in Quo format
+     * @param {string} quoContact.externalId - External CRM ID (required)
+     * @param {Object} quoContact.defaultFields - Contact fields
+     * @returns {Promise<{action: 'created'|'updated', quoContactId: string, externalId: string}>}
+     */
+    async upsertContactToQuo(quoContact) {
+        if (!this.quo?.api) {
+            throw new Error('Quo API not available');
+        }
+
+        if (!quoContact.externalId) {
+            throw new Error('Contact must have an externalId');
+        }
+
+        const existingContacts = await this.quo.api.listContacts({
+            externalIds: [quoContact.externalId],
+            maxResults: 1,
+        });
+
+        const existingContact =
+            existingContacts?.data?.length > 0 ? existingContacts.data[0] : null;
+
+        let result;
+        let action;
+
+        if (existingContact) {
+            const response = await this.quo.api.updateFriggContact(
+                existingContact.id,
+                quoContact,
+            );
+            result = response.data;
+            action = 'updated';
+        } else {
+            const response = await this.quo.api.createFriggContact(quoContact);
+            result = response.data;
+            action = 'created';
+        }
+
+        const quoContactId = result.id;
+        const phoneNumber = quoContact.defaultFields?.phoneNumbers?.[0]?.value;
+
+        if (phoneNumber) {
+            const mappingData = {
+                externalId: quoContact.externalId,
+                quoContactId,
+                phoneNumber,
+                entityType: 'people',
+                lastSyncedAt: new Date().toISOString(),
+                syncMethod: 'upsert',
+                action,
+            };
+
+            await this.upsertMapping(phoneNumber, mappingData);
+        } else {
+            console.warn(
+                `No phone number for ${quoContact.externalId}, skipping mapping`,
+            );
+        }
+
+        return {
+            action,
+            quoContactId,
+            externalId: quoContact.externalId,
+        };
+    }
+
+    /**
      * Fetch contacts by external IDs with automatic pagination to respect API limits
      *
      * The Quo API has a maxResults limit of 50. This method automatically handles

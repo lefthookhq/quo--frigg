@@ -2255,7 +2255,8 @@ class AttioIntegration extends BaseCRMIntegration {
      * Sync Attio person record to Quo
      * Transforms Attio person data to Quo contact format
      *
-     * Phase 2 Fix: Handles 409 conflicts by fetching existing contact and creating mapping
+     * Uses upsertContactToQuo which handles lookup-then-create/update
+     * via Frigg-authenticated endpoints
      *
      * @private
      * @param {Object} attioRecord - Attio person record
@@ -2275,34 +2276,11 @@ class AttioIntegration extends BaseCRMIntegration {
                 throw new Error('Quo API not available');
             }
 
-            if (action === 'created') {
-                // Use bulkUpsertToQuo instead of singleton createContact
-                const result = await this.bulkUpsertToQuo([quoContact]);
+            const result = await this.upsertContactToQuo(quoContact);
 
-                if (result.errorCount > 0) {
-                    const error = result.errors[0];
-                    throw new Error(
-                        `Failed to create contact: ${error?.error || 'Unknown error'}`,
-                    );
-                }
-
-                console.log(
-                    `[Attio] ✓ Contact created in Quo via bulkUpsertToQuo (externalId: ${quoContact.externalId})`,
-                );
-            } else {
-                const result = await this.bulkUpsertToQuo([quoContact]);
-
-                if (result.errorCount > 0) {
-                    const error = result.errors[0];
-                    throw new Error(
-                        `Failed to update contact: ${error?.error || 'Unknown error'}`,
-                    );
-                }
-
-                console.log(
-                    `[Attio] ✓ Contact updated in Quo via bulkUpsertToQuo (externalId: ${quoContact.externalId})`,
-                );
-            }
+            console.log(
+                `[Attio] ✓ Contact ${result.action} in Quo (externalId: ${quoContact.externalId}, quoContactId: ${result.quoContactId})`,
+            );
 
             console.log(
                 `[Attio] ✓ Person ${attioRecord.id.record_id} synced to Quo`,
