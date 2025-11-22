@@ -1219,4 +1219,308 @@ describe('BaseCRMIntegration', () => {
             ).rejects.toThrow('Update failed');
         });
     });
+
+    describe('onUpdate - Configuration Updates', () => {
+        /**
+         * TDD Tests for onUpdate with resourceIds → enabledPhoneIds translation
+         *
+         * Requirements:
+         * 1. Translate Quo's `resourceIds` to our internal `enabledPhoneIds`
+         * 2. Use PATCH semantics (merge, don't replace config)
+         * 3. Update Quo webhooks when phone IDs change
+         * 4. Preserve existing config fields not in the update
+         */
+
+        beforeEach(() => {
+            // Set up existing config with webhooks configured
+            integration.config = {
+                enabledPhoneIds: ['PN-old-1', 'PN-old-2'],
+                quoMessageWebhookId: 'webhook-msg-123',
+                quoCallWebhookId: 'webhook-call-123',
+                quoCallSummaryWebhookId: 'webhook-summary-123',
+                someOtherConfig: 'should-be-preserved',
+            };
+
+            integration.id = 'integration-123';
+
+            // Mock Quo API webhook updates
+            integration.quo.api.updateWebhook = jest.fn().mockResolvedValue({});
+
+            // Mock validateConfig to return valid
+            integration.validateConfig = jest
+                .fn()
+                .mockReturnValue({ isValid: true });
+        });
+
+        describe('resourceIds translation', () => {
+            it('should translate resourceIds to enabledPhoneIds', async () => {
+                const newResourceIds = ['PN-new-1', 'PN-new-2', 'PN-new-3'];
+
+                await integration.onUpdate({
+                    config: { resourceIds: newResourceIds },
+                });
+
+                // Verify config was updated with translated field name
+                expect(
+                    integration.commands.updateIntegrationConfig,
+                ).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        config: expect.objectContaining({
+                            enabledPhoneIds: newResourceIds,
+                        }),
+                    }),
+                );
+
+                // Local config should also be updated
+                expect(integration.config.enabledPhoneIds).toEqual(
+                    newResourceIds,
+                );
+            });
+
+            it('should NOT store resourceIds in config (only enabledPhoneIds)', async () => {
+                await integration.onUpdate({
+                    config: { resourceIds: ['PN-1', 'PN-2'] },
+                });
+
+                // resourceIds should be translated, not stored directly
+                expect(integration.config.resourceIds).toBeUndefined();
+                expect(integration.config.enabledPhoneIds).toEqual([
+                    'PN-1',
+                    'PN-2',
+                ]);
+            });
+        });
+
+        describe('PATCH semantics', () => {
+            it('should preserve existing config fields not in update', async () => {
+                await integration.onUpdate({
+                    config: { resourceIds: ['PN-new-1'] },
+                });
+
+                // Original fields should be preserved
+                expect(integration.config.someOtherConfig).toBe(
+                    'should-be-preserved',
+                );
+                expect(integration.config.quoMessageWebhookId).toBe(
+                    'webhook-msg-123',
+                );
+            });
+
+            it('should merge nested objects (deep merge)', async () => {
+                integration.config.nested = {
+                    existingKey: 'existing-value',
+                    anotherKey: 'another-value',
+                };
+
+                await integration.onUpdate({
+                    config: {
+                        nested: { newKey: 'new-value' },
+                    },
+                });
+
+                expect(integration.config.nested).toEqual({
+                    existingKey: 'existing-value',
+                    anotherKey: 'another-value',
+                    newKey: 'new-value',
+                });
+            });
+
+            it('should handle empty config update gracefully', async () => {
+                const originalConfig = { ...integration.config };
+
+                await integration.onUpdate({ config: {} });
+
+                // Config should remain unchanged
+                expect(integration.config.enabledPhoneIds).toEqual(
+                    originalConfig.enabledPhoneIds,
+                );
+            });
+
+            it('should handle undefined config gracefully', async () => {
+                const originalConfig = { ...integration.config };
+
+                await integration.onUpdate({});
+
+                // Config should remain unchanged
+                expect(integration.config.enabledPhoneIds).toEqual(
+                    originalConfig.enabledPhoneIds,
+                );
+            });
+        });
+
+        describe('webhook updates on phone ID changes', () => {
+            it('should update all Quo webhooks when resourceIds change', async () => {
+                const newResourceIds = ['PN-new-1', 'PN-new-2'];
+
+                await integration.onUpdate({
+                    config: { resourceIds: newResourceIds },
+                });
+
+                // All three webhooks should be updated
+                expect(integration.quo.api.updateWebhook).toHaveBeenCalledTimes(
+                    3,
+                );
+                expect(integration.quo.api.updateWebhook).toHaveBeenCalledWith(
+                    'webhook-msg-123',
+                    { resourceIds: newResourceIds },
+                );
+                expect(integration.quo.api.updateWebhook).toHaveBeenCalledWith(
+                    'webhook-call-123',
+                    { resourceIds: newResourceIds },
+                );
+                expect(integration.quo.api.updateWebhook).toHaveBeenCalledWith(
+                    'webhook-summary-123',
+                    { resourceIds: newResourceIds },
+                );
+            });
+
+            it('should NOT update webhooks if phone IDs have not changed', async () => {
+                // Update with same phone IDs
+                await integration.onUpdate({
+                    config: {
+                        resourceIds: ['PN-old-1', 'PN-old-2'],
+                    },
+                });
+
+                expect(
+                    integration.quo.api.updateWebhook,
+                ).not.toHaveBeenCalled();
+            });
+
+            it('should detect phone ID changes regardless of array order', async () => {
+                // Same IDs but different order - should NOT trigger update
+                await integration.onUpdate({
+                    config: {
+                        resourceIds: ['PN-old-2', 'PN-old-1'],
+                    },
+                });
+
+                expect(
+                    integration.quo.api.updateWebhook,
+                ).not.toHaveBeenCalled();
+            });
+
+            it('should update webhooks when phone IDs are added', async () => {
+                await integration.onUpdate({
+                    config: {
+                        resourceIds: ['PN-old-1', 'PN-old-2', 'PN-new-3'],
+                    },
+                });
+
+                expect(integration.quo.api.updateWebhook).toHaveBeenCalledTimes(
+                    3,
+                );
+            });
+
+            it('should update webhooks when phone IDs are removed', async () => {
+                await integration.onUpdate({
+                    config: { resourceIds: ['PN-old-1'] },
+                });
+
+                expect(integration.quo.api.updateWebhook).toHaveBeenCalledTimes(
+                    3,
+                );
+            });
+
+            it('should warn but not fail if Quo API is not configured', async () => {
+                const consoleSpy = jest
+                    .spyOn(console, 'warn')
+                    .mockImplementation();
+                integration.quo = null;
+
+                await integration.onUpdate({
+                    config: { resourceIds: ['PN-new-1'] },
+                });
+
+                expect(consoleSpy).toHaveBeenCalledWith(
+                    expect.stringContaining('Quo API not configured'),
+                );
+                consoleSpy.mockRestore();
+            });
+        });
+
+        describe('error handling', () => {
+            it('should throw if webhook update fails', async () => {
+                integration.quo.api.updateWebhook.mockRejectedValue(
+                    new Error('Webhook update failed'),
+                );
+
+                await expect(
+                    integration.onUpdate({
+                        config: { resourceIds: ['PN-new-1'] },
+                    }),
+                ).rejects.toThrow('Webhook update failed');
+            });
+
+            it('should throw if webhooks are not configured but phone IDs change', async () => {
+                integration.config.quoMessageWebhookId = null;
+
+                await expect(
+                    integration.onUpdate({
+                        config: { resourceIds: ['PN-new-1'] },
+                    }),
+                ).rejects.toThrow('Webhooks not configured');
+            });
+        });
+
+        describe('validation', () => {
+            it('should call validateConfig after update', async () => {
+                await integration.onUpdate({
+                    config: { resourceIds: ['PN-1'] },
+                });
+
+                expect(integration.validateConfig).toHaveBeenCalled();
+            });
+
+            it('should return validation result', async () => {
+                integration.validateConfig.mockReturnValue({
+                    isValid: true,
+                    errors: [],
+                });
+
+                const result = await integration.onUpdate({
+                    config: { resourceIds: ['PN-1'] },
+                });
+
+                expect(result).toEqual({ isValid: true, errors: [] });
+            });
+        });
+
+        describe('_translateConfigFields', () => {
+            it('should translate resourceIds to enabledPhoneIds', () => {
+                const result = integration._translateConfigFields({
+                    resourceIds: ['PN-1', 'PN-2'],
+                    otherField: 'value',
+                });
+
+                expect(result).toEqual({
+                    enabledPhoneIds: ['PN-1', 'PN-2'],
+                    otherField: 'value',
+                });
+                expect(result.resourceIds).toBeUndefined();
+            });
+
+            it('should handle null config', () => {
+                expect(integration._translateConfigFields(null)).toEqual({});
+            });
+
+            it('should handle undefined config', () => {
+                expect(integration._translateConfigFields(undefined)).toEqual(
+                    {},
+                );
+            });
+
+            it('should pass through config without resourceIds unchanged', () => {
+                const result = integration._translateConfigFields({
+                    someField: 'value',
+                    nested: { key: 'val' },
+                });
+
+                expect(result).toEqual({
+                    someField: 'value',
+                    nested: { key: 'val' },
+                });
+            });
+        });
+    });
 });

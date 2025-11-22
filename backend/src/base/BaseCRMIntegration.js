@@ -1592,8 +1592,12 @@ class BaseCRMIntegration extends IntegrationBase {
 
         console.log('[Config Update] Processing configuration update');
 
+        // Translate external field names to internal field names
+        // Quo backend sends `resourceIds` but we store as `enabledPhoneIds`
+        const translatedConfig = this._translateConfigFields(updateConfig);
+
         // PATCH semantics: Merge update into existing config (deep merge for nested objects)
-        const patchedConfig = this._deepMerge(this.config, updateConfig);
+        const patchedConfig = this._deepMerge(this.config, translatedConfig);
 
         // Check if enabledPhoneIds changed (before updating config)
         const oldPhoneIds = this.config?.enabledPhoneIds || [];
@@ -1675,6 +1679,35 @@ class BaseCRMIntegration extends IntegrationBase {
         console.log('[Config Update] ✓ Update complete');
 
         return validationResult;
+    }
+
+    /**
+     * Translate external config field names to internal field names
+     *
+     * The Quo backend sends config updates using their external API field names,
+     * which need to be translated to our internal field names for storage.
+     *
+     * Translations:
+     * - `resourceIds` → `enabledPhoneIds` (phone numbers to filter webhooks)
+     *
+     * @private
+     * @param {Object} config - Config object with external field names
+     * @returns {Object} Config object with internal field names
+     */
+    _translateConfigFields(config) {
+        if (!config) {
+            return {};
+        }
+
+        const translated = { ...config };
+
+        // Translate resourceIds → enabledPhoneIds
+        if ('resourceIds' in translated) {
+            translated.enabledPhoneIds = translated.resourceIds;
+            delete translated.resourceIds;
+        }
+
+        return translated;
     }
 
     /**
