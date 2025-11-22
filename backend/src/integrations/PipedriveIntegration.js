@@ -2,6 +2,7 @@ const { BaseCRMIntegration } = require('../base/BaseCRMIntegration');
 const pipedrive = require('@friggframework/api-module-pipedrive');
 const quo = require('../api-modules/quo');
 const { createFriggCommands } = require('@friggframework/core');
+const CallSummaryEnrichmentService = require('../base/services/CallSummaryEnrichmentService');
 
 /**
  * PipedriveIntegration - Refactored to extend BaseCRMIntegration
@@ -1188,18 +1189,10 @@ class PipedriveIntegration extends BaseCRMIntegration {
 
             const quoContact = await this.transformPersonToQuo(person);
 
-            // Use bulkUpsertToQuo for both added and updated operations
-            const result = await this.bulkUpsertToQuo([quoContact]);
-
-            if (result.errorCount > 0) {
-                const error = result.errors[0];
-                throw new Error(
-                    `Failed to ${action} contact: ${error?.error || 'Unknown error'}`,
-                );
-            }
+            const result = await this.upsertContactToQuo(quoContact);
 
             console.log(
-                `[Pipedrive] ✓ Contact synced to Quo via bulkUpsertToQuo (${action}, externalId: ${quoContact.externalId})`,
+                `[Pipedrive] ✓ Contact ${result.action} in Quo (externalId: ${quoContact.externalId}, quoContactId: ${result.quoContactId})`,
             );
 
             console.log(`[Pipedrive] ✓ Person ${person.id} synced to Quo`);
@@ -1368,13 +1361,29 @@ class PipedriveIntegration extends BaseCRMIntegration {
             person_id: parseInt(pipedrivePersonId),
         };
 
-        await this.pipedrive.api.createNote(noteData);
+        const noteResponse = await this.pipedrive.api.createNote(noteData);
+
+        // Extract note ID from response for later enrichment
+        const noteId = noteResponse?.data?.id || null;
+
+        // Store mapping: call ID -> note ID (for later enrichment in call.summary.completed)
+        if (noteId) {
+            await this.upsertMapping(callObject.id, {
+                noteId,
+                callId: callObject.id,
+                pipedrivePersonId,
+                createdAt: new Date().toISOString(),
+            });
+            console.log(
+                `[Quo Webhook] ✓ Mapping stored: call ${callObject.id} -> note ${noteId}`,
+            );
+        }
 
         console.log(
             `[Quo Webhook] ✓ Call logged as note for person ${pipedrivePersonId}`,
         );
 
-        return { logged: true, personId: pipedrivePersonId };
+        return { logged: true, personId: pipedrivePersonId, noteId };
     }
 
     /**
@@ -1451,7 +1460,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
 
     /**
      * Handle Quo call.summary.completed webhook event
-     * Creates a Pipedrive note with call context, summary, and next steps
+     * Uses CallSummaryEnrichmentService to update the existing note with enriched content
      *
      * @private
      * @param {Object} webhookData - Quo webhook payload
@@ -1496,84 +1505,86 @@ class PipedriveIntegration extends BaseCRMIntegration {
             `${userDetails.data.firstName || ''} ${userDetails.data.lastName || ''}`.trim() ||
             'Quo User';
 
-        const minutes = Math.floor(callObject.duration / 60);
-        const seconds = callObject.duration % 60;
-        const durationFormatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-
-        let statusDescription;
-        if (callObject.status === 'completed') {
-            statusDescription =
-                callObject.direction === 'outgoing'
-                    ? `Outgoing initiated by ${userName}`
-                    : `Incoming answered by ${userName}`;
-        } else if (
-            callObject.status === 'no-answer' ||
-            callObject.status === 'missed'
-        ) {
-            statusDescription = 'Incoming missed';
-        } else {
-            statusDescription = `${callObject.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} ${callObject.status}`;
-        }
-
         const deepLink = webhookData.data.deepLink || '#';
 
-        let formattedNote = '';
-
-        if (callObject.direction === 'outgoing') {
-            formattedNote = `<p><strong>☎️  Call ${inboxName} ${inboxNumber} → ${contactPhone}</strong></p>`;
-        } else {
-            formattedNote = `<p><strong>☎️  Call ${contactPhone} → ${inboxName} ${inboxNumber}</strong></p>`;
-        }
-
-        formattedNote += `\n<p>${statusDescription}`;
-        if (callObject.status === 'completed' && callObject.duration > 0) {
-            formattedNote += ` / ▶️ Recording (${durationFormatted})`;
-        }
-        formattedNote += `</p>`;
-
-        if (summary.length > 0) {
-            formattedNote += `\n<p><strong>📝 Summary:</strong></p>\n<ul>`;
-            for (const point of summary) {
-                const text =
-                    typeof point === 'string'
-                        ? point
-                        : point.text || point.content || '';
-                formattedNote += `\n<li>${text}</li>`;
-            }
-            formattedNote += `\n</ul>`;
-        }
-
-        if (nextSteps.length > 0) {
-            formattedNote += `\n<p><strong>✅ Next Steps:</strong></p>\n<ul>`;
-            for (const step of nextSteps) {
-                const text =
-                    typeof step === 'string'
-                        ? step
-                        : step.text || step.content || '';
-                formattedNote += `\n<li>${text}</li>`;
-            }
-            formattedNote += `\n</ul>`;
-        }
-
-        formattedNote += `\n<p><a href="${deepLink}">View the call activity in Quo</a></p>`;
-
-        const noteData = {
-            content: formattedNote,
-            person_id: parseInt(pipedrivePersonId),
-        };
-
-        await this.pipedrive.api.createNote(noteData);
+        // Use CallSummaryEnrichmentService to enrich the note with update pattern
+        const enrichmentResult = await CallSummaryEnrichmentService.enrichCallNote({
+            callId,
+            summaryData: { summary, nextSteps },
+            callDetails: callObject,
+            quoApi: this.quo.api,
+            crmAdapter: {
+                canUpdateNote: () => true, // Pipedrive supports note updates!
+                createNote: async ({ contactId, content }) => {
+                    const noteResponse = await this.pipedrive.api.createNote({
+                        content,
+                        person_id: parseInt(contactId),
+                    });
+                    return noteResponse?.data?.id || null;
+                },
+                updateNote: async (noteId, { content }) => {
+                    // Pipedrive v1 Notes API: PUT /v1/notes/{id}
+                    const options = {
+                        url: `${this.pipedrive.api.baseUrl}/v1/notes/${noteId}`,
+                        body: { content },
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                    };
+                    return await this.pipedrive.api._put(options);
+                },
+            },
+            mappingRepo: {
+                get: async (id) => await this.getMapping(id),
+                upsert: async (id, data) => await this.upsertMapping(id, data),
+            },
+            contactId: pipedrivePersonId,
+            formatters: {
+                formatCallHeader: (call) => {
+                    let statusDescription;
+                    if (call.status === 'completed') {
+                        statusDescription =
+                            call.direction === 'outgoing'
+                                ? `Outgoing initiated by ${userName}`
+                                : `Incoming answered by ${userName}`;
+                    } else if (
+                        call.status === 'no-answer' ||
+                        call.status === 'missed'
+                    ) {
+                        statusDescription = 'Incoming missed';
+                    } else {
+                        statusDescription = `${call.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} ${call.status}`;
+                    }
+                    return statusDescription;
+                },
+                formatTitle: (call) => {
+                    if (call.direction === 'outgoing') {
+                        return `<p><strong>☎️  Call ${inboxName} ${inboxNumber} → ${contactPhone}</strong></p>`;
+                    } else {
+                        return `<p><strong>☎️  Call ${contactPhone} → ${inboxName} ${inboxNumber}</strong></p>`;
+                    }
+                },
+                formatDeepLink: () => {
+                    return `\n<p><a href="${deepLink}">View the call activity in Quo</a></p>`;
+                },
+                // Pipedrive uses HTML format for notes
+                useHtmlFormat: true,
+            },
+        });
 
         console.log(
-            `[Quo Webhook] ✓ Call summary logged as note for person ${pipedrivePersonId}`,
+            `[Quo Webhook] ✓ Call summary enrichment complete for person ${pipedrivePersonId}`,
         );
 
         return {
             logged: true,
             personId: pipedrivePersonId,
             callId,
+            noteId: enrichmentResult.noteId,
             summaryPoints: summary.length,
             nextStepsCount: nextSteps.length,
+            recordingsCount: enrichmentResult.recordingsCount,
+            hasVoicemail: enrichmentResult.hasVoicemail,
         };
     }
 

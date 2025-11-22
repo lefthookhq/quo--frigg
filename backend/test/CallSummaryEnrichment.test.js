@@ -9,6 +9,8 @@
  * Integrations:
  * - Attio: delete old note + create new note (no update API)
  * - AxisCare: update existing call log (has update API)
+ * - Zoho CRM: update existing note (has update API)
+ * - Pipedrive: update existing note (has update API)
  *
  * Safety: ALWAYS create new before deleting old to prevent data loss
  */
@@ -974,6 +976,269 @@ describe('Call Summary Enrichment - Zoho CRM Integration', () => {
             const updateCall = mockZohoCrmApi.api.updateNote.mock.calls[0][3];
             expect(updateCall.Note_Content).toContain('https://storage.example.com/zoho-vm.mp3');
             expect(updateCall.Note_Content).toContain('Hi, please call me back about the proposal');
+        });
+    });
+});
+
+describe('Call Summary Enrichment - Pipedrive Integration', () => {
+    let integration;
+    let mockPipedriveApi;
+    let mockQuoApi;
+    let mockCommands;
+
+    // Import at describe level to avoid issues
+    const PipedriveIntegration = require('../src/integrations/PipedriveIntegration');
+
+    beforeEach(() => {
+        mockPipedriveApi = {
+            api: {
+                createNote: jest.fn(),
+                _put: jest.fn(), // Used for updateNote
+                searchPersons: jest.fn(),
+                baseUrl: 'https://company.pipedrive.com/api',
+            },
+        };
+
+        mockQuoApi = {
+            api: {
+                getCall: jest.fn(),
+                getCallRecordings: jest.fn(),
+                getCallVoicemails: jest.fn(),
+                getPhoneNumber: jest.fn(),
+                getUser: jest.fn(),
+            },
+        };
+
+        mockCommands = {
+            updateIntegrationConfig: jest.fn().mockResolvedValue({}),
+        };
+
+        integration = new PipedriveIntegration({
+            userId: 'test-user',
+            id: 'test-integration-id',
+        });
+
+        integration.pipedrive = mockPipedriveApi;
+        integration.quo = mockQuoApi;
+        integration.commands = mockCommands;
+        integration.config = { quoCallWebhookKey: 'test-key' };
+
+        integration.upsertMapping = jest.fn().mockResolvedValue({});
+        integration.getMapping = jest.fn().mockResolvedValue(null);
+    });
+
+    describe('Phase 1: call.completed - Initial Note Creation with Mapping', () => {
+        it('should create initial note and store mapping with call ID -> note ID', async () => {
+            // Arrange
+            const webhookData = {
+                type: 'call.completed',
+                data: {
+                    object: {
+                        id: 'call-pd-123',
+                        direction: 'incoming',
+                        status: 'completed',
+                        duration: 120,
+                        participants: ['+15551234567', '+15559876543'],
+                        phoneNumberId: 'pn-pd-456',
+                        userId: 'user-pd-789',
+                        createdAt: '2025-01-15T10:30:00Z',
+                    },
+                    deepLink: 'https://app.openphone.com/calls/call-pd-123',
+                },
+            };
+
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue({
+                data: { symbol: '📞', name: 'Sales Line', number: '+15559876543' },
+            });
+
+            mockQuoApi.api.getUser.mockResolvedValue({
+                data: { firstName: 'John', lastName: 'Doe' },
+            });
+
+            mockPipedriveApi.api.createNote.mockResolvedValue({
+                data: { id: 12345 },
+            });
+
+            // Mock _findPipedriveContactByPhone - returns numeric ID as string (Pipedrive person IDs are numbers)
+            integration._findPipedriveContactByPhone = jest
+                .fn()
+                .mockResolvedValue('456789');
+
+            // Act
+            await integration._handleQuoCallEvent(webhookData);
+
+            // Assert - Note created
+            expect(mockPipedriveApi.api.createNote).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    content: expect.stringContaining('Call'),
+                    person_id: 456789, // parseInt('456789')
+                }),
+            );
+
+            // Assert - Mapping stored: call ID -> note ID
+            expect(integration.upsertMapping).toHaveBeenCalledWith(
+                'call-pd-123',
+                expect.objectContaining({
+                    noteId: 12345,
+                    callId: 'call-pd-123',
+                    pipedrivePersonId: '456789',
+                }),
+            );
+        });
+    });
+
+    describe('Phase 3: Pipedrive - Update Existing Note with Enriched Summary', () => {
+        it('should update existing note with enriched summary (Pipedrive supports updates)', async () => {
+            // Arrange
+            const webhookData = {
+                type: 'call.summary.completed',
+                data: {
+                    object: {
+                        callId: 'call-pd-123',
+                        summary: ['Discussed product features', 'Reviewed pricing'],
+                        nextSteps: ['Send proposal', 'Schedule demo'],
+                        status: 'completed',
+                    },
+                    deepLink: 'https://app.openphone.com/calls/call-pd-123',
+                },
+            };
+
+            // Existing mapping from Phase 1
+            integration.getMapping.mockResolvedValue({
+                noteId: 12345,
+                callId: 'call-pd-123',
+                pipedrivePersonId: 'pd-person-123',
+            });
+
+            mockQuoApi.api.getCall.mockResolvedValue({
+                data: {
+                    id: 'call-pd-123',
+                    direction: 'outgoing',
+                    status: 'completed',
+                    duration: 300,
+                    participants: ['+15559876543', '+15551234567'],
+                    phoneNumberId: 'pn-pd',
+                    userId: 'user-pd',
+                    createdAt: '2025-01-15T11:00:00Z',
+                },
+            });
+
+            mockQuoApi.api.getCallRecordings.mockResolvedValue({
+                data: [
+                    {
+                        url: 'https://storage.example.com/pd-recording.mp3',
+                        duration: 300,
+                    },
+                ],
+            });
+
+            mockQuoApi.api.getCallVoicemails.mockResolvedValue({ data: null });
+
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue({
+                data: { name: 'Sales Line', number: '+15559876543' },
+            });
+
+            mockQuoApi.api.getUser.mockResolvedValue({
+                data: { firstName: 'Alex', lastName: 'Johnson' },
+            });
+
+            mockPipedriveApi.api._put.mockResolvedValue({
+                data: { id: 12345 },
+            });
+
+            // Mock _findPipedriveContactByPhone
+            integration._findPipedriveContactByPhone = jest
+                .fn()
+                .mockResolvedValue('pd-person-123');
+
+            // Act
+            await integration._handleQuoCallSummaryEvent(webhookData);
+
+            // Assert - _put called for update (NOT createNote)
+            expect(mockPipedriveApi.api._put).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    url: 'https://company.pipedrive.com/api/v1/notes/12345',
+                    body: expect.objectContaining({
+                        content: expect.stringMatching(/Summary:.*Discussed product features/s),
+                    }),
+                }),
+            );
+
+            // Assert - Notes include recording URL
+            const updateCall = mockPipedriveApi.api._put.mock.calls[0][0];
+            expect(updateCall.body.content).toContain('https://storage.example.com/pd-recording.mp3');
+
+            // Assert - createNote NOT called (update only)
+            expect(mockPipedriveApi.api.createNote).not.toHaveBeenCalled();
+        });
+
+        it('should handle voicemail transcripts in Pipedrive note updates', async () => {
+            // Arrange
+            const webhookData = {
+                type: 'call.summary.completed',
+                data: {
+                    object: {
+                        callId: 'call-pd-vm',
+                        summary: ['Customer left voicemail'],
+                        nextSteps: ['Return call'],
+                        status: 'completed',
+                    },
+                    deepLink: 'https://app.openphone.com/calls/call-pd-vm',
+                },
+            };
+
+            integration.getMapping.mockResolvedValue({
+                noteId: 67890,
+                callId: 'call-pd-vm',
+                pipedrivePersonId: 'pd-person-vm',
+            });
+
+            mockQuoApi.api.getCall.mockResolvedValue({
+                data: {
+                    id: 'call-pd-vm',
+                    direction: 'incoming',
+                    status: 'missed',
+                    duration: 0,
+                    participants: ['+15551234567', '+15559876543'],
+                    phoneNumberId: 'pn-pd-vm',
+                    userId: 'user-pd-vm',
+                    createdAt: '2025-01-15T12:00:00Z',
+                },
+            });
+
+            mockQuoApi.api.getCallRecordings.mockResolvedValue({ data: [] });
+
+            mockQuoApi.api.getCallVoicemails.mockResolvedValue({
+                data: {
+                    recordingUrl: 'https://storage.example.com/pd-vm.mp3',
+                    transcript: 'Hi, please call me back about my order',
+                    duration: 25,
+                },
+            });
+
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue({
+                data: { name: 'Main Line', number: '+15559876543' },
+            });
+
+            mockQuoApi.api.getUser.mockResolvedValue({
+                data: { firstName: 'Sam', lastName: 'Wilson' },
+            });
+
+            mockPipedriveApi.api._put.mockResolvedValue({
+                data: { id: 67890 },
+            });
+
+            integration._findPipedriveContactByPhone = jest
+                .fn()
+                .mockResolvedValue('pd-person-vm');
+
+            // Act
+            await integration._handleQuoCallSummaryEvent(webhookData);
+
+            // Assert - Voicemail URL and transcript included
+            const updateCall = mockPipedriveApi.api._put.mock.calls[0][0];
+            expect(updateCall.body.content).toContain('https://storage.example.com/pd-vm.mp3');
+            expect(updateCall.body.content).toContain('Hi, please call me back about my order');
         });
     });
 });
