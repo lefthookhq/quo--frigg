@@ -727,10 +727,7 @@ class AttioIntegration extends BaseCRMIntegration {
             }
         }
 
-        // Use web_url from Attio response if available, otherwise construct fallback URL
-        const sourceUrl =
-            person.web_url ||
-            `https://app.attio.com/people/${person.id.record_id}`;
+        const sourceUrl = person.web_url || null;
 
         return {
             externalId: person.id.record_id,

@@ -289,7 +289,7 @@ describe('AttioIntegration (Refactored)', () => {
                 expect(result).toEqual({
                     externalId: 'rec123',
                     source: 'openphone-attio',
-                    sourceUrl: 'https://app.attio.com/people/rec123',
+                    sourceUrl: null,
                     defaultFields: {
                         firstName: 'John',
                         lastName: 'Doe',
@@ -422,10 +422,9 @@ describe('AttioIntegration (Refactored)', () => {
                 );
             });
 
-            it('should fallback to constructed URL if web_url is not provided', async () => {
+            it('should return null sourceUrl if web_url is not provided', async () => {
                 const attioPerson = {
                     id: { record_id: 'rec456', object_id: 'people' },
-                    // No web_url field
                     values: {
                         name: [
                             {
@@ -442,10 +441,7 @@ describe('AttioIntegration (Refactored)', () => {
                 const result =
                     await integration.transformPersonToQuo(attioPerson);
 
-                // Should fallback to constructed URL
-                expect(result.sourceUrl).toBe(
-                    'https://app.attio.com/people/rec456',
-                );
+                expect(result.sourceUrl).toBeNull();
             });
         });
 
