@@ -1,5 +1,44 @@
 const { Api } = require('./api');
 
+describe('Quo API - API Key Compatibility', () => {
+    describe('API_KEY_VALUE getter', () => {
+        it('should return api_key value via API_KEY_VALUE getter for backward compatibility', () => {
+            const api = new Api({ api_key: 'test-api-key-123' });
+
+            // The getter should return the same value as api_key
+            expect(api.API_KEY_VALUE).toBe('test-api-key-123');
+            expect(api.api_key).toBe('test-api-key-123');
+        });
+
+        it('should reflect changes made via setApiKey()', () => {
+            const api = new Api();
+
+            // Initially undefined
+            expect(api.API_KEY_VALUE).toBeNull();
+
+            // Set via setApiKey
+            api.setApiKey('new-key-456');
+
+            // Should be accessible via both properties
+            expect(api.API_KEY_VALUE).toBe('new-key-456');
+            expect(api.api_key).toBe('new-key-456');
+        });
+
+        it('should work with definition.js getCredentialDetails pattern', () => {
+            // This simulates how definition.js uses the API key
+            const api = new Api();
+            api.setApiKey('credential-key-789');
+
+            // definition.js does: const apiKey = api.API_KEY_VALUE;
+            const apiKey = api.API_KEY_VALUE;
+
+            expect(apiKey).toBe('credential-key-789');
+            expect(apiKey).not.toBeUndefined();
+            expect(apiKey).not.toBeNull();
+        });
+    });
+});
+
 describe('Quo API - Frigg Contact Endpoints', () => {
     let api;
     const originalEnv = process.env;

@@ -17,9 +17,10 @@ describe('Quo API Module - API Key Authentication', () => {
                 );
             });
 
-            it('should set API_KEY_NAME to Authorization', () => {
+            it('should set api_key_name to Authorization', () => {
                 const api = new Api({});
-                expect(api.API_KEY_NAME).toBe('Authorization');
+                // frigg framework uses snake_case (api_key_name, not API_KEY_NAME)
+                expect(api.api_key_name).toBe('Authorization');
             });
 
             it('should NOT reference access_token in constructor', () => {
