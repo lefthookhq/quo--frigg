@@ -394,6 +394,59 @@ describe('AttioIntegration (Refactored)', () => {
                 expect(result.defaultFields.emails).toEqual([]);
                 expect(result.defaultFields.company).toBeNull();
             });
+
+            it('should use web_url from Attio response for sourceUrl', async () => {
+                const attioPerson = {
+                    id: { record_id: 'rec123', object_id: 'people' },
+                    web_url:
+                        'https://app.attio.com/myworkspace/person/rec123',
+                    values: {
+                        name: [
+                            {
+                                first_name: 'John',
+                                last_name: 'Doe',
+                                active_until: null,
+                            },
+                        ],
+                        email_addresses: [],
+                        phone_numbers: [],
+                    },
+                };
+
+                const result =
+                    await integration.transformPersonToQuo(attioPerson);
+
+                // Should use the web_url directly from Attio, not construct it
+                expect(result.sourceUrl).toBe(
+                    'https://app.attio.com/myworkspace/person/rec123',
+                );
+            });
+
+            it('should fallback to constructed URL if web_url is not provided', async () => {
+                const attioPerson = {
+                    id: { record_id: 'rec456', object_id: 'people' },
+                    // No web_url field
+                    values: {
+                        name: [
+                            {
+                                first_name: 'Jane',
+                                last_name: 'Smith',
+                                active_until: null,
+                            },
+                        ],
+                        email_addresses: [],
+                        phone_numbers: [],
+                    },
+                };
+
+                const result =
+                    await integration.transformPersonToQuo(attioPerson);
+
+                // Should fallback to constructed URL
+                expect(result.sourceUrl).toBe(
+                    'https://app.attio.com/people/rec456',
+                );
+            });
         });
 
         describe('logSMSToActivity', () => {
