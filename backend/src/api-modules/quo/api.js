@@ -446,6 +446,18 @@ class Api extends ApiKeyRequester {
         };
         return this._delete(options);
     }
+
+    async sendAnalyticsEvent({ orgId, userId, integration, event, data }) {
+        const options = {
+            url: this.baseUrl + '/v2/analytics',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-frigg-api-key': process.env.FRIGG_API_KEY,
+            },
+            body: { orgId, userId, integration, event, data },
+        };
+        return this._post(options);
+    }
 }
 
 module.exports = { Api };
