@@ -401,11 +401,14 @@ class AttioIntegration extends BaseCRMIntegration {
      */
     _trackAnalyticsEvent(event, data = {}) {
         if (!this.quo?.api) {
-            console.warn('[Analytics] Quo API not available, skipping tracking');
+            console.warn(
+                '[Analytics] Quo API not available, skipping tracking',
+            );
             return;
         }
 
-        this.commands.findUserById(this.userId)
+        this.commands
+            .findUserById(this.userId)
             .then((user) => {
                 return this.quo.api.sendAnalyticsEvent({
                     orgId: user?.getAppOrgId?.() || null,
@@ -419,7 +422,9 @@ class AttioIntegration extends BaseCRMIntegration {
                 console.log(`[Analytics] ✓ Tracked ${event}`);
             })
             .catch((error) => {
-                console.warn(`[Analytics] Failed to track ${event}: ${error.message}`);
+                console.warn(
+                    `[Analytics] Failed to track ${event}: ${error.message}`,
+                );
             });
     }
 
@@ -2059,7 +2064,6 @@ class AttioIntegration extends BaseCRMIntegration {
                 },
             });
 
-        // Track analytics: CallLogged (for enriched call summary)
         this._trackAnalyticsEvent(QUO_ANALYTICS_EVENTS.CALL_LOGGED, {
             callId,
         });
