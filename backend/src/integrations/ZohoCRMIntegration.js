@@ -3,6 +3,7 @@ const { Definition: QuoDefinition } = require('../api-modules/quo/definition');
 const zohoCrm = require('@friggframework/api-module-zoho-crm');
 const { createFriggCommands } = require('@friggframework/core');
 const CallSummaryEnrichmentService = require('../base/services/CallSummaryEnrichmentService');
+const { QUO_ANALYTICS_EVENTS } = require('../base/constants');
 
 class ZohoCRMIntegration extends BaseCRMIntegration {
     static Definition = {
@@ -111,6 +112,41 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 handler: this.listAccounts,
             },
         };
+    }
+
+    /**
+     * Track analytics event to Quo's analytics API (fire-and-forget)
+     * @private
+     * @param {string} event - Event type from QUO_ANALYTICS_EVENTS
+     * @param {Object} data - Event data (contactId, messageId, callId, error, etc.)
+     */
+    _trackAnalyticsEvent(event, data = {}) {
+        if (!this.quo?.api) {
+            console.warn(
+                '[Analytics] Quo API not available, skipping tracking',
+            );
+            return;
+        }
+
+        this.commands
+            .findUserById(this.userId)
+            .then((user) => {
+                return this.quo.api.sendAnalyticsEvent({
+                    orgId: user?.getAppOrgId?.() || null,
+                    userId: user?.getAppUserId?.() || null,
+                    integration: 'zoho',
+                    event,
+                    data,
+                });
+            })
+            .then(() => {
+                console.log(`[Analytics] ✓ Tracked ${event}`);
+            })
+            .catch((error) => {
+                console.warn(
+                    `[Analytics] Failed to track ${event}: ${error.message}`,
+                );
+            });
     }
 
     /**
@@ -1116,6 +1152,25 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         } catch (error) {
             console.error('[Quo Webhook] Processing error:', error);
 
+            if (eventType.startsWith('message.')) {
+                this._trackAnalyticsEvent(
+                    QUO_ANALYTICS_EVENTS.MESSAGE_LOG_FAILED,
+                    {
+                        messageId: body.data?.object?.id,
+                        error: error.message,
+                    },
+                );
+            } else if (eventType.startsWith('call.')) {
+                this._trackAnalyticsEvent(
+                    QUO_ANALYTICS_EVENTS.CALL_LOG_FAILED,
+                    {
+                        callId:
+                            body.data?.object?.id || body.data?.object?.callId,
+                        error: error.message,
+                    },
+                );
+            }
+
             await this.updateIntegrationMessages.execute(
                 this.id,
                 'errors',
@@ -1302,10 +1357,14 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 ? `☎️  Call ${inboxName} ${inboxNumber} → ${contactPhone}`
                 : `☎️  Call ${contactPhone} → ${inboxName} ${inboxNumber}`;
 
-        const noteResponse = await this.zohoCrm.api.createNote('Contacts', contactId, {
-            Note_Title: callTitle,
-            Note_Content: formattedNote,
-        });
+        const noteResponse = await this.zohoCrm.api.createNote(
+            'Contacts',
+            contactId,
+            {
+                Note_Title: callTitle,
+                Note_Content: formattedNote,
+            },
+        );
 
         // Extract note ID from response
         const noteId = noteResponse?.data?.[0]?.details?.id || null;
@@ -1326,6 +1385,10 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         console.log(
             `[Quo Webhook] ✓ Call logged as note for contact ${contactId}`,
         );
+
+        this._trackAnalyticsEvent(QUO_ANALYTICS_EVENTS.CALL_LOGGED, {
+            callId: callObject.id,
+        });
 
         return {
             logged: true,
@@ -1427,6 +1490,10 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
 
         console.log(`[Quo Webhook] ✓ Message logged for contact ${contactId}`);
 
+        this._trackAnalyticsEvent(QUO_ANALYTICS_EVENTS.MESSAGE_LOGGED, {
+            messageId: messageObject.id,
+        });
+
         return {
             logged: true,
             noteId: noteResponse.data.id,
@@ -1520,75 +1587,86 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             'Quo User';
 
         // Use CallSummaryEnrichmentService to enrich the note
-        const enrichmentResult = await CallSummaryEnrichmentService.enrichCallNote({
-            callId,
-            summaryData: { summary, nextSteps },
-            callDetails: callObject,
-            quoApi: this.quo.api,
-            crmAdapter: {
-                canUpdateNote: () => true, // Zoho CRM supports note updates!
-                createNote: async ({ contactId, content, title, timestamp }) => {
-                    const noteResponse = await this.zohoCrm.api.createNote(
-                        'Contacts',
+        const enrichmentResult =
+            await CallSummaryEnrichmentService.enrichCallNote({
+                callId,
+                summaryData: { summary, nextSteps },
+                callDetails: callObject,
+                quoApi: this.quo.api,
+                crmAdapter: {
+                    canUpdateNote: () => true, // Zoho CRM supports note updates!
+                    createNote: async ({
                         contactId,
-                        {
-                            Note_Title: title,
-                            Note_Content: content,
-                        },
-                    );
-                    return noteResponse?.data?.[0]?.details?.id || null;
+                        content,
+                        title,
+                        timestamp,
+                    }) => {
+                        const noteResponse = await this.zohoCrm.api.createNote(
+                            'Contacts',
+                            contactId,
+                            {
+                                Note_Title: title,
+                                Note_Content: content,
+                            },
+                        );
+                        return noteResponse?.data?.[0]?.details?.id || null;
+                    },
+                    updateNote: async (noteId, { content, title }) => {
+                        return await this.zohoCrm.api.updateNote(
+                            'Contacts',
+                            zohoContactId,
+                            noteId,
+                            {
+                                Note_Title: title,
+                                Note_Content: content,
+                            },
+                        );
+                    },
                 },
-                updateNote: async (noteId, { content, title }) => {
-                    return await this.zohoCrm.api.updateNote(
-                        'Contacts',
-                        zohoContactId,
-                        noteId,
-                        {
-                            Note_Title: title,
-                            Note_Content: content,
-                        },
-                    );
+                mappingRepo: {
+                    get: async (id) => await this.getMapping(id),
+                    upsert: async (id, data) =>
+                        await this.upsertMapping(id, data),
                 },
-            },
-            mappingRepo: {
-                get: async (id) => await this.getMapping(id),
-                upsert: async (id, data) => await this.upsertMapping(id, data),
-            },
-            contactId: zohoContactId,
-            formatters: {
-                formatCallHeader: (call) => {
-                    let statusDescription;
-                    if (call.status === 'completed') {
-                        statusDescription =
-                            call.direction === 'outgoing'
-                                ? `Outgoing initiated by ${userName}`
-                                : `Incoming answered by ${userName}`;
-                    } else if (
-                        call.status === 'no-answer' ||
-                        call.status === 'missed'
-                    ) {
-                        statusDescription = 'Incoming missed';
-                    } else {
-                        statusDescription = `${call.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} ${call.status}`;
-                    }
-                    return statusDescription;
+                contactId: zohoContactId,
+                formatters: {
+                    formatCallHeader: (call) => {
+                        let statusDescription;
+                        if (call.status === 'completed') {
+                            statusDescription =
+                                call.direction === 'outgoing'
+                                    ? `Outgoing initiated by ${userName}`
+                                    : `Incoming answered by ${userName}`;
+                        } else if (
+                            call.status === 'no-answer' ||
+                            call.status === 'missed'
+                        ) {
+                            statusDescription = 'Incoming missed';
+                        } else {
+                            statusDescription = `${call.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} ${call.status}`;
+                        }
+                        return statusDescription;
+                    },
+                    formatTitle: (call) => {
+                        if (call.direction === 'outgoing') {
+                            return `☎️ Call Summary: ${inboxName} (${inboxNumber}) → ${contactPhone}`;
+                        } else {
+                            return `☎️ Call Summary: ${contactPhone} → ${inboxName} (${inboxNumber})`;
+                        }
+                    },
+                    formatDeepLink: () => {
+                        return `\n\nView in Quo: ${deepLink}`;
+                    },
                 },
-                formatTitle: (call) => {
-                    if (call.direction === 'outgoing') {
-                        return `☎️ Call Summary: ${inboxName} (${inboxNumber}) → ${contactPhone}`;
-                    } else {
-                        return `☎️ Call Summary: ${contactPhone} → ${inboxName} (${inboxNumber})`;
-                    }
-                },
-                formatDeepLink: () => {
-                    return `\n\nView in Quo: ${deepLink}`;
-                },
-            },
-        });
+            });
 
         console.log(
             `[Quo Webhook] ✓ Call summary enrichment complete for contact ${zohoContactId}`,
         );
+
+        this._trackAnalyticsEvent(QUO_ANALYTICS_EVENTS.CALL_LOGGED, {
+            callId,
+        });
 
         return {
             received: true,
@@ -1715,6 +1793,12 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                     console.log(
                         `[Zoho CRM] ✓ Deleted Quo contact ${exactMatch.id} for ${objectType} ${externalId}`,
                     );
+                    this._trackAnalyticsEvent(
+                        QUO_ANALYTICS_EVENTS.CONTACT_DELETED,
+                        {
+                            contactId: externalId,
+                        },
+                    );
                 } else {
                     console.log(
                         `[Zoho CRM] Contact for ${objectType} ${externalId} not found in Quo, nothing to delete`,
@@ -1732,6 +1816,14 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 `[Zoho CRM] ✓ Contact ${result.action} in Quo (externalId: ${quoContact.externalId}, quoContactId: ${result.quoContactId})`,
             );
 
+            const analyticsEvent =
+                result.action === 'created'
+                    ? QUO_ANALYTICS_EVENTS.CONTACT_IMPORT
+                    : QUO_ANALYTICS_EVENTS.CONTACT_UPDATED;
+            this._trackAnalyticsEvent(analyticsEvent, {
+                contactId: externalId,
+            });
+
             console.log(
                 `[Zoho CRM] ✓ ${objectType} ${externalId} synced to Quo`,
             );
@@ -1739,6 +1831,13 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             console.error(
                 `[Zoho CRM] Failed to sync ${objectType} ${recordId}:`,
                 error.message,
+            );
+            this._trackAnalyticsEvent(
+                QUO_ANALYTICS_EVENTS.CONTACT_SYNC_FAILED,
+                {
+                    contactId: String(recordId),
+                    error: error.message,
+                },
             );
             throw error;
         }
