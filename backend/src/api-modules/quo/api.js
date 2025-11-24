@@ -54,8 +54,8 @@ class Api extends ApiKeyRequester {
             webhookCallTranscripts: '/v2/webhooks/call-transcripts',
 
             // Frigg-specific endpoints (require x-frigg-api-key header)
-            friggContacts: '/frigg/contacts',
-            friggContactById: (id) => `/frigg/contacts/${id}`,
+            friggContacts: '/frigg/contact',
+            friggContactById: (id) => `/frigg/contact/${id}`,
         };
     }
 
@@ -250,7 +250,7 @@ class Api extends ApiKeyRequester {
 
     /**
      * Create a contact via Frigg-authenticated endpoint
-     * Uses /frigg/contacts which requires x-frigg-api-key header
+     * Uses /frigg/contact which requires x-frigg-api-key header
      *
      * @param {CreateContactData} data - The contact data to create
      * @returns {Promise<Object>} The created contact
@@ -269,7 +269,7 @@ class Api extends ApiKeyRequester {
 
     /**
      * Update a contact via Frigg-authenticated endpoint
-     * Uses /frigg/contacts/:id which requires x-frigg-api-key header
+     * Uses /frigg/contact/:id which requires x-frigg-api-key header
      *
      * @param {string} id - The Quo contact ID to update
      * @param {Object} data - The contact data to update
