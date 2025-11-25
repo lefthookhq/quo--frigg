@@ -1674,16 +1674,23 @@ class AttioIntegration extends BaseCRMIntegration {
         const durationFormatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
 
         let statusDescription;
-        if (callObject.status === 'completed') {
+        // Check answeredAt field to determine if call was actually answered
+        // Status can be "completed" but if answeredAt is null, the call was not answered (missed)
+        const wasAnswered = callObject.answeredAt !== null && callObject.answeredAt !== undefined;
+
+        if (callObject.status === 'completed' && wasAnswered) {
             statusDescription =
                 callObject.direction === 'outgoing'
                     ? `Outgoing initiated by ${userName}`
                     : `Incoming answered by ${userName}`;
         } else if (
             callObject.status === 'no-answer' ||
-            callObject.status === 'missed'
+            callObject.status === 'missed' ||
+            (callObject.status === 'completed' && !wasAnswered && callObject.direction === 'incoming')
         ) {
             statusDescription = 'Incoming missed';
+        } else if (callObject.status === 'completed' && !wasAnswered && callObject.direction === 'outgoing') {
+            statusDescription = `Outgoing initiated by ${userName} (not answered)`;
         } else if (callObject.status === 'forwarded') {
             // Handle forwarded calls
             statusDescription = callObject.forwardedTo
@@ -1704,18 +1711,24 @@ class AttioIntegration extends BaseCRMIntegration {
             title = `☎️  Call ${contactPhone} → ${inboxName} ${inboxNumber}`;
             let statusLine = statusDescription;
 
-            // Add recording indicator if completed with duration
-            if (callObject.status === 'completed' && callObject.duration > 0) {
+            // Add recording indicator if completed with duration and actually answered
+            const wasAnswered = callObject.answeredAt !== null && callObject.answeredAt !== undefined;
+            if (callObject.status === 'completed' && callObject.duration > 0 && wasAnswered) {
                 statusLine += ` / ▶️ Recording (${durationFormatted})`;
             }
 
-            // Add voicemail indicator if present
+            // Add voicemail indicator if present with clickable URL link
             if (callObject.voicemail) {
                 const voicemailDuration = callObject.voicemail.duration || 0;
                 const vmMinutes = Math.floor(voicemailDuration / 60);
                 const vmSeconds = voicemailDuration % 60;
                 const vmFormatted = `${vmMinutes}:${vmSeconds.toString().padStart(2, '0')}`;
                 statusLine += ` / ➿ Voicemail (${vmFormatted})`;
+
+                // Add clickable voicemail URL if available
+                if (callObject.voicemail.url) {
+                    statusLine += `\n[Listen to voicemail](${callObject.voicemail.url})`;
+                }
             }
 
             formattedSummary = `${statusLine}
@@ -1976,18 +1989,28 @@ class AttioIntegration extends BaseCRMIntegration {
             contactId: attioRecordId,
             formatters: {
                 formatCallHeader: (call) => {
-                    // Build status line
+                    // Check if call was handled by AI (Sona)
+                    if (call.aiHandled === 'ai-agent') {
+                        return 'Handled by Sona';
+                    }
+
+                    // Build status line for regular calls
+                    const wasAnswered = call.answeredAt !== null && call.answeredAt !== undefined;
                     let statusDescription;
-                    if (call.status === 'completed') {
+
+                    if (call.status === 'completed' && wasAnswered) {
                         statusDescription =
                             call.direction === 'outgoing'
                                 ? `Outgoing initiated by ${userName}`
                                 : `Incoming answered by ${userName}`;
                     } else if (
                         call.status === 'no-answer' ||
-                        call.status === 'missed'
+                        call.status === 'missed' ||
+                        (call.status === 'completed' && !wasAnswered && call.direction === 'incoming')
                     ) {
                         statusDescription = 'Incoming missed';
+                    } else if (call.status === 'completed' && !wasAnswered && call.direction === 'outgoing') {
+                        statusDescription = `Outgoing initiated by ${userName} (not answered)`;
                     } else if (call.status === 'forwarded') {
                         statusDescription = call.forwardedTo
                             ? `Incoming forwarded to ${call.forwardedTo}`
@@ -1998,10 +2021,13 @@ class AttioIntegration extends BaseCRMIntegration {
                     return statusDescription;
                 },
                 formatTitle: (call) => {
+                    // Use simpler title for AI-handled calls
+                    const titlePrefix = call.aiHandled === 'ai-agent' ? 'Call' : 'Call Summary:';
+
                     if (call.direction === 'outgoing') {
-                        return `☎️  Call Summary: ${inboxName} ${inboxNumber} → ${contactPhone}`;
+                        return `☎️  ${titlePrefix} ${inboxName} ${inboxNumber} → ${contactPhone}`;
                     } else {
-                        return `☎️  Call Summary: ${contactPhone} → ${inboxName} ${inboxNumber}`;
+                        return `☎️  ${titlePrefix} ${contactPhone} → ${inboxName} ${inboxNumber}`;
                     }
                 },
                 formatDeepLink: () => {
