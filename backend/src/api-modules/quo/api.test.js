@@ -57,7 +57,7 @@ describe('Quo API - Frigg Contact Endpoints', () => {
     });
 
     describe('createFriggContact', () => {
-        it('should call /frigg/contacts with POST and include x-frigg-api-key header', async () => {
+        it('should call /frigg/contact with POST and include x-frigg-api-key header', async () => {
             const contactData = {
                 defaultFields: {
                     firstName: 'John',
@@ -72,7 +72,7 @@ describe('Quo API - Frigg Contact Endpoints', () => {
             await api.createFriggContact(contactData);
 
             expect(api._post).toHaveBeenCalledWith({
-                url: expect.stringContaining('/frigg/contacts'),
+                url: expect.stringContaining('/frigg/contact'),
                 headers: {
                     'Content-Type': 'application/json',
                     'x-frigg-api-key': 'test-frigg-api-key',
@@ -104,7 +104,7 @@ describe('Quo API - Frigg Contact Endpoints', () => {
     });
 
     describe('updateFriggContact', () => {
-        it('should call /frigg/contacts/:id with PATCH and include x-frigg-api-key header', async () => {
+        it('should call /frigg/contact/:id with PATCH and include x-frigg-api-key header', async () => {
             const contactId = 'quo-contact-123';
             const updateData = {
                 defaultFields: {
@@ -118,7 +118,7 @@ describe('Quo API - Frigg Contact Endpoints', () => {
             await api.updateFriggContact(contactId, updateData);
 
             expect(api._patch).toHaveBeenCalledWith({
-                url: expect.stringContaining(`/frigg/contacts/${contactId}`),
+                url: expect.stringContaining(`/frigg/contact/${contactId}`),
                 headers: {
                     'Content-Type': 'application/json',
                     'x-frigg-api-key': 'test-frigg-api-key',
@@ -150,11 +150,11 @@ describe('Quo API - Frigg Contact Endpoints', () => {
 
     describe('URL configuration', () => {
         it('should have friggContacts URL defined', () => {
-            expect(api.URLs.friggContacts).toBe('/frigg/contacts');
+            expect(api.URLs.friggContacts).toBe('/frigg/contact');
         });
 
         it('should have friggContactById URL function defined', () => {
-            expect(api.URLs.friggContactById('test-id')).toBe('/frigg/contacts/test-id');
+            expect(api.URLs.friggContactById('test-id')).toBe('/frigg/contact/test-id');
         });
     });
 });

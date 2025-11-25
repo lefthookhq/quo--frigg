@@ -1129,6 +1129,7 @@ describe('AttioIntegration (Refactored)', () => {
                 expect(result).toEqual({
                     logged: true,
                     contactId: 'attio-rec-123',
+                    noteId: expect.any(String),
                 });
             });
 
@@ -1244,6 +1245,7 @@ describe('AttioIntegration (Refactored)', () => {
                 expect(result).toEqual({
                     logged: true,
                     contactId: 'attio-rec-123',
+                    noteId: expect.any(String),
                 });
             });
 
@@ -1346,7 +1348,23 @@ describe('AttioIntegration (Refactored)', () => {
                 );
 
                 // Mock logCallToActivity
-                integration.logCallToActivity = jest.fn().mockResolvedValue({});
+                integration.logCallToActivity = jest
+                    .fn()
+                    .mockResolvedValue('note-id-123');
+
+                // Mock getMapping for enrichment service
+                integration.getMapping = jest.fn().mockResolvedValue(null);
+
+                // Mock upsertMapping for enrichment service
+                integration.upsertMapping = jest.fn().mockResolvedValue(undefined);
+
+                // Mock Quo API methods for enrichment
+                mockQuoApi.api.getCallRecordings = jest
+                    .fn()
+                    .mockResolvedValue({ data: [] });
+                mockQuoApi.api.getCallVoicemails = jest
+                    .fn()
+                    .mockResolvedValue({ data: null });
 
                 const result =
                     await integration._handleQuoCallSummaryEvent(webhookData);

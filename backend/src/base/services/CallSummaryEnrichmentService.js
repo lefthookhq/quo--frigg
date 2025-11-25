@@ -12,6 +12,8 @@
  * - CRM adapters implement `canUpdateNote()` and `updateNote()` or fall back to delete+create
  */
 
+const { formatCallRecordings } = require('../../utils/formatCallRecordings');
+
 class CallSummaryEnrichmentService {
     /**
      * Enrich existing call note with AI summary, recordings, and voicemails
@@ -78,7 +80,8 @@ class CallSummaryEnrichmentService {
 
         // Look up existing note mapping
         const existingMapping = await mappingRepo.get(callId);
-        const oldNoteId = existingMapping?.noteId || null;
+        // Extract noteId from nested mapping structure: { mapping: { noteId: '...' } }
+        const oldNoteId = existingMapping?.mapping?.noteId || existingMapping?.noteId || null;
 
         if (oldNoteId) {
             console.log(
@@ -204,15 +207,10 @@ class CallSummaryEnrichmentService {
         // Start with call header (status line)
         let content = formatters.formatCallHeader(callDetails);
 
-        // Add recording links
+        // Add recording links inline with status (using formatCallRecordings utility)
         if (recordings.length > 0) {
-            content += '\n\n**Recordings:**\n';
-            recordings.forEach((rec, index) => {
-                const duration = rec.duration
-                    ? `(${Math.floor(rec.duration / 60)}:${(rec.duration % 60).toString().padStart(2, '0')})`
-                    : '';
-                content += `• [Recording ${index + 1}](${rec.url}) ${duration}\n`;
-            });
+            const formattedRecordings = formatCallRecordings(recordings, callDetails.duration);
+            content += ' / ' + formattedRecordings;
         }
 
         // Add voicemail
