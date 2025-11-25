@@ -18,6 +18,15 @@
 const AttioIntegration = require('../src/integrations/AttioIntegration');
 const AxisCareIntegration = require('../src/integrations/AxisCareIntegration');
 
+// Import centralized mock fixtures
+const {
+    mockGetPhoneNumber,
+    mockGetUser,
+    mockGetCall,
+    mockGetCallRecordings,
+    mockGetCallVoicemails,
+} = require('./fixtures/quo-api-responses');
+
 describe('Call Summary Enrichment - Attio Integration', () => {
     let integration;
     let mockAttioApi;
@@ -71,21 +80,12 @@ describe('Call Summary Enrichment - Attio Integration', () => {
 
     describe('Phase 1: call.completed - Initial Note Creation', () => {
         it('should create initial note and store mapping with call ID -> note ID', async () => {
-            // Arrange
+            // Arrange - use centralized fixtures
             const webhookData = {
                 type: 'call.completed',
                 data: {
-                    object: {
-                        id: 'call-123',
-                        direction: 'incoming',
-                        status: 'completed',
-                        duration: 120,
-                        participants: ['+15551234567', '+15559876543'],
-                        phoneNumberId: 'pn-456',
-                        userId: 'user-789',
-                        createdAt: '2025-01-15T10:30:00Z',
-                    },
-                    deepLink: 'https://app.openphone.com/calls/call-123',
+                    object: mockGetCall.completedIncoming.data,
+                    deepLink: 'https://app.openphone.com/calls/AC_TEST_001',
                 },
             };
 
@@ -93,13 +93,9 @@ describe('Call Summary Enrichment - Attio Integration', () => {
                 data: { id: { record_id: 'attio-contact-123' } },
             });
 
-            mockQuoApi.api.getPhoneNumber.mockResolvedValue({
-                data: { symbol: '📞', name: 'Sales Line', number: '+15559876543' },
-            });
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
 
-            mockQuoApi.api.getUser.mockResolvedValue({
-                data: { firstName: 'John', lastName: 'Doe' },
-            });
+            mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
 
             mockAttioApi.api.createNote.mockResolvedValue({
                 data: {
@@ -124,16 +120,16 @@ describe('Call Summary Enrichment - Attio Integration', () => {
                 parent_record_id: 'attio-contact-123',
                 title: expect.stringContaining('Call'),
                 format: 'markdown',
-                content: expect.stringContaining('Incoming answered by John Doe'),
-                created_at: '2025-01-15T10:30:00Z',
+                content: expect.stringContaining('Incoming answered by John Smith'),
+                created_at: mockGetCall.completedIncoming.data.createdAt,
             });
 
             // Assert - Mapping stored: call ID -> note ID
             expect(integration.upsertMapping).toHaveBeenCalledWith(
-                'call-123',
+                'AC_TEST_001',
                 expect.objectContaining({
                     noteId: 'note-abc123',
-                    callId: 'call-123',
+                    callId: 'AC_TEST_001',
                     attioContactId: 'attio-contact-123',
                 }),
             );

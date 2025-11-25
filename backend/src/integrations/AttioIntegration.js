@@ -3,6 +3,8 @@ const { createFriggCommands } = require('@friggframework/core');
 const attio = require('@friggframework/api-module-attio');
 const quo = require('../api-modules/quo');
 const CallSummaryEnrichmentService = require('../base/services/CallSummaryEnrichmentService');
+const { getContactPhoneFromCall } = require('../utils/participantFilter');
+const { logWebhook, logApiCall } = require('../utils/requestLogger');
 
 /**
  * AttioIntegration - Refactored to extend BaseCRMIntegration
@@ -109,7 +111,7 @@ class AttioIntegration extends BaseCRMIntegration {
             { event_type: 'record.deleted', filter: null },
         ],
         QUO_MESSAGES: ['message.received', 'message.delivered'],
-        QUO_CALLS: ['call.completed'],
+        QUO_CALLS: ['call.completed', 'call.recording.completed'],
         QUO_CALL_SUMMARIES: ['call.summary.completed'],
     };
 
@@ -859,7 +861,7 @@ class AttioIntegration extends BaseCRMIntegration {
     /**
      * Log SMS message to Attio as a note/interaction
      * @param {Object} activity - SMS activity
-     * @returns {Promise<void>}
+     * @returns {Promise<string|null>} Note ID
      */
     async logSMSToActivity(activity) {
         try {
@@ -871,7 +873,7 @@ class AttioIntegration extends BaseCRMIntegration {
                 console.warn(
                     `Person not found for SMS logging: ${activity.contactExternalId}`,
                 );
-                return;
+                return null;
             }
 
             const noteData = {
@@ -883,7 +885,9 @@ class AttioIntegration extends BaseCRMIntegration {
                 created_at: activity.timestamp,
             };
 
-            await this.attio.api.createNote(noteData);
+            const noteResponse = await this.attio.api.createNote(noteData);
+            const noteId = noteResponse?.data?.id?.note_id || null;
+            return noteId;
         } catch (error) {
             console.error('Failed to log SMS activity to Attio:', error);
             throw error;
@@ -893,7 +897,7 @@ class AttioIntegration extends BaseCRMIntegration {
     /**
      * Log phone call to Attio as a note/interaction
      * @param {Object} activity - Call activity
-     * @returns {Promise<void>}
+     * @returns {Promise<string|null>} Note ID
      */
     async logCallToActivity(activity) {
         try {
@@ -925,6 +929,33 @@ class AttioIntegration extends BaseCRMIntegration {
             return noteResponse?.data?.id?.note_id || null;
         } catch (error) {
             console.error('Failed to log call activity to Attio:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Update existing call note with new information (e.g., recording link)
+     * Note: Attio doesn't support note updates, so we keep the original note
+     * and just log that we attempted an update.
+     *
+     * @param {string} noteId - Existing note ID
+     * @param {Object} activity - Updated call activity data
+     * @returns {Promise<void>}
+     */
+    async updateCallActivity(noteId, activity) {
+        try {
+            // Attio API doesn't support updating notes directly
+            // We would need to delete and recreate, but that loses history
+            // For now, just log the update attempt
+            console.log(`[Attio] Note update requested for ${noteId} but Attio doesn't support note updates`);
+            console.log(`[Attio] Updated content would be: ${activity.title}`);
+
+            // Future: If Attio adds note update API, implement here
+            // For now, the original note remains and we just track the mapping
+
+            return noteId;
+        } catch (error) {
+            console.error('Failed to update call activity in Attio:', error);
             throw error;
         }
     }
@@ -1583,7 +1614,9 @@ class AttioIntegration extends BaseCRMIntegration {
             // await this._verifyQuoWebhookSignature(headers, body, eventType);
 
             let result;
-            if (eventType === 'call.completed') {
+            if (eventType === 'call.completed' || eventType === 'call.recording.completed') {
+                // Both call.completed and call.recording.completed go to same handler
+                // Handler will create or update note based on whether one already exists
                 result = await this._handleQuoCallEvent(body);
             } else if (eventType === 'call.summary.completed') {
                 result = await this._handleQuoCallSummaryEvent(body);
@@ -1815,8 +1848,28 @@ class AttioIntegration extends BaseCRMIntegration {
      */
     async _handleQuoMessageEvent(webhookData) {
         const messageObject = webhookData.data.object;
+        const messageId = messageObject.id;
+        const eventType = webhookData.type; // e.g., 'message.received' or 'message.delivered'
 
-        console.log(`[Quo Webhook] Processing message: ${messageObject.id}`);
+        console.log(`[Quo Webhook] Processing message: ${messageId} (event: ${eventType})`);
+
+        // Check if we've already logged this message to prevent duplicates
+        // (Both message.received and message.delivered events fire for the same message)
+        const existingMapping = await this.integrationMappingRepository.get(messageId);
+        const existingNoteId = existingMapping?.mapping?.noteId || existingMapping?.noteId || null;
+
+        if (existingNoteId) {
+            console.log(
+                `[Quo Webhook] ✓ Message ${messageId} already logged (note: ${existingNoteId}), skipping duplicate`,
+            );
+            return {
+                logged: false,
+                skipped: true,
+                reason: 'duplicate',
+                messageId,
+                noteId: existingNoteId,
+            };
+        }
 
         // Determine contact phone based on direction
         // - Outgoing: we sent to contact (use 'to')
@@ -1872,13 +1925,24 @@ class AttioIntegration extends BaseCRMIntegration {
             timestamp: messageObject.createdAt,
         };
 
-        await this.logSMSToActivity(activityData);
+        const noteId = await this.logSMSToActivity(activityData);
+
+        // Store message mapping to prevent duplicate logging
+        await this.integrationMappingRepository.upsert(messageId, {
+            messageId,
+            noteId,
+            contactId: attioRecordId,
+            createdAt: new Date().toISOString(),
+        });
 
         console.log(
-            `[Quo Webhook] ✓ Message logged for contact ${attioRecordId}`,
+            `[Quo Webhook] ✓ Message logged for contact ${attioRecordId} (note: ${noteId})`,
+        );
+        console.log(
+            `[Quo Webhook] ✓ Mapping stored: message ${messageId} -> note ${noteId}`,
         );
 
-        return { logged: true, contactId: attioRecordId };
+        return { logged: true, contactId: attioRecordId, messageId, noteId };
     }
 
     /**
