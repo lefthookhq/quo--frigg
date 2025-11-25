@@ -11,7 +11,7 @@ class Api extends ApiKeyRequester {
         this.analyticsBaseUrl =
             params.analyticsBaseUrl ||
             process.env.QUO_ANALYTICS_BASE_URL ||
-            'https://integration.openphoneapi.com';
+            'https://integration.openphone.dev/v2/analytics';
 
         // Set the API key header name (parent class uses api_key_name)
         this.api_key_name = 'Authorization';
