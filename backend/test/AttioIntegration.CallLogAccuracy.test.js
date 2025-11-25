@@ -62,6 +62,10 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
         integration.commands = mockCommands;
         integration.config = {
             quoCallWebhookKey: 'test-key',
+            phoneNumbersMetadata: [
+                { number: '+17786544283', name: 'Test Line' },
+                { number: '+15559876543', name: 'Sales Line' },
+            ],
         };
 
         // Mock mapping methods (infrastructure)
@@ -129,6 +133,11 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
                 },
             };
 
+            // Mock getCall to return the call data (handler now ALWAYS fetches call)
+            mockQuoApi.api.getCall.mockResolvedValue({
+                data: transformedWebhookData.data.object,
+            });
+
             mockQuoApi.api.getPhoneNumber.mockResolvedValue({
                 data: { name: 'Test Line', number: '+17786544283' },
             });
@@ -175,6 +184,11 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
                 },
             };
 
+            // Mock getCall to return the call data
+            mockQuoApi.api.getCall.mockResolvedValue({
+                data: webhookData.data.object,
+            });
+
             mockQuoApi.api.getPhoneNumber.mockResolvedValue({
                 data: { name: 'Sales Line', number: '+15559876543' },
             });
@@ -217,6 +231,11 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
                     deepLink: 'https://app.openphone.com/calls/call-outgoing-no-answer',
                 },
             };
+
+            // Mock getCall to return the call data
+            mockQuoApi.api.getCall.mockResolvedValue({
+                data: webhookData.data.object,
+            });
 
             mockQuoApi.api.getPhoneNumber.mockResolvedValue({
                 data: { name: 'Sales Line', number: '+15559876543' },
@@ -266,6 +285,11 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
                 },
             };
 
+            // Mock getCall to return the call data
+            mockQuoApi.api.getCall.mockResolvedValue({
+                data: webhookData.data.object,
+            });
+
             mockQuoApi.api.getPhoneNumber.mockResolvedValue({
                 data: { name: 'Support Line', number: '+15559876543' },
             });
@@ -314,6 +338,11 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
                     deepLink: 'https://app.openphone.com/calls/call-vm-no-url',
                 },
             };
+
+            // Mock getCall to return the call data
+            mockQuoApi.api.getCall.mockResolvedValue({
+                data: webhookData.data.object,
+            });
 
             mockQuoApi.api.getPhoneNumber.mockResolvedValue({
                 data: { name: 'Sales Line', number: '+15559876543' },
@@ -376,6 +405,11 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
                     deepLink: v3Webhook.data.deepLink,
                 },
             };
+
+            // Mock getCall to return the call data
+            mockQuoApi.api.getCall.mockResolvedValue({
+                data: transformedWebhook.data.object,
+            });
 
             mockQuoApi.api.getPhoneNumber.mockResolvedValue({
                 data: { name: 'Main Line', number: '+15559876543' },

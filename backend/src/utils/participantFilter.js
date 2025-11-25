@@ -47,80 +47,43 @@ function extractQuoPhoneNumbers(phoneNumbersMetadata) {
 }
 
 /**
- * Filter external contact phone from participants array
+ * Filter ALL external contact phones from participants array
+ * Supports multi-party calls (3-way calls, conference calls, etc.)
  *
  * @param {Array<string>} participants - Participant phone numbers from webhook
  * @param {Array} phoneNumbersMetadata - Integration config phoneNumbersMetadata
- * @returns {string|null} External contact phone number, or null if not found
+ * @returns {Array<string>} Array of external contact phone numbers (may be empty)
  *
  * @example
- * const participants = ['+15559876543', '+15551234567'];
+ * // 3-way call: 2 external contacts + 1 Quo number
+ * const participants = ['+15559876543', '+15551234567', '+15559998888'];
  * const metadata = [{ number: '+15551234567', name: 'Sales Line' }];
- * const contactPhone = filterExternalParticipant(participants, metadata);
- * // Returns: '+15559876543'
+ * const externalPhones = filterExternalParticipants(participants, metadata);
+ * // Returns: ['+15559876543', '+15559998888']
  */
-function filterExternalParticipant(participants, phoneNumbersMetadata) {
+function filterExternalParticipants(participants, phoneNumbersMetadata) {
     if (!participants || !Array.isArray(participants) || participants.length === 0) {
-        return null;
+        return [];
     }
 
-    // Extract Quo phone numbers from metadata
     const quoNumbers = extractQuoPhoneNumbers(phoneNumbersMetadata);
 
-    // If no metadata, fall back to legacy behavior (first participant)
     if (quoNumbers.size === 0) {
-        console.warn('[ParticipantFilter] No phoneNumbersMetadata available, using first participant');
-        return participants[0] || null;
+        console.warn('[ParticipantFilter] No phoneNumbersMetadata available, returning all participants');
+        return [...participants];
     }
 
-    // Find first participant that is NOT a Quo number
-    for (const participant of participants) {
+    const externalParticipants = participants.filter(participant => {
         const normalized = normalizePhoneNumber(participant);
-        if (!quoNumbers.has(normalized)) {
-            console.log(`[ParticipantFilter] Found external participant: ${participant}`);
-            return participant;
-        }
-    }
+        return !quoNumbers.has(normalized);
+    });
 
-    // All participants are Quo numbers (edge case)
-    console.warn('[ParticipantFilter] All participants are Quo numbers, returning null');
-    return null;
-}
-
-/**
- * Get contact phone from call webhook data
- * Handles both normal participants array and empty participants fallback
- *
- * Note: Quo v4 API uses participants[] array, not from/to fields.
- * When participants is empty (bug), fullCallData also only has participants.
- *
- * @param {Object} callObject - Call object from webhook data.object
- * @param {Object} fullCallData - Optional full call data from getCall() API (when participants is empty)
- * @param {Array} phoneNumbersMetadata - Integration config phoneNumbersMetadata
- * @returns {string|null} Contact phone number
- */
-function getContactPhoneFromCall(callObject, fullCallData, phoneNumbersMetadata) {
-    let participants = callObject.participants || [];
-
-    // Case 1: Normal participants array with values
-    if (participants.length > 0) {
-        return filterExternalParticipant(participants, phoneNumbersMetadata);
-    }
-
-    // Case 2: Empty participants array - use fullCallData.participants
-    if (fullCallData && fullCallData.participants && fullCallData.participants.length > 0) {
-        console.log('[ParticipantFilter] Using fullCallData.participants fallback (empty participants in webhook)');
-        return filterExternalParticipant(fullCallData.participants, phoneNumbersMetadata);
-    }
-
-    // Case 3: No participants anywhere (should be very rare)
-    console.warn('[ParticipantFilter] No participants found in webhook or fullCallData');
-    return null;
+    console.log(`[ParticipantFilter] Found ${externalParticipants.length} external participant(s): ${externalParticipants.join(', ')}`);
+    return externalParticipants;
 }
 
 module.exports = {
     normalizePhoneNumber,
     extractQuoPhoneNumbers,
-    filterExternalParticipant,
-    getContactPhoneFromCall,
+    filterExternalParticipants,
 };
