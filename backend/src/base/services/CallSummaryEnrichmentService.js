@@ -207,10 +207,10 @@ class CallSummaryEnrichmentService {
         // Start with call header (status line)
         let content = formatters.formatCallHeader(callDetails);
 
-        // Add recording links (using formatCallRecordings utility)
+        // Add recording links inline with status (using formatCallRecordings utility)
         if (recordings.length > 0) {
             const formattedRecordings = formatCallRecordings(recordings, callDetails.duration);
-            content += '\n' + formattedRecordings + '\n';
+            content += ' / ' + formattedRecordings;
         }
 
         // Add voicemail
