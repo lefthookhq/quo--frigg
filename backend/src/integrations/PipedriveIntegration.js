@@ -174,7 +174,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
         }
 
         this.commands
-            .findUserById(this.userId)
+            .findOrganizationUserById(this.userId)
             .then((user) => {
                 return this.quo.api.sendAnalyticsEvent({
                     orgId: user?.getAppOrgId?.() || null,

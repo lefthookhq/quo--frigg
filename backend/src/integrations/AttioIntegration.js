@@ -408,11 +408,11 @@ class AttioIntegration extends BaseCRMIntegration {
         }
 
         this.commands
-            .findUserById(this.userId)
+            .findOrganizationUserById(this.userId)
             .then((user) => {
                 return this.quo.api.sendAnalyticsEvent({
-                    orgId: user?.getAppOrgId?.() || null,
-                    userId: user?.getAppUserId?.() || null,
+                    orgId: user.appOrgId,
+                    userId: user.id,
                     integration: 'attio',
                     event,
                     data,
