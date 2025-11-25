@@ -4,6 +4,7 @@ const zohoCrm = require('@friggframework/api-module-zoho-crm');
 const { createFriggCommands } = require('@friggframework/core');
 const CallSummaryEnrichmentService = require('../base/services/CallSummaryEnrichmentService');
 const { QUO_ANALYTICS_EVENTS } = require('../base/constants');
+const { trackAnalyticsEvent } = require('../utils/trackAnalyticsEvent');
 
 class ZohoCRMIntegration extends BaseCRMIntegration {
     static Definition = {
@@ -112,41 +113,6 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 handler: this.listAccounts,
             },
         };
-    }
-
-    /**
-     * Track analytics event to Quo's analytics API (fire-and-forget)
-     * @private
-     * @param {string} event - Event type from QUO_ANALYTICS_EVENTS
-     * @param {Object} data - Event data (contactId, messageId, callId, error, etc.)
-     */
-    _trackAnalyticsEvent(event, data = {}) {
-        if (!this.quo?.api) {
-            console.warn(
-                '[Analytics] Quo API not available, skipping tracking',
-            );
-            return;
-        }
-
-        this.commands
-            .findOrganizationUserById(this.userId)
-            .then((user) => {
-                return this.quo.api.sendAnalyticsEvent({
-                    orgId: user?.getAppOrgId?.() || null,
-                    userId: user?.getAppUserId?.() || null,
-                    integration: 'zoho',
-                    event,
-                    data,
-                });
-            })
-            .then(() => {
-                console.log(`[Analytics] ✓ Tracked ${event}`);
-            })
-            .catch((error) => {
-                console.warn(
-                    `[Analytics] Failed to track ${event}: ${error.message}`,
-                );
-            });
     }
 
     /**
@@ -1153,7 +1119,8 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             console.error('[Quo Webhook] Processing error:', error);
 
             if (eventType.startsWith('message.')) {
-                this._trackAnalyticsEvent(
+                trackAnalyticsEvent(
+                    this,
                     QUO_ANALYTICS_EVENTS.MESSAGE_LOG_FAILED,
                     {
                         messageId: body.data?.object?.id,
@@ -1161,7 +1128,8 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                     },
                 );
             } else if (eventType.startsWith('call.')) {
-                this._trackAnalyticsEvent(
+                trackAnalyticsEvent(
+                    this,
                     QUO_ANALYTICS_EVENTS.CALL_LOG_FAILED,
                     {
                         callId:
@@ -1386,9 +1354,11 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             `[Quo Webhook] ✓ Call logged as note for contact ${contactId}`,
         );
 
-        this._trackAnalyticsEvent(QUO_ANALYTICS_EVENTS.CALL_LOGGED, {
-            callId: callObject.id,
-        });
+        trackAnalyticsEvent(
+            this,
+            QUO_ANALYTICS_EVENTS.CALL_LOGGED,
+            { callId: callObject.id },
+        );
 
         return {
             logged: true,
@@ -1490,9 +1460,11 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
 
         console.log(`[Quo Webhook] ✓ Message logged for contact ${contactId}`);
 
-        this._trackAnalyticsEvent(QUO_ANALYTICS_EVENTS.MESSAGE_LOGGED, {
-            messageId: messageObject.id,
-        });
+        trackAnalyticsEvent(
+            this,
+            QUO_ANALYTICS_EVENTS.MESSAGE_LOGGED,
+            { messageId: messageObject.id },
+        );
 
         return {
             logged: true,
@@ -1664,9 +1636,11 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             `[Quo Webhook] ✓ Call summary enrichment complete for contact ${zohoContactId}`,
         );
 
-        this._trackAnalyticsEvent(QUO_ANALYTICS_EVENTS.CALL_LOGGED, {
-            callId,
-        });
+        trackAnalyticsEvent(
+            this,
+            QUO_ANALYTICS_EVENTS.CALL_LOGGED,
+            { callId },
+        );
 
         return {
             received: true,
@@ -1793,11 +1767,10 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                     console.log(
                         `[Zoho CRM] ✓ Deleted Quo contact ${exactMatch.id} for ${objectType} ${externalId}`,
                     );
-                    this._trackAnalyticsEvent(
+                    trackAnalyticsEvent(
+                        this,
                         QUO_ANALYTICS_EVENTS.CONTACT_DELETED,
-                        {
-                            contactId: externalId,
-                        },
+                        { contactId: externalId },
                     );
                 } else {
                     console.log(
@@ -1820,7 +1793,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 result.action === 'created'
                     ? QUO_ANALYTICS_EVENTS.CONTACT_IMPORT
                     : QUO_ANALYTICS_EVENTS.CONTACT_UPDATED;
-            this._trackAnalyticsEvent(analyticsEvent, {
+            trackAnalyticsEvent(this, analyticsEvent, {
                 contactId: externalId,
             });
 
@@ -1832,7 +1805,8 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 `[Zoho CRM] Failed to sync ${objectType} ${recordId}:`,
                 error.message,
             );
-            this._trackAnalyticsEvent(
+            trackAnalyticsEvent(
+                this,
                 QUO_ANALYTICS_EVENTS.CONTACT_SYNC_FAILED,
                 {
                     contactId: String(recordId),

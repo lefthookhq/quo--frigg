@@ -3,9 +3,8 @@ const { createFriggCommands } = require('@friggframework/core');
 const attio = require('@friggframework/api-module-attio');
 const quo = require('../api-modules/quo');
 const CallSummaryEnrichmentService = require('../base/services/CallSummaryEnrichmentService');
-const { getContactPhoneFromCall } = require('../utils/participantFilter');
-const { logWebhook, logApiCall } = require('../utils/requestLogger');
 const { QUO_ANALYTICS_EVENTS } = require('../base/constants');
+const { trackAnalyticsEvent } = require('../utils/trackAnalyticsEvent');
 
 /**
  * AttioIntegration - Refactored to extend BaseCRMIntegration
@@ -389,48 +388,6 @@ class AttioIntegration extends BaseCRMIntegration {
     }
 
     // ============================================================================
-    // ANALYTICS TRACKING METHODS
-    // ============================================================================
-
-    /**
-     * Track an analytics event (fire-and-forget)
-     * Wraps the Quo API call to prevent analytics failures from blocking business logic
-     *
-     * @private
-     * @param {string} event - Event type from QUO_ANALYTICS_EVENTS
-     * @param {Object} data - Event-specific data (contactId, messageId, callId, error)
-     * @returns {void}
-     */
-    _trackAnalyticsEvent(event, data = {}) {
-        if (!this.quo?.api) {
-            console.warn(
-                '[Analytics] Quo API not available, skipping tracking',
-            );
-            return;
-        }
-
-        this.commands
-            .findOrganizationUserById(this.userId)
-            .then((user) => {
-                return this.quo.api.sendAnalyticsEvent({
-                    orgId: user.appOrgId,
-                    userId: user.id,
-                    integration: 'attio',
-                    event,
-                    data,
-                });
-            })
-            .then(() => {
-                console.log(`[Analytics] ✓ Tracked ${event}`);
-            })
-            .catch((error) => {
-                console.warn(
-                    `[Analytics] Failed to track ${event}: ${error.message}`,
-                );
-            });
-    }
-
-    // ============================================================================
     // WEBHOOK EVENT HANDLERS - Called from onWebhook()
     // ============================================================================
 
@@ -621,7 +578,8 @@ class AttioIntegration extends BaseCRMIntegration {
                     );
                 }
 
-                this._trackAnalyticsEvent(
+                trackAnalyticsEvent(
+                    this,
                     QUO_ANALYTICS_EVENTS.CONTACT_DELETED,
                     { contactId: record_id },
                 );
@@ -641,7 +599,8 @@ class AttioIntegration extends BaseCRMIntegration {
             );
 
             if (objectType === 'people') {
-                this._trackAnalyticsEvent(
+                trackAnalyticsEvent(
+                    this,
                     QUO_ANALYTICS_EVENTS.CONTACT_SYNC_FAILED,
                     { contactId: record_id, error: error.message },
                 );
@@ -1705,7 +1664,8 @@ class AttioIntegration extends BaseCRMIntegration {
                 eventType === 'message.delivered'
             ) {
                 const messageId = body.data?.object?.id;
-                this._trackAnalyticsEvent(
+                trackAnalyticsEvent(
+                    this,
                     QUO_ANALYTICS_EVENTS.MESSAGE_LOG_FAILED,
                     { messageId, error: error.message },
                 );
@@ -1715,7 +1675,8 @@ class AttioIntegration extends BaseCRMIntegration {
             ) {
                 const callId =
                     body.data?.object?.id || body.data?.object?.callId;
-                this._trackAnalyticsEvent(
+                trackAnalyticsEvent(
+                    this,
                     QUO_ANALYTICS_EVENTS.CALL_LOG_FAILED,
                     { callId, error: error.message },
                 );
@@ -1937,7 +1898,7 @@ class AttioIntegration extends BaseCRMIntegration {
             );
         }
 
-        this._trackAnalyticsEvent(QUO_ANALYTICS_EVENTS.CALL_LOGGED, {
+        trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.CALL_LOGGED, {
             callId: callObject.id,
         });
 
@@ -2047,9 +2008,11 @@ class AttioIntegration extends BaseCRMIntegration {
             createdAt: new Date().toISOString(),
         });
 
-        this._trackAnalyticsEvent(QUO_ANALYTICS_EVENTS.MESSAGE_LOGGED, {
-            messageId: messageObject.id,
-        });
+        trackAnalyticsEvent(
+            this,
+            QUO_ANALYTICS_EVENTS.MESSAGE_LOGGED,
+            { messageId: messageObject.id },
+        );
 
         console.log(
             `[Quo Webhook] ✓ Message logged for contact ${attioRecordId} (note: ${noteId})`,
@@ -2434,7 +2397,7 @@ class AttioIntegration extends BaseCRMIntegration {
                 },
             });
 
-        this._trackAnalyticsEvent(QUO_ANALYTICS_EVENTS.CALL_LOGGED, {
+        trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.CALL_LOGGED, {
             callId,
         });
 
@@ -2753,7 +2716,7 @@ class AttioIntegration extends BaseCRMIntegration {
                 action === 'created'
                     ? QUO_ANALYTICS_EVENTS.CONTACT_IMPORT
                     : QUO_ANALYTICS_EVENTS.CONTACT_UPDATED;
-            this._trackAnalyticsEvent(analyticsEvent, {
+            trackAnalyticsEvent(this, analyticsEvent, {
                 contactId: quoContact.externalId,
             });
 
@@ -2766,7 +2729,8 @@ class AttioIntegration extends BaseCRMIntegration {
                 error.message,
             );
 
-            this._trackAnalyticsEvent(
+            trackAnalyticsEvent(
+                this,
                 QUO_ANALYTICS_EVENTS.CONTACT_SYNC_FAILED,
                 { contactId: externalId, error: error.message },
             );
