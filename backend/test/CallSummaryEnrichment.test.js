@@ -136,7 +136,142 @@ describe('Call Summary Enrichment - Attio Integration', () => {
         });
     });
 
-    describe('Phase 2: call.summary.completed - Fetch Recordings/Voicemails', () => {
+    describe('Phase 2: call.recording.completed - Enrich with Recordings', () => {
+        it('should find existing note, create new note with recording, and delete old note', async () => {
+            // Arrange
+            const webhookData = {
+                type: 'call.recording.completed',
+                data: {
+                    object: {
+                        ...mockGetCall.completedIncoming.data,
+                        // Recording is now available
+                    },
+                    deepLink: 'https://app.openphone.com/calls/AC_TEST_001',
+                },
+            };
+
+            // Mock existing mapping from Phase 1
+            integration.getMapping.mockResolvedValue({
+                mapping: {
+                    noteId: 'note-initial-123',
+                    callId: 'AC_TEST_001',
+                    attioContactId: 'attio-contact-123',
+                },
+            });
+
+            mockQuoApi.api.getCall.mockResolvedValue(mockGetCall.completedIncoming);
+
+            mockQuoApi.api.getCallRecordings.mockResolvedValue(
+                mockGetCallRecordings.singleRecording
+            );
+
+            mockQuoApi.api.getCallVoicemails.mockResolvedValue({ data: null });
+
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+
+            mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
+
+            mockAttioApi.api.getRecord.mockResolvedValue({
+                data: { id: { record_id: 'attio-contact-123' } },
+            });
+
+            // Mock _findAttioContactFromQuoWebhook to return the contact ID
+            integration._findAttioContactFromQuoWebhook = jest
+                .fn()
+                .mockResolvedValue('attio-contact-123');
+
+            // New note with recording
+            mockAttioApi.api.createNote.mockResolvedValue({
+                data: { id: { note_id: 'note-with-recording-456' } },
+            });
+
+            // Track call order
+            const callOrder = [];
+            mockAttioApi.api.createNote.mockImplementation(() => {
+                callOrder.push('create');
+                return Promise.resolve({ data: { id: { note_id: 'note-with-recording-456' } } });
+            });
+            mockAttioApi.api.deleteNote.mockImplementation(() => {
+                callOrder.push('delete');
+                return Promise.resolve({});
+            });
+
+            // Act
+            await integration._handleQuoCallRecordingEvent(webhookData);
+
+            // Assert - Create called BEFORE delete (safety first!)
+            expect(callOrder).toEqual(['create', 'delete']);
+
+            // Assert - New note includes recording link
+            expect(mockAttioApi.api.createNote).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    content: expect.stringContaining('▶️ Recording'),
+                    content: expect.stringContaining('https://storage.example.com'),
+                }),
+            );
+
+            // Assert - Old note deleted
+            expect(mockAttioApi.api.deleteNote).toHaveBeenCalledWith('note-initial-123');
+
+            // Assert - Mapping updated with new note ID
+            expect(integration.upsertMapping).toHaveBeenCalledWith(
+                'AC_TEST_001',
+                expect.objectContaining({
+                    noteId: 'note-with-recording-456',
+                }),
+            );
+        });
+
+        it('should create new note if no existing mapping found', async () => {
+            // Arrange
+            const webhookData = {
+                type: 'call.recording.completed',
+                data: {
+                    object: mockGetCall.completedIncoming.data,
+                    deepLink: 'https://app.openphone.com/calls/AC_TEST_001',
+                },
+            };
+
+            // No existing mapping
+            integration.getMapping.mockResolvedValue(null);
+
+            mockQuoApi.api.getCall.mockResolvedValue(mockGetCall.completedIncoming);
+            mockQuoApi.api.getCallRecordings.mockResolvedValue(
+                mockGetCallRecordings.singleRecording
+            );
+            mockQuoApi.api.getCallVoicemails.mockResolvedValue({ data: null });
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+            mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
+            mockAttioApi.api.getRecord.mockResolvedValue({
+                data: { id: { record_id: 'attio-contact-123' } },
+            });
+
+            integration._findAttioContactFromQuoWebhook = jest
+                .fn()
+                .mockResolvedValue('attio-contact-123');
+
+            mockAttioApi.api.createNote.mockResolvedValue({
+                data: { id: { note_id: 'note-new-789' } },
+            });
+
+            // Act
+            await integration._handleQuoCallRecordingEvent(webhookData);
+
+            // Assert - Created new note (no delete since no old note)
+            expect(mockAttioApi.api.createNote).toHaveBeenCalled();
+            expect(mockAttioApi.api.deleteNote).not.toHaveBeenCalled();
+
+            // Assert - Mapping created
+            expect(integration.upsertMapping).toHaveBeenCalledWith(
+                'AC_TEST_001',
+                expect.objectContaining({
+                    noteId: 'note-new-789',
+                }),
+            );
+        });
+    });
+
+    describe('Phase 3: call.summary.completed - Fetch Recordings/Voicemails', () => {
         it('should fetch call details, recordings, and voicemails when summary arrives', async () => {
             // Arrange
             const webhookData = {

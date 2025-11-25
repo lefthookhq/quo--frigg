@@ -1614,11 +1614,14 @@ class AttioIntegration extends BaseCRMIntegration {
             // await this._verifyQuoWebhookSignature(headers, body, eventType);
 
             let result;
-            if (eventType === 'call.completed' || eventType === 'call.recording.completed') {
-                // Both call.completed and call.recording.completed go to same handler
-                // Handler will create or update note based on whether one already exists
+            if (eventType === 'call.completed') {
+                // Phase 1: Create initial call note
                 result = await this._handleQuoCallEvent(body);
+            } else if (eventType === 'call.recording.completed') {
+                // Phase 2: Enrich with recording (find existing note, delete, create new with recording)
+                result = await this._handleQuoCallRecordingEvent(body);
             } else if (eventType === 'call.summary.completed') {
+                // Phase 3: Enrich with AI summary (find existing note, delete, create new with summary + recording)
                 result = await this._handleQuoCallSummaryEvent(body);
             } else if (
                 eventType === 'message.received' ||
@@ -1943,6 +1946,165 @@ class AttioIntegration extends BaseCRMIntegration {
         );
 
         return { logged: true, contactId: attioRecordId, messageId, noteId };
+    }
+
+    /**
+     * Handle Quo call.recording.completed webhook event
+     * Enriches existing call note with recording links
+     *
+     * @private
+     * @param {Object} webhookData - Quo webhook payload
+     * @returns {Promise<Object>} Processing result
+     */
+    async _handleQuoCallRecordingEvent(webhookData) {
+        const callObject = webhookData.data.object;
+        const callId = callObject.id;
+
+        console.log(
+            `[Quo Webhook] Processing recording.completed for call: ${callId}`,
+        );
+
+        const callDetails = await this.quo.api.getCall(callId);
+        if (!callDetails?.data) {
+            console.warn(
+                `[Quo Webhook] Call ${callId} not found, cannot enrich with recording`,
+            );
+            return {
+                received: true,
+                callId,
+                enriched: false,
+                error: 'Call not found',
+            };
+        }
+
+        const call = callDetails.data;
+        const participants = call.participants || [];
+        if (participants.length < 2) {
+            console.warn(
+                `[Quo Webhook] Call ${callId} has insufficient participants`,
+            );
+            return {
+                received: true,
+                callId,
+                enriched: false,
+                error: 'Insufficient participants',
+            };
+        }
+
+        const contactPhone =
+            call.direction === 'outgoing' ? participants[1] : participants[0];
+
+        const attioRecordId =
+            await this._findAttioContactFromQuoWebhook(contactPhone);
+
+        if (!attioRecordId) {
+            console.warn(
+                `[Quo Webhook] No Attio contact found for phone ${contactPhone}`,
+            );
+            return {
+                received: true,
+                callId,
+                enriched: false,
+                error: 'Contact not found',
+            };
+        }
+
+        const phoneNumberDetails = await this.quo.api.getPhoneNumber(
+            call.phoneNumberId,
+        );
+        const inboxName =
+            phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
+                ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
+                : phoneNumberDetails.data?.name || 'Quo Line';
+        const inboxNumber =
+            phoneNumberDetails.data?.number || participants[call.direction === 'outgoing' ? 0 : 1];
+
+        const userDetails = await this.quo.api.getUser(call.userId);
+        const userName =
+            `${userDetails.data?.firstName || ''} ${userDetails.data?.lastName || ''}`.trim() ||
+            'Quo User';
+
+        const enrichmentResult = await CallSummaryEnrichmentService.enrichCallNote({
+            callId,
+            summaryData: { summary: [], nextSteps: [] },
+            callDetails: call,
+            quoApi: this.quo.api,
+            crmAdapter: {
+                canUpdateNote: () => false,
+                createNote: async ({ contactId, content, title, timestamp }) => {
+                    const activityData = {
+                        contactExternalId: contactId,
+                        title,
+                        summary: content,
+                        timestamp,
+                    };
+                    return await this.logCallToActivity(activityData);
+                },
+                deleteNote: async (noteId) => {
+                    return await this.attio.api.deleteNote(noteId);
+                },
+            },
+            mappingRepo: {
+                get: async (id) => await this.getMapping(id),
+                upsert: async (id, data) => await this.upsertMapping(id, data),
+            },
+            contactId: attioRecordId,
+            formatters: {
+                formatCallHeader: (call) => {
+                    if (call.aiHandled === 'ai-agent') {
+                        return 'Handled by Sona';
+                    }
+
+                    const wasAnswered = call.answeredAt !== null && call.answeredAt !== undefined;
+                    let statusDescription;
+
+                    if (call.status === 'completed' && wasAnswered) {
+                        statusDescription =
+                            call.direction === 'outgoing'
+                                ? `Outgoing initiated by ${userName}`
+                                : `Incoming answered by ${userName}`;
+                    } else if (
+                        call.status === 'no-answer' ||
+                        call.status === 'missed' ||
+                        (call.status === 'completed' && !wasAnswered && call.direction === 'incoming')
+                    ) {
+                        statusDescription = 'Incoming missed';
+                    } else if (call.status === 'completed' && !wasAnswered && call.direction === 'outgoing') {
+                        statusDescription = `Outgoing initiated by ${userName} (not answered)`;
+                    } else if (call.status === 'forwarded') {
+                        statusDescription = call.forwardedTo
+                            ? `Incoming forwarded to ${call.forwardedTo}`
+                            : 'Incoming forwarded by phone menu';
+                    } else {
+                        statusDescription = `${call.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} ${call.status}`;
+                    }
+                    return statusDescription;
+                },
+                formatTitle: (call) => {
+                    if (call.direction === 'outgoing') {
+                        return `☎️  Call ${inboxName} ${inboxNumber} → ${contactPhone}`;
+                    } else {
+                        return `☎️  Call ${contactPhone} → ${inboxName} ${inboxNumber}`;
+                    }
+                },
+                formatDeepLink: () => {
+                    const deepLink = webhookData.data.deepLink || '#';
+                    return `\n\n[View the call activity in Quo](${deepLink})`;
+                },
+            },
+        });
+
+        console.log(
+            `[Quo Webhook] ✓ Recording enrichment complete for call ${callId}, note ID: ${enrichmentResult.noteId}`,
+        );
+
+        return {
+            received: true,
+            callId,
+            enriched: true,
+            noteId: enrichmentResult.noteId,
+            recordingsCount: enrichmentResult.recordingsCount,
+        };
     }
 
     /**
