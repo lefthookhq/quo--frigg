@@ -17,6 +17,7 @@
  */
 
 const AttioIntegration = require('../src/integrations/AttioIntegration');
+const { mockGetCall, mockGetPhoneNumber, mockGetUser } = require('./fixtures/quo-api-responses');
 
 describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
     let integration;

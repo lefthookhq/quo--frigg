@@ -8,6 +8,7 @@
  */
 
 const AttioIntegration = require('../src/integrations/AttioIntegration');
+const { mockGetCall, mockGetPhoneNumber, mockGetUser } = require('./fixtures/quo-api-responses');
 
 describe('AttioIntegration - Empty Participants Array (v4 API Bug)', () => {
     let integration;
