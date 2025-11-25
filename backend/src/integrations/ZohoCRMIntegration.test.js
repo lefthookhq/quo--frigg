@@ -95,7 +95,7 @@ describe('ZohoCRMIntegration (Refactored)', () => {
 
         // Create integration instance
         integration = new ZohoCRMIntegration();
-        integration.zohoCrm = mockZohoCrm;
+        integration.zoho = mockZohoCrm;
         integration.quo = mockQuoApi;
         integration.id = 'test-integration-id';
         integration.userId = 'test-user-id';
@@ -119,7 +119,7 @@ describe('ZohoCRMIntegration (Refactored)', () => {
     describe('Static Configuration', () => {
         it('should have correct Definition', () => {
             expect(ZohoCRMIntegration.Definition).toBeDefined();
-            expect(ZohoCRMIntegration.Definition.name).toBe('zohoCrm');
+            expect(ZohoCRMIntegration.Definition.name).toBe('zoho');
             expect(ZohoCRMIntegration.Definition.version).toBe('1.0.0');
             expect(ZohoCRMIntegration.Definition.display.label).toBe(
                 'Zoho CRM',
@@ -135,10 +135,10 @@ describe('ZohoCRMIntegration (Refactored)', () => {
             // Test name override
             expect(
                 ZohoCRMIntegration.Definition.modules.quo.definition.getName(),
-            ).toBe('quo-zohoCrm');
+            ).toBe('quo-zoho');
             expect(
                 ZohoCRMIntegration.Definition.modules.quo.definition.moduleName,
-            ).toBe('quo-zohoCrm');
+            ).toBe('quo-zoho');
 
             // Test label override (if display property exists)
             if (ZohoCRMIntegration.Definition.modules.quo.definition.display) {

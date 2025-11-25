@@ -269,6 +269,47 @@ describe('Call Summary Enrichment - Attio Integration', () => {
                 }),
             );
         });
+
+        it('should detect AI-handled calls (Sona) using aiHandled property', async () => {
+            const webhookData = {
+                type: 'call.recording.completed',
+                data: {
+                    object: mockGetCall.aiHandledCall.data,
+                    deepLink: 'https://app.openphone.com/calls/AC_TEST_AI',
+                },
+            };
+
+            integration.getMapping.mockResolvedValue({
+                mapping: {
+                    noteId: 'note-initial-ai',
+                    callId: 'AC_TEST_AI',
+                    attioContactId: 'attio-contact-123',
+                },
+            });
+
+            mockQuoApi.api.getCall.mockResolvedValue(mockGetCall.aiHandledCall);
+            mockQuoApi.api.getCallRecordings.mockResolvedValue(
+                mockGetCallRecordings.singleRecording
+            );
+            mockQuoApi.api.getCallVoicemails.mockResolvedValue({ data: null });
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+            mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
+
+            integration._findAttioContactFromQuoWebhook = jest
+                .fn()
+                .mockResolvedValue('attio-contact-123');
+
+            integration.logCallToActivity = jest.fn().mockResolvedValue('note-ai-456');
+            mockAttioApi.api.deleteNote.mockResolvedValue({});
+
+            await integration._handleQuoCallRecordingEvent(webhookData);
+
+            expect(integration.logCallToActivity).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    summary: expect.stringContaining('Handled by Sona'),
+                })
+            );
+        });
     });
 
     describe('Phase 3: call.summary.completed - Fetch Recordings/Voicemails', () => {
@@ -946,7 +987,7 @@ describe('Call Summary Enrichment - Zoho CRM Integration', () => {
             id: 'test-integration-id',
         });
 
-        integration.zohoCrm = mockZohoCrmApi;
+        integration.zoho = mockZohoCrmApi;
         integration.quo = mockQuoApi;
         integration.commands = mockCommands;
         integration.config = { quoCallWebhookKey: 'test-key' };
