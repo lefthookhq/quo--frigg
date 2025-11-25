@@ -1635,18 +1635,43 @@ class AttioIntegration extends BaseCRMIntegration {
 
         const participants = callObject.participants || [];
 
-        if (participants.length < 2) {
-            throw new Error('Call must have at least 2 participants');
-        }
+        // v4 API Bug Fix: Some webhooks arrive with empty participants[] array
+        // Solution: Fetch full call details which include from/to fields
+        let contactPhone;
+        let inboxPhoneFromCall;
 
-        // Find the contact phone (not the user's phone)
-        // Quo webhook participant indexing:
-        // - Outgoing: [user_phone, contact_phone] → contact is index 1
-        // - Incoming: [contact_phone, user_phone] → contact is index 0
-        const contactPhone =
-            callObject.direction === 'outgoing'
+        if (participants.length < 2) {
+            console.log('[Quo Webhook] Empty participants array, fetching full call details');
+
+            // Fetch complete call data from API
+            const fullCallResponse = await this.quo.api.getCall(callObject.id);
+            const fullCall = fullCallResponse.data;
+
+            // Extract contact phone from from/to fields based on direction
+            // - Incoming: from = contact, to = inbox
+            // - Outgoing: from = inbox, to = contact
+            contactPhone = callObject.direction === 'outgoing'
+                ? fullCall.to
+                : fullCall.from;
+
+            inboxPhoneFromCall = callObject.direction === 'outgoing'
+                ? fullCall.from
+                : fullCall.to;
+
+            console.log(`[Quo Webhook] Extracted from full call: contact=${contactPhone}, inbox=${inboxPhoneFromCall}`);
+        } else {
+            // Normal case: Use participants array
+            // Quo webhook participant indexing:
+            // - Outgoing: [user_phone, contact_phone] → contact is index 1
+            // - Incoming: [contact_phone, user_phone] → contact is index 0
+            contactPhone = callObject.direction === 'outgoing'
                 ? participants[1]
                 : participants[0];
+
+            inboxPhoneFromCall = callObject.direction === 'outgoing'
+                ? participants[0]
+                : participants[1];
+        }
 
         const attioRecordId =
             await this._findAttioContactFromQuoWebhook(contactPhone);
@@ -1661,8 +1686,7 @@ class AttioIntegration extends BaseCRMIntegration {
                 ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
                 : phoneNumberDetails.data?.name || 'Quo Line';
         const inboxNumber =
-            phoneNumberDetails.data?.number ||
-            participants[callObject.direction === 'outgoing' ? 0 : 1];
+            phoneNumberDetails.data?.number || inboxPhoneFromCall;
 
         const userDetails = await this.quo.api.getUser(callObject.userId);
         const userName =
