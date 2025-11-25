@@ -8,6 +8,7 @@
  */
 
 const AttioIntegration = require('../src/integrations/AttioIntegration');
+const { mockGetCall, mockGetPhoneNumber, mockGetUser } = require('./fixtures/quo-api-responses');
 
 describe('AttioIntegration - Empty Participants Array (v4 API Bug)', () => {
     let integration;
@@ -48,7 +49,13 @@ describe('AttioIntegration - Empty Participants Array (v4 API Bug)', () => {
         integration.attio = mockAttioApi;
         integration.quo = mockQuoApi;
         integration.commands = mockCommands;
-        integration.config = { quoCallWebhookKey: 'test-key' };
+        integration.config = {
+            quoCallWebhookKey: 'test-key',
+            phoneNumbersMetadata: [
+                { number: '+17786502958', name: 'Primary' },
+                { number: '+15559876543', name: 'Sales Line' },
+            ],
+        };
 
         // Mock mapping methods
         integration.upsertMapping = jest.fn().mockResolvedValue({});
@@ -91,7 +98,7 @@ describe('AttioIntegration - Empty Participants Array (v4 API Bug)', () => {
                 },
             };
 
-            // Mock getCall to return full details with from/to
+            // Mock getCall to return full details with participants array
             mockQuoApi.api.getCall.mockResolvedValue({
                 data: {
                     id: 'AC_EXAMPLE_EMPTY_001',
@@ -100,10 +107,12 @@ describe('AttioIntegration - Empty Participants Array (v4 API Bug)', () => {
                     direction: 'incoming',
                     status: 'no-answer',
                     duration: 16,
+                    participants: ['+16048027941', '+17786502958'], // Populated by getCall
                     phoneNumberId: 'PNOjP3dgKb',
                     userId: 'USdWHISNTR',
                     answeredAt: null,
                     completedAt: '2025-11-25T06:47:58.000Z',
+                    createdAt: '2025-11-25T06:47:41.758Z',
                 },
             });
 
@@ -154,7 +163,7 @@ describe('AttioIntegration - Empty Participants Array (v4 API Bug)', () => {
                 },
             };
 
-            // Mock getCall to return full details
+            // Mock getCall to return full details with participants array
             mockQuoApi.api.getCall.mockResolvedValue({
                 data: {
                     id: 'AC_outgoing_empty',
@@ -163,7 +172,11 @@ describe('AttioIntegration - Empty Participants Array (v4 API Bug)', () => {
                     direction: 'outgoing',
                     status: 'completed',
                     duration: 120,
+                    participants: ['+15559876543', '+15551234567'], // Populated by getCall
+                    phoneNumberId: 'pn-456',
+                    userId: 'user-789',
                     answeredAt: '2025-01-15T14:00:05Z',
+                    createdAt: '2025-01-15T14:00:00Z',
                 },
             });
 
@@ -193,8 +206,9 @@ describe('AttioIntegration - Empty Participants Array (v4 API Bug)', () => {
             expect(noteContent).toContain('Outgoing initiated by Jane Smith');
         });
 
-        it('should still use participants array when it has values', async () => {
+        it('should always fetch full call details even with participants array', async () => {
             // Arrange - Domain Event: Normal webhook with participants
+            // NOTE: With refactoring, handler ALWAYS calls getCall() now
             const webhookData = {
                 type: 'call.completed',
                 data: {
@@ -203,7 +217,7 @@ describe('AttioIntegration - Empty Participants Array (v4 API Bug)', () => {
                         direction: 'incoming',
                         status: 'completed',
                         duration: 60,
-                        participants: ['+15551234567', '+15559876543'], // Normal case
+                        participants: ['+15551234567', '+15559876543'], // Will be ignored, getCall result used
                         phoneNumberId: 'pn-456',
                         userId: 'user-789',
                         createdAt: '2025-01-15T15:00:00Z',
@@ -212,6 +226,21 @@ describe('AttioIntegration - Empty Participants Array (v4 API Bug)', () => {
                     deepLink: 'https://app.openphone.com/calls/call-normal-001',
                 },
             };
+
+            // Mock getCall to return the call data
+            mockQuoApi.api.getCall.mockResolvedValue({
+                data: {
+                    id: 'call-normal-001',
+                    direction: 'incoming',
+                    status: 'completed',
+                    duration: 60,
+                    participants: ['+15551234567', '+15559876543'],
+                    phoneNumberId: 'pn-456',
+                    userId: 'user-789',
+                    createdAt: '2025-01-15T15:00:00Z',
+                    answeredAt: '2025-01-15T15:00:05Z',
+                },
+            });
 
             mockQuoApi.api.getPhoneNumber.mockResolvedValue({
                 data: { name: 'Sales Line', number: '+15559876543' },
@@ -228,15 +257,16 @@ describe('AttioIntegration - Empty Participants Array (v4 API Bug)', () => {
             // Act
             await integration._handleQuoCallEvent(webhookData);
 
-            // Assert - Should NOT have called getCall (participants available)
-            expect(mockQuoApi.api.getCall).not.toHaveBeenCalled();
+            // Assert - Handler ALWAYS calls getCall() now (simplified logic)
+            expect(mockQuoApi.api.getCall).toHaveBeenCalledWith('call-normal-001');
 
-            // Assert - Used participants array directly
+            // Assert - Used correct contact phone from getCall result
             expect(integration._findAttioContactFromQuoWebhook).toHaveBeenCalledWith('+15551234567');
         });
 
         it('should handle API error when fetching call details', async () => {
-            // Arrange - Domain Event: Empty participants but getCall fails
+            // Arrange - Domain Event: getCall fails (could have empty or populated participants)
+            // NOTE: With refactoring, handler ALWAYS calls getCall(), so error can happen anytime
             const webhookData = {
                 type: 'call.completed',
                 data: {
@@ -244,7 +274,7 @@ describe('AttioIntegration - Empty Participants Array (v4 API Bug)', () => {
                         id: 'call-fetch-error',
                         direction: 'incoming',
                         status: 'no-answer',
-                        participants: [],
+                        participants: [], // Doesn't matter, getCall is always called
                         phoneNumberId: 'pn-456',
                         userId: 'user-789',
                         createdAt: '2025-01-15T16:00:00Z',
@@ -253,13 +283,15 @@ describe('AttioIntegration - Empty Participants Array (v4 API Bug)', () => {
                 },
             };
 
-            // Mock getCall to fail
-            mockQuoApi.api.getCall.mockRejectedValue(new Error('Call not found'));
+            // Mock getCall to return null/undefined (call not found)
+            mockQuoApi.api.getCall.mockResolvedValue({ data: null });
 
-            // Act & Assert - Should propagate error
-            await expect(integration._handleQuoCallEvent(webhookData)).rejects.toThrow(
-                'Call not found',
-            );
+            // Act
+            const result = await integration._handleQuoCallEvent(webhookData);
+
+            // Assert - Should return error result, not throw
+            expect(result.logged).toBe(false);
+            expect(result.error).toBe('Call not found');
         });
     });
 });

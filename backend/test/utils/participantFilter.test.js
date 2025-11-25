@@ -7,8 +7,7 @@
 const {
     normalizePhoneNumber,
     extractQuoPhoneNumbers,
-    filterExternalParticipant,
-    getContactPhoneFromCall,
+    filterExternalParticipants,
 } = require('../../src/utils/participantFilter');
 
 const { phoneNumbersMetadata } = require('../fixtures/quo-v4-webhooks');
@@ -79,138 +78,82 @@ describe('ParticipantFilter Utility', () => {
         });
     });
 
-    describe('filterExternalParticipant', () => {
-        it('should filter out Quo phone and return external contact', () => {
+    describe('filterExternalParticipants', () => {
+        it('should filter out Quo phone and return array of external contacts', () => {
             const participants = ['+15559876543', '+15551234567'];
             const metadata = [{ number: '+15551234567', name: 'Sales' }];
 
-            const contactPhone = filterExternalParticipant(participants, metadata);
+            const externalPhones = filterExternalParticipants(participants, metadata);
 
-            expect(contactPhone).toBe('+15559876543');
+            expect(externalPhones).toEqual(['+15559876543']);
         });
 
         it('should work regardless of participant order', () => {
             const participants = ['+15551234567', '+15559876543']; // Quo first
             const metadata = [{ number: '+15551234567', name: 'Sales' }];
 
-            const contactPhone = filterExternalParticipant(participants, metadata);
+            const externalPhones = filterExternalParticipants(participants, metadata);
 
-            expect(contactPhone).toBe('+15559876543');
+            expect(externalPhones).toEqual(['+15559876543']);
+        });
+
+        it('should return multiple external participants (3-way call)', () => {
+            const participants = ['+15557654321', '+15551234567', '+15559998888'];
+            const metadata = [{ number: '+15551234567', name: 'Sales' }];
+
+            const externalPhones = filterExternalParticipants(participants, metadata);
+
+            expect(externalPhones).toEqual(['+15557654321', '+15559998888']);
         });
 
         it('should handle multiple Quo numbers in metadata', () => {
-            const participants = ['+15557654321', '+15551234567', '+15559876543'];
+            const participants = ['+15557654321', '+15551234567', '+15559876543', '+15559998888'];
             const metadata = [
                 { number: '+15551234567', name: 'Sales' },
                 { number: '+15559876543', name: 'Support' },
             ];
 
-            const contactPhone = filterExternalParticipant(participants, metadata);
+            const externalPhones = filterExternalParticipants(participants, metadata);
 
-            // Should return the first non-Quo number
-            expect(contactPhone).toBe('+15557654321');
+            expect(externalPhones).toEqual(['+15557654321', '+15559998888']);
         });
 
-        it('should fallback to first participant when no metadata', () => {
+        it('should return all participants when no metadata', () => {
             const participants = ['+15559876543', '+15551234567'];
             const metadata = [];
 
-            const contactPhone = filterExternalParticipant(participants, metadata);
+            const externalPhones = filterExternalParticipants(participants, metadata);
 
-            expect(contactPhone).toBe('+15559876543');
+            expect(externalPhones).toEqual(['+15559876543', '+15551234567']);
         });
 
-        it('should handle empty participants array', () => {
+        it('should return empty array for empty participants', () => {
             const participants = [];
             const metadata = [{ number: '+15551234567', name: 'Sales' }];
 
-            const contactPhone = filterExternalParticipant(participants, metadata);
+            const externalPhones = filterExternalParticipants(participants, metadata);
 
-            expect(contactPhone).toBe(null);
+            expect(externalPhones).toEqual([]);
         });
 
-        it('should return null when all participants are Quo numbers', () => {
+        it('should return empty array when all participants are Quo numbers', () => {
             const participants = ['+15551234567', '+15559876543'];
             const metadata = [
                 { number: '+15551234567', name: 'Sales' },
                 { number: '+15559876543', name: 'Support' },
             ];
 
-            const contactPhone = filterExternalParticipant(participants, metadata);
+            const externalPhones = filterExternalParticipants(participants, metadata);
 
-            expect(contactPhone).toBe(null);
-        });
-    });
-
-    describe('getContactPhoneFromCall', () => {
-        it('should use participants array when available', () => {
-            const callObject = {
-                id: 'AC_TEST_001',
-                direction: 'incoming',
-                participants: ['+15559876543', '+15551234567'],
-            };
-            const metadata = [{ number: '+15551234567', name: 'Sales' }];
-
-            const contactPhone = getContactPhoneFromCall(callObject, null, metadata);
-
-            expect(contactPhone).toBe('+15559876543');
-        });
-
-        it('should fallback to fullCallData when participants empty (incoming)', () => {
-            const callObject = {
-                id: 'AC_TEST_EMPTY',
-                direction: 'incoming',
-                participants: [],
-            };
-            const fullCallData = {
-                participants: ['+15557654321', '+15551234567'], // [contact, quo] for incoming
-            };
-            const metadata = [{ number: '+15551234567', name: 'Sales' }];
-
-            const contactPhone = getContactPhoneFromCall(callObject, fullCallData, metadata);
-
-            expect(contactPhone).toBe('+15557654321');
-        });
-
-        it('should fallback to fullCallData when participants empty (outgoing)', () => {
-            const callObject = {
-                id: 'AC_TEST_EMPTY',
-                direction: 'outgoing',
-                participants: [],
-            };
-            const fullCallData = {
-                participants: ['+15551234567', '+15557654321'], // [quo, contact] for outgoing
-            };
-            const metadata = [{ number: '+15551234567', name: 'Sales' }];
-
-            const contactPhone = getContactPhoneFromCall(callObject, fullCallData, metadata);
-
-            expect(contactPhone).toBe('+15557654321');
-        });
-
-        it('should return null when no participants and no fullCallData', () => {
-            const callObject = {
-                id: 'AC_TEST_NONE',
-                direction: 'incoming',
-                participants: [],
-            };
-            const metadata = [{ number: '+15551234567', name: 'Sales' }];
-
-            const contactPhone = getContactPhoneFromCall(callObject, null, metadata);
-
-            expect(contactPhone).toBe(null);
+            expect(externalPhones).toEqual([]);
         });
 
         it('should work with real phoneNumbersMetadata fixture', () => {
-            const callObject = {
-                id: 'AC_TEST_001',
-                direction: 'incoming',
-                participants: ['+15559876543', '+15551234567'],
-            };
+            const participants = ['+15559876543', '+15551234567'];
 
-            const contactPhone = getContactPhoneFromCall(callObject, null, phoneNumbersMetadata);
+            const externalPhones = filterExternalParticipants(participants, phoneNumbersMetadata);
 
-            expect(contactPhone).toBe('+15559876543');
+            expect(externalPhones).toEqual(['+15559876543']);
         });
     });
 });
