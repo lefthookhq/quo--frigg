@@ -8,6 +8,11 @@ class Api extends ApiKeyRequester {
             process.env.QUO_BASE_URL ||
             'https://dev-public-api.openphone.dev';
 
+        this.analyticsBaseUrl =
+            params.analyticsBaseUrl ||
+            process.env.QUO_ANALYTICS_BASE_URL ||
+            'https://integration.openphone.dev/v2/analytics';
+
         // Set the API key header name (parent class uses api_key_name)
         this.api_key_name = 'Authorization';
 
@@ -445,6 +450,23 @@ class Api extends ApiKeyRequester {
             url: this.baseUrl + this.URLs.webhookById(id),
         };
         return this._delete(options);
+    }
+
+    async sendAnalyticsEvent({ orgId, userId, integration, event, data }) {
+        try {
+            const options = {
+                url: this.analyticsBaseUrl + '/v2/analytics',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-frigg-api-key': process.env.FRIGG_API_KEY,
+                },
+                body: { orgId, userId, integration, event, data },
+            };
+            const response = await this._post(options);
+            return response;
+        } catch (error) {
+            throw error;
+        }
     }
 }
 
