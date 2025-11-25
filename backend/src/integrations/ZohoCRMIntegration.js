@@ -6,7 +6,7 @@ const CallSummaryEnrichmentService = require('../base/services/CallSummaryEnrich
 
 class ZohoCRMIntegration extends BaseCRMIntegration {
     static Definition = {
-        name: 'zohoCrm',
+        name: 'zoho',
         version: '1.0.0',
         supportedVersions: ['1.0.0'],
         hasUserConfig: true,
@@ -22,15 +22,15 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             quo: {
                 definition: {
                     ...QuoDefinition,
-                    getName: () => 'quo-zohoCrm',
-                    moduleName: 'quo-zohoCrm',
+                    getName: () => 'quo-zoho',
+                    moduleName: 'quo-zoho',
                     display: {
                         ...(QuoDefinition.display || {}),
                         label: 'Quo (Zoho CRM)',
                     },
                 },
             },
-            zohoCrm: {
+            zoho: {
                 definition: zohoCrm.Definition,
             },
         },
@@ -166,11 +166,11 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
 
             switch (objectType) {
                 case 'Contact':
-                    response = await this.zohoCrm.api.listContacts(params);
+                    response = await this.zoho.api.listContacts(params);
                     break;
 
                 case 'Account':
-                    response = await this.zohoCrm.api.listAccounts(params);
+                    response = await this.zoho.api.listAccounts(params);
                     break;
 
                 default:
@@ -454,7 +454,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 );
             }
 
-            const notificationUrl = `${process.env.BASE_URL}/api/zohoCrm-integration/webhooks/${this.id}`;
+            const notificationUrl = `${process.env.BASE_URL}/api/zoho-integration/webhooks/${this.id}`;
 
             console.log(
                 `[Zoho CRM] Registering notification channel at: ${notificationUrl}`,
@@ -482,7 +482,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             );
 
             const response =
-                await this.zohoCrm.api.enableNotification(notificationConfig);
+                await this.zoho.api.enableNotification(notificationConfig);
 
             if (
                 !response?.watch ||
@@ -1164,7 +1164,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         try {
             const searchCriteria = `((Phone:equals:${normalizedPhone})or(Mobile:equals:${normalizedPhone}))`;
 
-            const searchResults = await this.zohoCrm.api.searchContacts({
+            const searchResults = await this.zoho.api.searchContacts({
                 criteria: searchCriteria,
             });
 
@@ -1302,7 +1302,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 ? `☎️  Call ${inboxName} ${inboxNumber} → ${contactPhone}`
                 : `☎️  Call ${contactPhone} → ${inboxName} ${inboxNumber}`;
 
-        const noteResponse = await this.zohoCrm.api.createNote('Contacts', contactId, {
+        const noteResponse = await this.zoho.api.createNote('Contacts', contactId, {
             Note_Title: callTitle,
             Note_Content: formattedNote,
         });
@@ -1412,7 +1412,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 ? `💬 Message ${inboxName} ${inboxNumber} → ${contactPhone}`
                 : `💬 Message ${contactPhone} → ${inboxName} ${inboxNumber}`;
 
-        const noteResponse = await this.zohoCrm.api.createNote(
+        const noteResponse = await this.zoho.api.createNote(
             'Contacts',
             contactId,
             {
@@ -1528,7 +1528,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             crmAdapter: {
                 canUpdateNote: () => true, // Zoho CRM supports note updates!
                 createNote: async ({ contactId, content, title, timestamp }) => {
-                    const noteResponse = await this.zohoCrm.api.createNote(
+                    const noteResponse = await this.zoho.api.createNote(
                         'Contacts',
                         contactId,
                         {
@@ -1539,7 +1539,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                     return noteResponse?.data?.[0]?.details?.id || null;
                 },
                 updateNote: async (noteId, { content, title }) => {
-                    return await this.zohoCrm.api.updateNote(
+                    return await this.zoho.api.updateNote(
                         'Contacts',
                         zohoContactId,
                         noteId,
@@ -1640,7 +1640,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         let person;
 
         if (objectType === 'Contact') {
-            const response = await this.zohoCrm.api.getContact(recordId);
+            const response = await this.zoho.api.getContact(recordId);
 
             if (!response.data) {
                 throw new Error(`No data returned for Contact ${recordId}`);
@@ -1657,7 +1657,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 person = response.data;
             }
         } else if (objectType === 'Account') {
-            const response = await this.zohoCrm.api.getAccount(recordId);
+            const response = await this.zoho.api.getAccount(recordId);
 
             if (!response.data) {
                 throw new Error(`No data returned for Account ${recordId}`);
@@ -1746,11 +1746,11 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
 
     async fetchPersonById(id) {
         try {
-            const contact = await this.zohoCrm.api.getContact(id);
+            const contact = await this.zoho.api.getContact(id);
             return { ...contact.data, _objectType: 'Contact' };
         } catch (contactError) {
             try {
-                const account = await this.zohoCrm.api.getAccount(id);
+                const account = await this.zoho.api.getAccount(id);
                 return { ...account.data, _objectType: 'Account' };
             } catch (accountError) {
                 throw new Error(`Person not found: ${id}`);
@@ -1760,11 +1760,11 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
 
     async findPersonByExternalId(externalId) {
         try {
-            const contact = await this.zohoCrm.api.getContact(externalId);
+            const contact = await this.zoho.api.getContact(externalId);
             return { ...contact.data, _objectType: 'Contact' };
         } catch (contactError) {
             try {
-                const account = await this.zohoCrm.api.getAccount(externalId);
+                const account = await this.zoho.api.getAccount(externalId);
                 return { ...account.data, _objectType: 'Account' };
             } catch (accountError) {
                 return null;
@@ -1800,7 +1800,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 sort_by: req.query.sort_by || 'Created_Time',
             };
 
-            const contacts = await this.zohoCrm.api.listContacts(params);
+            const contacts = await this.zoho.api.listContacts(params);
             res.json(contacts);
         } catch (error) {
             console.error('Failed to list Zoho contacts:', error);
@@ -1822,7 +1822,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 sort_by: req.query.sort_by || 'Created_Time',
             };
 
-            const accounts = await this.zohoCrm.api.listAccounts(params);
+            const accounts = await this.zoho.api.listAccounts(params);
             res.json(accounts);
         } catch (error) {
             console.error('Failed to list Zoho accounts:', error);
@@ -1842,9 +1842,9 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
      */
     async onDelete(params) {
         // Validate that API modules are loaded before attempting webhook deletion
-        if (!this.zohoCrm?.api || !this.quo?.api) {
+        if (!this.zoho?.api || !this.quo?.api) {
             const missingModules = [];
-            if (!this.zohoCrm?.api) missingModules.push('zohoCrm');
+            if (!this.zoho?.api) missingModules.push('zoho');
             if (!this.quo?.api) missingModules.push('quo');
 
             console.error(
@@ -1880,7 +1880,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 console.log('[Zoho CRM] Disabling notification channel');
 
                 try {
-                    await this.zohoCrm.api.disableNotification([
+                    await this.zoho.api.disableNotification([
                         notificationChannelId,
                     ]);
                     console.log(
