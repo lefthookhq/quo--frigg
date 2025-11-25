@@ -1746,6 +1746,21 @@ class AttioIntegration extends BaseCRMIntegration {
             console.log(
                 `[Quo Webhook] ✓ Mapping stored: call ${callObject.id} -> note ${noteId}`,
             );
+            console.log(
+                `[Mapping Debug] Phase 1 - Stored key: "${callObject.id}" (type: ${typeof callObject.id}, length: ${callObject.id?.length})`,
+            );
+            console.log(
+                `[Mapping Debug] Phase 1 - Full webhook data:`,
+                JSON.stringify({
+                    eventType: webhookData.type,
+                    callId: callObject.id,
+                    contactPhone,
+                    attioRecordId,
+                    noteId,
+                    webhookDataKeys: Object.keys(webhookData.data || {}),
+                    objectKeys: Object.keys(callObject || {}),
+                }),
+            );
         }
 
         console.log(`[Quo Webhook] ✓ Call logged for contact ${attioRecordId}`);
@@ -1908,6 +1923,30 @@ class AttioIntegration extends BaseCRMIntegration {
         const userName =
             `${userDetails.data?.firstName || ''} ${userDetails.data?.lastName || ''}`.trim() ||
             'Quo User';
+
+        // Debug: Log what key we're about to look up
+        console.log(
+            `[Mapping Debug] Phase 3 - Looking up key: "${callId}" (type: ${typeof callId}, length: ${callId?.length})`,
+        );
+        const existingMappingDebug = await this.getMapping(callId);
+        console.log(
+            `[Mapping Debug] Phase 3 - Lookup result:`,
+            existingMappingDebug,
+        );
+        console.log(
+            `[Mapping Debug] Phase 3 - Full webhook data:`,
+            JSON.stringify({
+                eventType: webhookData.type,
+                summaryCallId: summaryObject.callId,
+                fetchedCallId: callObject.id,
+                callIdsMatch: summaryObject.callId === callObject.id,
+                contactPhone,
+                attioRecordId,
+                webhookDataKeys: Object.keys(webhookData.data || {}),
+                summaryObjectKeys: Object.keys(summaryObject || {}),
+                callObjectKeys: Object.keys(callObject || {}),
+            }),
+        );
 
         // Use CallSummaryEnrichmentService to enrich the note
         const enrichmentResult = await CallSummaryEnrichmentService.enrichCallNote({
