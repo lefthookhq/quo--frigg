@@ -64,8 +64,8 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
         integration.config = {
             quoCallWebhookKey: 'test-key',
             phoneNumbersMetadata: [
-                { number: '+17786544283', name: 'Test Line' },
-                { number: '+15559876543', name: 'Sales Line' },
+                { number: '+15551234567', name: 'Sales Line' }, // Match mockGetPhoneNumber.salesLine
+                { number: '+15552468135', name: 'Support Line' }, // Match mockGetPhoneNumber.supportLine
             ],
         };
 
@@ -139,13 +139,8 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
                 data: transformedWebhookData.data.object,
             });
 
-            mockQuoApi.api.getPhoneNumber.mockResolvedValue({
-                data: { name: 'Test Line', number: '+17786544283' },
-            });
-
-            mockQuoApi.api.getUser.mockResolvedValue({
-                data: { firstName: 'John', lastName: 'Doe' },
-            });
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+            mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
 
             mockAttioApi.api.createNote.mockResolvedValue({
                 data: { id: { note_id: 'note-answered-null' } },
@@ -190,13 +185,8 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
                 data: webhookData.data.object,
             });
 
-            mockQuoApi.api.getPhoneNumber.mockResolvedValue({
-                data: { name: 'Sales Line', number: '+15559876543' },
-            });
-
-            mockQuoApi.api.getUser.mockResolvedValue({
-                data: { firstName: 'Jane', lastName: 'Smith' },
-            });
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+            mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.janeDoe);
 
             mockAttioApi.api.createNote.mockResolvedValue({
                 data: { id: { note_id: 'note-answered-123' } },
@@ -207,7 +197,7 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
 
             // Assert - Should be logged as ANSWERED
             const noteContent = mockAttioApi.api.createNote.mock.calls[0][0].content;
-            expect(noteContent).toContain('Incoming answered by Jane Smith');
+            expect(noteContent).toContain('Incoming answered by Jane Doe'); // Updated to match mockGetUser.janeDoe
             expect(noteContent).not.toContain('Incoming missed');
             expect(noteContent).toContain('▶️ Recording (2:00)');
         });
@@ -238,13 +228,8 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
                 data: webhookData.data.object,
             });
 
-            mockQuoApi.api.getPhoneNumber.mockResolvedValue({
-                data: { name: 'Sales Line', number: '+15559876543' },
-            });
-
-            mockQuoApi.api.getUser.mockResolvedValue({
-                data: { firstName: 'John', lastName: 'Doe' },
-            });
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+            mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
 
             mockAttioApi.api.createNote.mockResolvedValue({
                 data: { id: { note_id: 'note-outgoing-no-answer' } },
@@ -291,13 +276,8 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
                 data: webhookData.data.object,
             });
 
-            mockQuoApi.api.getPhoneNumber.mockResolvedValue({
-                data: { name: 'Support Line', number: '+15559876543' },
-            });
-
-            mockQuoApi.api.getUser.mockResolvedValue({
-                data: { firstName: 'Jane', lastName: 'Smith' },
-            });
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.supportLine);
+            mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.janeDoe);
 
             mockAttioApi.api.createNote.mockResolvedValue({
                 data: { id: { note_id: 'note-vm-real' } },
@@ -345,13 +325,8 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
                 data: webhookData.data.object,
             });
 
-            mockQuoApi.api.getPhoneNumber.mockResolvedValue({
-                data: { name: 'Sales Line', number: '+15559876543' },
-            });
-
-            mockQuoApi.api.getUser.mockResolvedValue({
-                data: { firstName: 'John', lastName: 'Doe' },
-            });
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+            mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
 
             mockAttioApi.api.createNote.mockResolvedValue({
                 data: { id: { note_id: 'note-vm-no-url' } },
@@ -412,13 +387,8 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
                 data: transformedWebhook.data.object,
             });
 
-            mockQuoApi.api.getPhoneNumber.mockResolvedValue({
-                data: { name: 'Main Line', number: '+15559876543' },
-            });
-
-            mockQuoApi.api.getUser.mockResolvedValue({
-                data: { firstName: 'Alex', lastName: 'Johnson' },
-            });
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+            mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
 
             mockAttioApi.api.createNote.mockResolvedValue({
                 data: { id: { note_id: 'note-v3' } },
@@ -430,7 +400,7 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
             // Assert - Should process correctly
             expect(mockAttioApi.api.createNote).toHaveBeenCalled();
             const noteContent = mockAttioApi.api.createNote.mock.calls[0][0].content;
-            expect(noteContent).toContain('Incoming answered by Alex Johnson');
+            expect(noteContent).toContain('Incoming answered by John Smith'); // Updated to match mockGetUser.johnSmith
         });
     });
 });
