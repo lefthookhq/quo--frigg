@@ -50,6 +50,12 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
         // Mock commands (hexagonal port)
         mockCommands = {
             updateIntegrationConfig: jest.fn().mockResolvedValue({}),
+            updateIntegrationStatus: { execute: jest.fn() },
+            updateIntegrationMessages: { execute: jest.fn() },
+            findOrganizationUserById: jest.fn().mockResolvedValue({
+                id: 'test-user-id',
+                email: 'test@example.com',
+            }),
         };
 
         // Create integration instance (hexagonal core)
@@ -292,6 +298,147 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
             expect(enrichedNote.content).toContain('Hi, please call me back about the proposal');
             expect(enrichedNote.content).toContain('Summary:');
             expect(enrichedNote.content).toContain('Customer left voicemail');
+        });
+    });
+
+    describe('Call Summary Enrichment (Jobs and Title)', () => {
+        it('should parse jobs object structure and display formatted job data', async () => {
+            // Use centralized webhook fixture with jobs
+            const { callSummaryCompletedWebhook } = require('./fixtures/quo-v4-webhooks');
+            const { mockGetPhoneNumber, mockGetUser } = require('./fixtures/quo-api-responses');
+
+            integration.getMapping.mockResolvedValue({
+                noteId: 'note-initial',
+                callId: callSummaryCompletedWebhook.data.object.callId,
+                attioContactId: 'attio-contact-123',
+            });
+
+            mockQuoApi.api.getCall.mockResolvedValue({
+                data: {
+                    id: callSummaryCompletedWebhook.data.object.callId,
+                    direction: 'incoming',
+                    status: 'completed',
+                    duration: 180,
+                    participants: ['+15559876543', '+15551234567'],
+                    phoneNumberId: 'PN_TEST_001',
+                    userId: 'US_TEST_001',
+                    answeredAt: '2025-01-15T10:30:00Z',
+                    aiHandled: 'ai-agent',
+                    createdAt: '2025-01-15T10:30:00Z',
+                },
+            });
+
+            mockQuoApi.api.getCallRecordings.mockResolvedValue({ data: [] });
+            mockQuoApi.api.getCallVoicemails.mockResolvedValue({ data: null });
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+            mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
+
+            integration.logCallToActivity = jest.fn().mockResolvedValue('note-enriched');
+            mockAttioApi.api.deleteNote.mockResolvedValue({});
+
+            await integration._handleQuoCallSummaryEvent(callSummaryCompletedWebhook);
+
+            // Assert: Jobs parsed correctly with icon, name, and data items
+            const callArgs = integration.logCallToActivity.mock.calls[0][0];
+            expect(callArgs.summary).toContain('**Jobs:**');
+            expect(callArgs.summary).toContain('✍️ Message taking');
+            expect(callArgs.summary).toContain('**First and last name:** Jane Doe');
+            expect(callArgs.summary).toContain('**Summarize the message:**');
+            expect(callArgs.summary).toContain('Jane Doe called to inquire about product pricing');
+        });
+
+        it('should use "Call" prefix in title, not "Call Summary:"', async () => {
+            // Use centralized fixtures
+            const { callSummaryCompletedWebhook } = require('./fixtures/quo-v4-webhooks');
+            const { mockGetPhoneNumber, mockGetUser } = require('./fixtures/quo-api-responses');
+
+            integration.getMapping.mockResolvedValue({
+                noteId: 'note-title-test',
+                callId: callSummaryCompletedWebhook.data.object.callId,
+                attioContactId: 'attio-contact-123',
+            });
+
+            mockQuoApi.api.getCall.mockResolvedValue({
+                data: {
+                    id: callSummaryCompletedWebhook.data.object.callId,
+                    direction: 'incoming',
+                    status: 'completed',
+                    duration: 180,
+                    participants: ['+15559876543', '+15551234567'],
+                    phoneNumberId: 'PN_TEST_001',
+                    userId: 'US_TEST_001',
+                    answeredAt: '2025-01-15T10:30:00Z',
+                    aiHandled: null, // Regular call
+                    createdAt: '2025-01-15T10:30:00Z',
+                },
+            });
+
+            mockQuoApi.api.getCallRecordings.mockResolvedValue({ data: [] });
+            mockQuoApi.api.getCallVoicemails.mockResolvedValue({ data: null });
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+            mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
+
+            integration.logCallToActivity = jest.fn().mockResolvedValue('note-enriched');
+            mockAttioApi.api.deleteNote.mockResolvedValue({});
+
+            await integration._handleQuoCallSummaryEvent(callSummaryCompletedWebhook);
+
+            // Assert: Title uses "Call" prefix, not "Call Summary:"
+            const callArgs = integration.logCallToActivity.mock.calls[0][0];
+            expect(callArgs.title).toMatch(/^☎️\s+Call\s+/);
+            expect(callArgs.title).not.toContain('Call Summary:');
+        });
+
+        it('should not include jobs section when jobs array is empty', async () => {
+            // Use base webhook but modify to have empty jobs
+            const { callSummaryCompletedWebhook } = require('./fixtures/quo-v4-webhooks');
+            const { mockGetPhoneNumber, mockGetUser } = require('./fixtures/quo-api-responses');
+
+            const webhookWithoutJobs = {
+                ...callSummaryCompletedWebhook,
+                data: {
+                    ...callSummaryCompletedWebhook.data,
+                    object: {
+                        ...callSummaryCompletedWebhook.data.object,
+                        jobs: [], // Empty jobs array
+                    },
+                },
+            };
+
+            integration.getMapping.mockResolvedValue({
+                noteId: 'note-no-jobs',
+                callId: webhookWithoutJobs.data.object.callId,
+                attioContactId: 'attio-contact-123',
+            });
+
+            mockQuoApi.api.getCall.mockResolvedValue({
+                data: {
+                    id: webhookWithoutJobs.data.object.callId,
+                    direction: 'outgoing',
+                    status: 'completed',
+                    duration: 60,
+                    participants: ['+15559876543', '+15551234567'],
+                    phoneNumberId: 'PN_TEST_001',
+                    userId: 'US_TEST_001',
+                    answeredAt: '2025-01-15T15:00:00Z',
+                    aiHandled: null,
+                    createdAt: '2025-01-15T15:00:00Z',
+                },
+            });
+
+            mockQuoApi.api.getCallRecordings.mockResolvedValue({ data: [] });
+            mockQuoApi.api.getCallVoicemails.mockResolvedValue({ data: null });
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+            mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
+
+            integration.logCallToActivity = jest.fn().mockResolvedValue('note-no-jobs');
+            mockAttioApi.api.deleteNote.mockResolvedValue({});
+
+            await integration._handleQuoCallSummaryEvent(webhookWithoutJobs);
+
+            // Assert: No jobs section when jobs array is empty
+            const callArgs = integration.logCallToActivity.mock.calls[0][0];
+            expect(callArgs.summary).not.toContain('**Jobs:**');
         });
     });
 
