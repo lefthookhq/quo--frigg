@@ -202,7 +202,7 @@ class CallSummaryEnrichmentService {
         voicemail,
         formatters,
     }) {
-        const { summary = [], nextSteps = [] } = summaryData;
+        const { summary = [], nextSteps = [], jobs = [] } = summaryData;
 
         // Start with call header (status line)
         let content = formatters.formatCallHeader(callDetails);
@@ -239,6 +239,24 @@ class CallSummaryEnrichmentService {
             content += '\n**Next Steps:**\n';
             nextSteps.forEach((step) => {
                 content += `• ${step}\n`;
+            });
+        }
+
+        // Add jobs (AI-extracted action items from Sona)
+        // Jobs structure: [{ icon, name, result: { data: [{ name, value }] } }]
+        if (jobs.length > 0) {
+            content += '\n**Jobs:**\n';
+            jobs.forEach((job) => {
+                // Format job title with icon (e.g., "✍️ Message taking")
+                const jobTitle = job.icon ? `${job.icon} ${job.name}` : job.name;
+                content += `\n**${jobTitle}:**\n`;
+
+                // Display each data item in the job result
+                if (job.result && job.result.data && Array.isArray(job.result.data)) {
+                    job.result.data.forEach((item) => {
+                        content += `• **${item.name}:** ${item.value}\n`;
+                    });
+                }
             });
         }
 

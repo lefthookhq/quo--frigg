@@ -399,6 +399,92 @@ const mockGetContact = {
 };
 
 // ============================================================================
+// MESSAGE RESPONSES (getMessage) - v4 API uses from/to, NOT participants
+// ============================================================================
+
+const mockQuoMessage = {
+    // Outgoing message (delivered)
+    outgoingDelivered: {
+        data: {
+            object: {
+                id: 'MSG_OUT_DELIVERED_001',
+                object: 'message',
+                direction: 'outgoing',
+                from: '+16036644141', // Quo phone number
+                to: '+16178505435', // Contact number
+                text: "What's happening here?",
+                status: 'delivered',
+                phoneNumberId: 'PNSeQ1TGZU',
+                userId: 'USpvVF3Lo2',
+                contactIds: ['6772f06a2bc349dd14e4c6bf', '692616c9b8a042e59be3aa60'],
+                createdAt: '2025-11-26T03:23:12.819Z',
+            },
+            deepLink:
+                'https://my.quo.com/inbox/PNSeQ1TGZU/c/CONV_TEST_001?at=MSG_OUT_DELIVERED_001',
+        },
+    },
+
+    // Incoming message (received)
+    incomingReceived: {
+        data: {
+            object: {
+                id: 'MSG_IN_RECEIVED_001',
+                object: 'message',
+                direction: 'incoming',
+                from: '+16178505435', // Contact number
+                to: '+16036644141', // Quo phone number
+                text: 'Nothing. Wasamatta you?',
+                status: 'received',
+                phoneNumberId: 'PNSeQ1TGZU',
+                userId: 'USpvVF3Lo2',
+                contactIds: ['6772f06a2bc349dd14e4c6bf', '692616c9b8a042e59be3aa60'],
+                createdAt: '2025-11-26T03:23:52.349Z',
+            },
+            deepLink:
+                'https://my.quo.com/inbox/PNSeQ1TGZU/c/CONV_TEST_001?at=MSG_IN_RECEIVED_001',
+        },
+    },
+
+    // Minimal outgoing message
+    outgoingMinimal: {
+        data: {
+            object: {
+                id: 'MSG_OUT_MIN',
+                object: 'message',
+                direction: 'outgoing',
+                from: '+15551234567',
+                to: '+15559876543',
+                text: 'Quick test message',
+                status: 'sent',
+                phoneNumberId: 'PN_TEST_001',
+                userId: 'US_TEST_001',
+                createdAt: '2025-01-15T10:00:00.000Z',
+            },
+            deepLink: 'https://my.quo.com/inbox/messages/MSG_OUT_MIN',
+        },
+    },
+
+    // Minimal incoming message
+    incomingMinimal: {
+        data: {
+            object: {
+                id: 'MSG_IN_MIN',
+                object: 'message',
+                direction: 'incoming',
+                from: '+15559876543',
+                to: '+15551234567',
+                text: 'Reply message',
+                status: 'received',
+                phoneNumberId: 'PN_TEST_001',
+                userId: 'US_TEST_001',
+                createdAt: '2025-01-15T10:01:00.000Z',
+            },
+            deepLink: 'https://my.quo.com/inbox/messages/MSG_IN_MIN',
+        },
+    },
+};
+
+// ============================================================================
 // HELPER FUNCTIONS FOR TEST SETUP
 // ============================================================================
 
@@ -458,6 +544,7 @@ module.exports = {
     mockGetCallRecordings,
     mockGetCallVoicemails,
     mockGetContact,
+    mockQuoMessage,
 
     // Helper functions
     setupStandardQuoMocks,

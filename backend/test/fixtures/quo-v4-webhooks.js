@@ -168,6 +168,34 @@ const callCompletedWebhook = {
 };
 
 /**
+ * message.received webhook
+ * Sent when an incoming message is received
+ */
+const messageReceivedWebhook = {
+    apiVersion: 'v4',
+    createdAt: '2025-01-15T10:20:15.342Z',
+    data: {
+        deepLink: 'https://quo.com/inbox/PN_TEST_001/c/CN_TEST_002?at=MSG_TEST_002',
+        object: {
+            contactIds: ['CONT_TEST_002'],
+            createdAt: '2025-01-15T10:20:12.445Z',
+            direction: 'incoming',
+            from: '+15559876543', // Contact phone (incoming FROM)
+            id: 'MSG_TEST_002',
+            object: 'message',
+            phoneNumberId: 'PN_TEST_001',
+            status: 'received',
+            text: 'Can you send me more information about your services?',
+            to: '+15551234567', // Quo phone (incoming TO)
+            userId: 'US_TEST_001',
+        },
+    },
+    id: 'WH_TEST_005',
+    object: 'event',
+    type: 'message.received',
+};
+
+/**
  * message.delivered webhook
  * Sent when an outgoing message is delivered
  */
@@ -260,6 +288,7 @@ module.exports = {
     callRecordingCompletedWebhook,
     callSummaryCompletedWebhook,
     callCompletedWebhook,
+    messageReceivedWebhook,
     messageDeliveredWebhook,
     callCompletedEmptyParticipants,
     fullCallDetails,

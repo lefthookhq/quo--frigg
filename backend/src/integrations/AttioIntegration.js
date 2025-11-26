@@ -1711,62 +1711,83 @@ class AttioIntegration extends BaseCRMIntegration {
 
         console.log(`[Quo Webhook] Processing call.completed: ${callId}`);
 
-        const participants = callObject.participants || [];
-
-        // v4 API Bug Fix: Some webhooks arrive with empty participants[] array
-        // Solution: Fetch full call details which include from/to fields
-        let contactPhone;
-        let inboxPhoneFromCall;
-
-        if (participants.length < 2) {
-            console.log(
-                '[Quo Webhook] Empty participants array, fetching full call details',
-            );
-
-            // Fetch complete call data from API
-            const fullCallResponse = await this.quo.api.getCall(callObject.id);
-            const fullCall = fullCallResponse.data;
-
-            // Extract contact phone from from/to fields based on direction
-            // - Incoming: from = contact, to = inbox
-            // - Outgoing: from = inbox, to = contact
-            contactPhone =
-                callObject.direction === 'outgoing'
-                    ? fullCall.to
-                    : fullCall.from;
-
-            inboxPhoneFromCall =
-                callObject.direction === 'outgoing'
-                    ? fullCall.from
-                    : fullCall.to;
-
-            console.log(
-                `[Quo Webhook] Extracted from full call: contact=${contactPhone}, inbox=${inboxPhoneFromCall}`,
-            );
-        } else {
-            // Normal case: Use participants array
-            // Quo webhook participant indexing:
-            // - Outgoing: [user_phone, contact_phone] → contact is index 1
-            // - Incoming: [contact_phone, user_phone] → contact is index 0
-            contactPhone =
-                callObject.direction === 'outgoing'
-                    ? participants[1]
-                    : participants[0];
-
-            inboxPhoneFromCall =
-                callObject.direction === 'outgoing'
-                    ? participants[0]
-                    : participants[1];
+        // Always fetch full call details to ensure we have complete data
+        const fullCallResponse = await this.quo.api.getCall(callId);
+        if (!fullCallResponse?.data) {
+            console.warn(`[Quo Webhook] Call ${callId} not found`);
+            return { logged: false, error: 'Call not found', callId };
         }
 
-        const attioRecordId =
-            await this._findAttioContactFromQuoWebhook(contactPhone);
+        const call = fullCallResponse.data;
+        const participants = call.participants || [];
+
+        // For no-answer calls, wait and fetch voicemail to include in the note
+        // Voicemail processing takes 2-4 seconds after call completes
+        if (call.status === 'no-answer') {
+            console.log(
+                `[Quo Webhook] No-answer call ${callId}, waiting 3s for voicemail processing...`,
+            );
+
+            // Wait 3 seconds for voicemail to be processed
+            await new Promise((resolve) => setTimeout(resolve, 3000));
+
+            try {
+                const vmResponse = await this.quo.api.getCallVoicemails(callId);
+                const voicemail = vmResponse?.data;
+                if (voicemail && voicemail.status === 'completed') {
+                    console.log(
+                        `[Quo Webhook] Found voicemail for no-answer call ${callId}`,
+                    );
+
+                    // Merge voicemail into call object (map recordingUrl to url for consistency)
+                    call.voicemail = {
+                        duration: voicemail.duration,
+                        url: voicemail.recordingUrl,
+                        transcript: voicemail.transcript,
+                        id: voicemail.id,
+                    };
+                } else {
+                    console.log(
+                        `[Quo Webhook] No voicemail found for no-answer call ${callId}`,
+                    );
+                }
+            } catch (error) {
+                console.warn(
+                    `[Quo Webhook] Could not fetch voicemail for call ${callId}:`,
+                    error.message,
+                );
+            }
+        }
+
+        // Extract external participants (filter out Quo phone numbers)
+        const externalParticipants = filterExternalParticipants(
+            participants,
+            this.config?.phoneNumbersMetadata || [],
+        );
+
+        if (externalParticipants.length === 0) {
+            console.warn(
+                `[Quo Webhook] No external participants found for call ${callId}`,
+            );
+            return {
+                logged: false,
+                callId,
+                error: 'No external participants',
+                participantCount: 0,
+            };
+        }
+
+        console.log(
+            `[Quo Webhook] Found ${externalParticipants.length} external participant(s)`,
+        );
+
+        // Fetch phone number and user details
+        const [phoneNumberDetails, userDetails] = await Promise.all([
+            this.quo.api.getPhoneNumber(call.phoneNumberId),
+            this.quo.api.getUser(call.userId),
+        ]);
 
         const deepLink = webhookData.data.deepLink || '#';
-
-        const phoneNumberDetails = await this.quo.api.getPhoneNumber(
-            callObject.phoneNumberId,
-        );
         const inboxName =
             phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
                 ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
@@ -1776,68 +1797,50 @@ class AttioIntegration extends BaseCRMIntegration {
             `${userDetails.data?.firstName || ''} ${userDetails.data?.lastName || ''}`.trim() ||
             'Quo User';
 
-        const deepLink = webhookData.data.deepLink || '#';
         const minutes = Math.floor(call.duration / 60);
         const seconds = call.duration % 60;
         const durationFormatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
 
-        let statusDescription;
-        // Check answeredAt field to determine if call was actually answered
-        // Status can be "completed" but if answeredAt is null, the call was not answered (missed)
-        const wasAnswered =
-            callObject.answeredAt !== null &&
-            callObject.answeredAt !== undefined;
+        // Check if call was actually answered
+        const wasAnswered = call.answeredAt !== null && call.answeredAt !== undefined;
 
-        if (callObject.status === 'completed' && wasAnswered) {
+        // Determine status description
+        let statusDescription;
+        if (call.status === 'completed' && wasAnswered) {
             statusDescription =
-                callObject.direction === 'outgoing'
+                call.direction === 'outgoing'
                     ? `Outgoing initiated by ${userName}`
                     : `Incoming answered by ${userName}`;
         } else if (
-            callObject.status === 'no-answer' ||
-            callObject.status === 'missed' ||
-            (callObject.status === 'completed' &&
-                !wasAnswered &&
-                callObject.direction === 'incoming')
+            call.status === 'no-answer' ||
+            call.status === 'missed' ||
+            (call.status === 'completed' && !wasAnswered && call.direction === 'incoming')
         ) {
             statusDescription = 'Incoming missed';
-        } else if (
-            callObject.status === 'completed' &&
-            !wasAnswered &&
-            callObject.direction === 'outgoing'
-        ) {
+        } else if (call.status === 'completed' && !wasAnswered && call.direction === 'outgoing') {
             statusDescription = `Outgoing initiated by ${userName} (not answered)`;
-        } else if (callObject.status === 'forwarded') {
-            // Handle forwarded calls
-            statusDescription = callObject.forwardedTo
-                ? `Incoming forwarded to ${callObject.forwardedTo}`
+        } else if (call.status === 'forwarded') {
+            statusDescription = call.forwardedTo
+                ? `Incoming forwarded to ${call.forwardedTo}`
                 : 'Incoming forwarded by phone menu';
         } else {
-            statusDescription = `${callObject.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} ${callObject.status}`;
+            statusDescription = `${call.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} ${call.status}`;
         }
 
-        let formattedSummary, title;
-        if (callObject.direction === 'outgoing') {
-            title = `☎️  Call ${inboxName} ${inboxNumber} → ${contactPhone}`;
-            formattedSummary = `${statusDescription}
-
-[View the call activity in Quo](${deepLink})`;
-        } else {
-            // Incoming call
-            title = `☎️  Call ${contactPhone} → ${inboxName} ${inboxNumber}`;
-            let statusLine = statusDescription;
-            if (
-                call.status === 'completed' &&
-                call.duration > 0 &&
-                wasAnswered
-            ) {
-                statusLine += ` / ▶️ Recording (${durationFormatted})`;
-            }
+        // Log call to each external participant
+        const results = [];
+        for (const contactPhone of externalParticipants) {
+            const attioRecordId = await this._findAttioContactFromQuoWebhook(contactPhone);
 
             const title =
                 call.direction === 'outgoing'
                     ? `☎️  Call ${inboxName} ${inboxNumber} → ${contactPhone}`
                     : `☎️  Call ${contactPhone} → ${inboxName} ${inboxNumber}`;
+
+            let statusLine = statusDescription;
+            if (call.status === 'completed' && call.duration > 0 && wasAnswered) {
+                statusLine += ` / ▶️ Recording (${durationFormatted})`;
+            }
 
             // Add voicemail if present
             let formattedSummary = statusLine;
@@ -1845,11 +1848,14 @@ class AttioIntegration extends BaseCRMIntegration {
                 const vmMinutes = Math.floor(call.voicemail.duration / 60);
                 const vmSeconds = call.voicemail.duration % 60;
                 const vmDuration = `${vmMinutes}:${vmSeconds.toString().padStart(2, '0')}`;
-
-                formattedSummary += `\n➿ Voicemail (${vmDuration})`;
+                formattedSummary += `\n\n**Voicemail:**`;
 
                 if (call.voicemail.url) {
-                    formattedSummary += `\n[Listen to voicemail](${call.voicemail.url})`;
+                    formattedSummary += `\n• [Listen to voicemail](${call.voicemail.url}) (${vmDuration})`;
+                }
+
+                if (call.voicemail.transcript) {
+                    formattedSummary += `\n\n**Transcript:**\n${call.voicemail.transcript}`;
                 }
             }
 
@@ -1857,8 +1863,7 @@ class AttioIntegration extends BaseCRMIntegration {
 
             const noteId = await this.logCallToActivity({
                 contactExternalId: attioRecordId,
-                direction:
-                    call.direction === 'outgoing' ? 'outbound' : 'inbound',
+                direction: call.direction === 'outgoing' ? 'outbound' : 'inbound',
                 timestamp: call.createdAt,
                 duration: call.duration,
                 title,
@@ -1877,11 +1882,11 @@ class AttioIntegration extends BaseCRMIntegration {
                 );
             }
 
-            results.push({ contactPhone, attioRecordId, noteId, logged: true });
+            results.push({ contactPhone, attioRecordId, noteId, logged: !!noteId });
         }
 
         trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.CALL_LOGGED, {
-            callId: callObject.id,
+            callId: call.id,
         });
 
         return {
@@ -1911,8 +1916,7 @@ class AttioIntegration extends BaseCRMIntegration {
 
         // Check if we've already logged this message to prevent duplicates
         // (Both message.received and message.delivered events fire for the same message)
-        const existingMapping =
-            await this.integrationMappingRepository.get(messageId);
+        const existingMapping = await this.getMapping(messageId);
         const existingNoteId =
             existingMapping?.mapping?.noteId || existingMapping?.noteId || null;
 
@@ -1986,7 +1990,7 @@ class AttioIntegration extends BaseCRMIntegration {
         const noteId = await this.logSMSToActivity(activityData);
 
         // Store message mapping to prevent duplicate logging
-        await this.integrationMappingRepository.upsert(messageId, {
+        await this.upsertMapping(messageId, {
             messageId,
             noteId,
             contactId: attioRecordId,
@@ -2194,6 +2198,7 @@ class AttioIntegration extends BaseCRMIntegration {
         const callId = summaryObject.callId;
         const summary = summaryObject.summary || [];
         const nextSteps = summaryObject.nextSteps || [];
+        const jobs = summaryObject.jobs || [];
 
         console.log(
             `[Quo Webhook] Processing call.summary.completed: ${callId}`,
@@ -2269,7 +2274,7 @@ class AttioIntegration extends BaseCRMIntegration {
             const enrichmentResult =
                 await CallSummaryEnrichmentService.enrichCallNote({
                     callId,
-                    summaryData: { summary, nextSteps },
+                    summaryData: { summary, nextSteps, jobs },
                     callDetails: call,
                     quoApi: this.quo.api,
                     crmAdapter: {
@@ -2331,13 +2336,9 @@ class AttioIntegration extends BaseCRMIntegration {
                             return `${call.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} ${call.status}`;
                         },
                         formatTitle: (call) => {
-                            const titlePrefix =
-                                call.aiHandled === 'ai-agent'
-                                    ? 'Call'
-                                    : 'Call Summary:';
                             return call.direction === 'outgoing'
-                                ? `☎️  ${titlePrefix} ${inboxName} ${inboxNumber} → ${contactPhone}`
-                                : `☎️  ${titlePrefix} ${contactPhone} → ${inboxName} ${inboxNumber}`;
+                                ? `☎️  Call ${inboxName} ${inboxNumber} → ${contactPhone}`
+                                : `☎️  Call ${contactPhone} → ${inboxName} ${inboxNumber}`;
                         },
                         formatDeepLink: () => {
                             const deepLink = webhookData.data.deepLink || '#';
