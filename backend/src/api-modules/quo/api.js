@@ -11,7 +11,7 @@ class Api extends ApiKeyRequester {
         this.analyticsBaseUrl =
             params.analyticsBaseUrl ||
             process.env.QUO_ANALYTICS_BASE_URL ||
-            'https://integration.openphone.dev/v2/analytics';
+            'https://integration.openphone.dev';
 
         // Set the API key header name (parent class uses api_key_name)
         this.api_key_name = 'Authorization';
@@ -61,6 +61,9 @@ class Api extends ApiKeyRequester {
             // Frigg-specific endpoints (require x-frigg-api-key header)
             friggContacts: '/frigg/contact',
             friggContactById: (id) => `/frigg/contact/${id}`,
+
+            // Analytics endpoint
+            analytics: '/v2/analytics',
         };
     }
 
@@ -455,7 +458,7 @@ class Api extends ApiKeyRequester {
     async sendAnalyticsEvent({ orgId, userId, integration, event, data }) {
         try {
             const options = {
-                url: this.analyticsBaseUrl + '/v2/analytics',
+                url: this.analyticsBaseUrl + this.URLs.analytics,
                 headers: {
                     'Content-Type': 'application/json',
                     'x-frigg-api-key': process.env.FRIGG_API_KEY,
