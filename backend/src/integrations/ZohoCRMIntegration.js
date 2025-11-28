@@ -860,19 +860,10 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
      */
     async onWebhookReceived({ req, res }) {
         try {
-            const quoSignature = req.headers['openphone-signature'];
             const hasZohoNotificationFormat =
                 req.body?.channel_id && req.body?.ids;
 
-            const source = quoSignature ? 'quo' : 'zoho';
-
-            if (source === 'quo' && !quoSignature) {
-                console.error(
-                    '[Quo Webhook] Missing openphone-signature header - rejecting webhook',
-                );
-                res.status(401).json({ error: 'Signature required' });
-                return;
-            }
+            const source = hasZohoNotificationFormat ? 'zoho' : 'quo';
 
             if (source === 'zoho') {
                 if (!req.body?.ids || !Array.isArray(req.body.ids)) {
@@ -1092,7 +1083,8 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         console.log(`[Quo Webhook] Processing event: ${eventType}`);
 
         try {
-            await this._verifyQuoWebhookSignature(headers, body, eventType);
+            // TODO(quo-webhooks): Re-enable signature verification once Quo/OpenPhone
+            //await this._verifyQuoWebhookSignature(headers, body, eventType);
 
             let result;
             if (eventType === 'call.completed') {
@@ -1354,11 +1346,9 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             `[Quo Webhook] ✓ Call logged as note for contact ${contactId}`,
         );
 
-        trackAnalyticsEvent(
-            this,
-            QUO_ANALYTICS_EVENTS.CALL_LOGGED,
-            { callId: callObject.id },
-        );
+        trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.CALL_LOGGED, {
+            callId: callObject.id,
+        });
 
         return {
             logged: true,
@@ -1460,11 +1450,9 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
 
         console.log(`[Quo Webhook] ✓ Message logged for contact ${contactId}`);
 
-        trackAnalyticsEvent(
-            this,
-            QUO_ANALYTICS_EVENTS.MESSAGE_LOGGED,
-            { messageId: messageObject.id },
-        );
+        trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.MESSAGE_LOGGED, {
+            messageId: messageObject.id,
+        });
 
         return {
             logged: true,
@@ -1636,11 +1624,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             `[Quo Webhook] ✓ Call summary enrichment complete for contact ${zohoContactId}`,
         );
 
-        trackAnalyticsEvent(
-            this,
-            QUO_ANALYTICS_EVENTS.CALL_LOGGED,
-            { callId },
-        );
+        trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.CALL_LOGGED, { callId });
 
         return {
             received: true,

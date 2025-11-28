@@ -59,22 +59,12 @@ function extractUserContextFromHeaders(headers) {
         appUserId: null,
     };
 
-    // Check common header names
-    if (headers['x-app-org-id']) {
-        context.appOrgId = headers['x-app-org-id'];
+    if (headers['x-frigg-apporgid']) {
+        context.appOrgId = headers['x-frigg-apporgid'];
     }
 
-    if (headers['x-app-user-id']) {
-        context.appUserId = headers['x-app-user-id'];
-    }
-
-    // Also check Frigg-specific headers
-    if (headers['x-frigg-org-id']) {
-        context.appOrgId = headers['x-frigg-org-id'];
-    }
-
-    if (headers['x-frigg-app-user-id']) {
-        context.appUserId = headers['x-frigg-app-user-id'];
+    if (headers['x-frigg-appuserid']) {
+        context.appUserId = headers['x-frigg-appuserid'];
     }
 
     return context;
