@@ -32,12 +32,19 @@ function formatDuration(seconds) {
  * @param {string} recordings[].url - Recording URL (may be null if processing)
  * @param {string} recordings[].id - Recording ID
  * @param {number} [callDuration] - Optional fallback duration from call object
- * @returns {string|null} Formatted markdown string with recording links, or null if no recordings
+ * @param {Object} [options] - Formatting options
+ * @param {boolean} [options.useHtml=false] - If true, output HTML links instead of markdown
+ * @returns {string|null} Formatted string with recording links, or null if no recordings
  *
  * @example
- * // Single recording
+ * // Single recording (markdown)
  * formatCallRecordings([{ duration: 76, url: 'https://...' }])
  * // Returns: "[▶️ Recording (1:16)](https://...)"
+ *
+ * @example
+ * // Single recording (HTML)
+ * formatCallRecordings([{ duration: 76, url: 'https://...' }], null, { useHtml: true })
+ * // Returns: "<a href="https://...">▶️ Recording (1:16)</a>"
  *
  * @example
  * // Multiple recordings
@@ -47,7 +54,7 @@ function formatDuration(seconds) {
  * ])
  * // Returns: "▶️ Recordings: [Part 1 (0:45)](url1) | [Part 2 (0:30)](url2)"
  */
-function formatCallRecordings(recordings, callDuration = null) {
+function formatCallRecordings(recordings, callDuration = null, { useHtml = false } = {}) {
     if (!recordings || !Array.isArray(recordings) || recordings.length === 0) {
         return null;
     }
@@ -59,6 +66,9 @@ function formatCallRecordings(recordings, callDuration = null) {
         const formattedDuration = formatDuration(duration);
 
         if (recording.url) {
+            if (useHtml) {
+                return `<a href="${recording.url}">▶️ Recording (${formattedDuration})</a>`;
+            }
             return `[▶️ Recording (${formattedDuration})](${recording.url})`;
         } else {
             return `▶️ Recording (${formattedDuration})`;
@@ -73,6 +83,9 @@ function formatCallRecordings(recordings, callDuration = null) {
             const partNumber = index + 1;
 
             if (recording.url) {
+                if (useHtml) {
+                    return `<a href="${recording.url}">Part ${partNumber} (${formattedDuration})</a>`;
+                }
                 return `[Part ${partNumber} (${formattedDuration})](${recording.url})`;
             } else {
                 return `Part ${partNumber} (${formattedDuration})`;
@@ -89,13 +102,21 @@ function formatCallRecordings(recordings, callDuration = null) {
  * @param {Object} voicemail - Voicemail object from Quo API
  * @param {number} voicemail.duration - Voicemail duration in seconds
  * @param {string} voicemail.url - Voicemail URL (may be null if processing)
- * @returns {string|null} Formatted markdown string with voicemail link
+ * @param {Object} [options] - Formatting options
+ * @param {boolean} [options.useHtml=false] - If true, output HTML links instead of markdown
+ * @returns {string|null} Formatted string with voicemail link
  *
  * @example
+ * // Markdown (default)
  * formatVoicemail({ duration: 35, url: 'https://...' })
  * // Returns: "[➿ Voicemail (0:35)](https://...)"
+ *
+ * @example
+ * // HTML
+ * formatVoicemail({ duration: 35, url: 'https://...' }, { useHtml: true })
+ * // Returns: "<a href="https://...">➿ Voicemail (0:35)</a>"
  */
-function formatVoicemail(voicemail) {
+function formatVoicemail(voicemail, { useHtml = false } = {}) {
     if (!voicemail) {
         return null;
     }
@@ -104,6 +125,9 @@ function formatVoicemail(voicemail) {
     const formattedDuration = formatDuration(duration);
 
     if (voicemail.url) {
+        if (useHtml) {
+            return `<a href="${voicemail.url}">➿ Voicemail (${formattedDuration})</a>`;
+        }
         return `[➿ Voicemail (${formattedDuration})](${voicemail.url})`;
     } else {
         return `➿ Voicemail (${formattedDuration})`;

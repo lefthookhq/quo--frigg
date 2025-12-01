@@ -3,6 +3,7 @@ const pipedrive = require('@friggframework/api-module-pipedrive');
 const quo = require('../api-modules/quo');
 const { createFriggCommands } = require('@friggframework/core');
 const CallSummaryEnrichmentService = require('../base/services/CallSummaryEnrichmentService');
+const { filterExternalParticipants } = require('../utils/participantFilter');
 const { QUO_ANALYTICS_EVENTS } = require('../base/constants');
 const { trackAnalyticsEvent } = require('../utils/trackAnalyticsEvent');
 
@@ -1304,28 +1305,81 @@ class PipedriveIntegration extends BaseCRMIntegration {
      * @returns {Promise<Object>} Processing result
      */
     async _handleQuoCallEvent(webhookData) {
-        const callObject = webhookData.data.object;
+        const callId = webhookData.data.object.id;
 
-        console.log(`[Quo Webhook] Processing call: ${callObject.id}`);
+        console.log(`[Quo Webhook] Processing call.completed: ${callId}`);
+
+        // Fetch full call details (webhook data may be incomplete)
+        const fullCallResponse = await this.quo.api.getCall(callId);
+        if (!fullCallResponse?.data) {
+            console.warn(`[Quo Webhook] Call ${callId} not found`);
+            return { logged: false, error: 'Call not found', callId };
+        }
+        const callObject = fullCallResponse.data;
+
+        // For no-answer calls, wait and fetch voicemail to include in the note
+        // Voicemail processing takes 2-4 seconds after call completes
+        if (callObject.status === 'no-answer') {
+            console.log(
+                `[Quo Webhook] No-answer call ${callId}, waiting 3s for voicemail processing...`,
+            );
+
+            // Wait 3 seconds for voicemail to be processed
+            await new Promise((resolve) => setTimeout(resolve, 3000));
+
+            try {
+                const vmResponse = await this.quo.api.getCallVoicemails(callId);
+                const voicemail = vmResponse?.data;
+                if (voicemail && voicemail.status === 'completed') {
+                    console.log(
+                        `[Quo Webhook] Found voicemail for no-answer call ${callId}`,
+                    );
+
+                    // Merge voicemail into call object (map recordingUrl to url for consistency)
+                    callObject.voicemail = {
+                        duration: voicemail.duration,
+                        url: voicemail.recordingUrl,
+                        transcript: voicemail.transcript,
+                        id: voicemail.id,
+                    };
+                } else {
+                    console.log(
+                        `[Quo Webhook] No voicemail found for no-answer call ${callId}`,
+                    );
+                }
+            } catch (error) {
+                console.warn(
+                    `[Quo Webhook] Could not fetch voicemail for call ${callId}:`,
+                    error.message,
+                );
+            }
+        }
 
         const participants = callObject.participants || [];
 
-        if (participants.length < 2) {
-            throw new Error('Call must have at least 2 participants');
+        // Extract external participants (filter out Quo phone numbers)
+        const externalParticipants = filterExternalParticipants(
+            participants,
+            this.config?.phoneNumbersMetadata || [],
+        );
+
+        if (externalParticipants.length === 0) {
+            console.warn(
+                `[Quo Webhook] No external participants found for call ${callId}`,
+            );
+            return {
+                logged: false,
+                callId,
+                error: 'No external participants',
+                participantCount: 0,
+            };
         }
 
-        // Find the contact phone (not the user's phone)
-        // Quo webhook participant indexing:
-        // - Outgoing: [user_phone, contact_phone] → contact is index 1
-        // - Incoming: [contact_phone, user_phone] → contact is index 0
-        const contactPhone =
-            callObject.direction === 'outgoing'
-                ? participants[1]
-                : participants[0];
+        console.log(
+            `[Quo Webhook] Found ${externalParticipants.length} external participant(s)`,
+        );
 
-        const pipedrivePersonId =
-            await this._findPipedriveContactByPhone(contactPhone);
-
+        // Shared setup (independent of which contact phone we're processing)
         const deepLink = webhookData.data.deepLink || '#';
 
         const phoneNumberDetails = await this.quo.api.getPhoneNumber(
@@ -1345,17 +1399,34 @@ class PipedriveIntegration extends BaseCRMIntegration {
         const seconds = callObject.duration % 60;
         const durationFormatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
 
+        // Check if call was actually answered
+        const wasAnswered =
+            callObject.answeredAt !== null && callObject.answeredAt !== undefined;
+
         let statusDescription;
-        if (callObject.status === 'completed') {
+        if (callObject.status === 'completed' && wasAnswered) {
             statusDescription =
                 callObject.direction === 'outgoing'
                     ? `Outgoing initiated by ${userName}`
                     : `Incoming answered by ${userName}`;
         } else if (
             callObject.status === 'no-answer' ||
-            callObject.status === 'missed'
+            callObject.status === 'missed' ||
+            (callObject.status === 'completed' &&
+                !wasAnswered &&
+                callObject.direction === 'incoming')
         ) {
             statusDescription = 'Incoming missed';
+        } else if (
+            callObject.status === 'completed' &&
+            !wasAnswered &&
+            callObject.direction === 'outgoing'
+        ) {
+            statusDescription = `Outgoing initiated by ${userName} (not answered)`;
+        } else if (callObject.status === 'forwarded') {
+            statusDescription = callObject.forwardedTo
+                ? `Incoming forwarded to ${callObject.forwardedTo}`
+                : 'Incoming forwarded by phone menu';
         } else {
             statusDescription = `${callObject.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} ${callObject.status}`;
         }
@@ -1365,66 +1436,117 @@ class PipedriveIntegration extends BaseCRMIntegration {
             phoneNumberDetails.data.formattedNumber ||
             participants[callObject.direction === 'outgoing' ? 0 : 1];
 
-        let formattedNote;
-        if (callObject.direction === 'outgoing') {
-            formattedNote = `<p><strong>☎️  Call ${inboxName} ${inboxNumberRaw} → ${contactPhone}</strong></p>
+        // Log call to each external participant (like Attio)
+        // This handles cases where phoneNumbersMetadata is empty and both
+        // Quo number and contact number are in externalParticipants
+        const results = [];
+        for (const contactPhone of externalParticipants) {
+            let pipedrivePersonId;
+            try {
+                pipedrivePersonId =
+                    await this._findPipedriveContactByPhone(contactPhone);
+            } catch (error) {
+                // Contact not found - try next participant
+                console.log(
+                    `[Quo Webhook] No Pipedrive contact found for ${contactPhone}, trying next`,
+                );
+                results.push({
+                    contactPhone,
+                    pipedrivePersonId: null,
+                    noteId: null,
+                    logged: false,
+                });
+                continue;
+            }
+
+            let formattedNote;
+            if (callObject.direction === 'outgoing') {
+                formattedNote = `<p><strong>☎️  Call ${inboxName} ${inboxNumberRaw} → ${contactPhone}</strong></p>
 <p>${statusDescription}</p>
 <p><a href="${deepLink}">View the call activity in Quo</a></p>`;
-        } else {
-            // Incoming call
-            let statusLine = statusDescription;
+            } else {
+                // Incoming call
+                let statusLine = statusDescription;
 
-            // Add recording indicator if completed with duration
-            if (callObject.status === 'completed' && callObject.duration > 0) {
-                statusLine += ` / ▶️ Recording (${durationFormatted})`;
-            }
+                // Add recording indicator if completed with duration (only for answered calls)
+                if (
+                    callObject.status === 'completed' &&
+                    callObject.duration > 0 &&
+                    wasAnswered
+                ) {
+                    statusLine += ` / ▶️ Recording (${durationFormatted})`;
+                }
 
-            // Add voicemail indicator if present
-            if (callObject.voicemail) {
-                const voicemailDuration = callObject.voicemail.duration || 0;
-                const vmMinutes = Math.floor(voicemailDuration / 60);
-                const vmSeconds = voicemailDuration % 60;
-                const vmFormatted = `${vmMinutes}:${vmSeconds.toString().padStart(2, '0')}`;
-                statusLine += ` / ➿ Voicemail (${vmFormatted})`;
-            }
+                // Build voicemail section with link and transcript
+                let voicemailSection = '';
+                if (callObject.voicemail) {
+                    const voicemailDuration = callObject.voicemail.duration || 0;
+                    const vmMinutes = Math.floor(voicemailDuration / 60);
+                    const vmSeconds = voicemailDuration % 60;
+                    const vmFormatted = `${vmMinutes}:${vmSeconds.toString().padStart(2, '0')}`;
 
-            formattedNote = `<p><strong>☎️  Call ${contactPhone} → ${inboxName} ${inboxNumberRaw}</strong></p>
-<p>${statusLine}</p>
+                    voicemailSection = '<br><br><strong>Voicemail:</strong><br>';
+                    if (callObject.voicemail.url) {
+                        voicemailSection += `• <a href="${callObject.voicemail.url}">Listen to voicemail</a> (${vmFormatted})<br>`;
+                    } else {
+                        voicemailSection += `• ➿ Voicemail (${vmFormatted})<br>`;
+                    }
+
+                    if (callObject.voicemail.transcript) {
+                        voicemailSection += `<br><strong>Transcript:</strong><br>${callObject.voicemail.transcript}<br>`;
+                    }
+                }
+
+                formattedNote = `<p><strong>☎️  Call ${contactPhone} → ${inboxName} ${inboxNumberRaw}</strong></p>
+<p>${statusLine}</p>${voicemailSection}
 <p><a href="${deepLink}">View the call activity in Quo</a></p>`;
-        }
+            }
 
-        const noteData = {
-            content: formattedNote,
-            person_id: parseInt(pipedrivePersonId),
-        };
+            const noteData = {
+                content: formattedNote,
+                person_id: parseInt(pipedrivePersonId),
+            };
 
-        const noteResponse = await this.pipedrive.api.createNote(noteData);
+            const noteResponse = await this.pipedrive.api.createNote(noteData);
 
-        // Extract note ID from response for later enrichment
-        const noteId = noteResponse?.data?.id || null;
+            // Extract note ID from response for later enrichment
+            const noteId = noteResponse?.data?.id || null;
 
-        // Store mapping: call ID -> note ID (for later enrichment in call.summary.completed)
-        if (noteId) {
-            await this.upsertMapping(callObject.id, {
-                noteId,
-                callId: callObject.id,
-                pipedrivePersonId,
-                createdAt: new Date().toISOString(),
-            });
+            // Store mapping: call ID -> note ID (for later enrichment in call.summary.completed)
+            if (noteId) {
+                await this.upsertMapping(callObject.id, {
+                    noteId,
+                    callId: callObject.id,
+                    pipedrivePersonId,
+                    createdAt: new Date().toISOString(),
+                });
+                console.log(
+                    `[Quo Webhook] ✓ Mapping stored: call ${callObject.id} -> note ${noteId}`,
+                );
+            }
+
             console.log(
-                `[Quo Webhook] ✓ Mapping stored: call ${callObject.id} -> note ${noteId}`,
+                `[Quo Webhook] ✓ Call logged as note for person ${pipedrivePersonId}`,
             );
-        }
 
-        console.log(
-            `[Quo Webhook] ✓ Call logged as note for person ${pipedrivePersonId}`,
-        );
+            results.push({
+                contactPhone,
+                pipedrivePersonId,
+                noteId,
+                logged: !!noteId,
+            });
+        }
 
         trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.CALL_LOGGED, {
             callId: callObject.id,
         });
 
-        return { logged: true, personId: pipedrivePersonId, noteId };
+        return {
+            logged: results.some((r) => r.logged),
+            callId: callObject.id,
+            participantCount: externalParticipants.length,
+            results,
+        };
     }
 
     /**
@@ -1516,125 +1638,196 @@ class PipedriveIntegration extends BaseCRMIntegration {
         const callId = summaryObject.callId;
         const summary = summaryObject.summary || [];
         const nextSteps = summaryObject.nextSteps || [];
+        const jobs = summaryObject.jobs || [];
 
         console.log(
             `[Quo Webhook] Processing call summary for call: ${callId}, ${summary.length} summary points, ${nextSteps.length} next steps`,
         );
 
         const callResponse = await this.quo.api.getCall(callId);
+        if (!callResponse?.data) {
+            console.warn(`[Quo Webhook] Call ${callId} not found`);
+            return {
+                received: true,
+                callId,
+                logged: false,
+                error: 'Call not found',
+            };
+        }
         const callObject = callResponse.data;
 
-        const participants = callObject.participants || [];
-        const contactPhone =
-            callObject.direction === 'outgoing'
-                ? participants[1]
-                : participants[0];
-
-        const pipedrivePersonId =
-            await this._findPipedriveContactByPhone(contactPhone);
-
-        const phoneNumberDetails = await this.quo.api.getPhoneNumber(
-            callObject.phoneNumberId,
+        // Get ALL external participants (supports multi-party)
+        const externalParticipants = filterExternalParticipants(
+            callObject.participants || [],
+            this.config?.phoneNumbersMetadata || [],
         );
+
+        if (externalParticipants.length === 0) {
+            console.warn(
+                `[Quo Webhook] No external participants for call ${callId}`,
+            );
+            return {
+                received: true,
+                callId,
+                logged: false,
+                error: 'No external participants',
+            };
+        }
+
+        // Fetch metadata once for all participants
+        const [phoneNumberDetails, userDetails] = await Promise.all([
+            this.quo.api.getPhoneNumber(callObject.phoneNumberId),
+            this.quo.api.getUser(callObject.userId),
+        ]);
+
         const inboxName =
             phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
                 ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
                 : phoneNumberDetails.data?.name || 'Quo Line';
         const inboxNumber =
-            phoneNumberDetails.data.number ||
-            phoneNumberDetails.data.formattedNumber ||
-            participants[callObject.direction === 'outgoing' ? 0 : 1];
-
-        const userDetails = await this.quo.api.getUser(callObject.userId);
+            phoneNumberDetails.data?.number ||
+            phoneNumberDetails.data?.formattedNumber ||
+            '';
         const userName =
-            `${userDetails.data.firstName || ''} ${userDetails.data.lastName || ''}`.trim() ||
+            `${userDetails.data?.firstName || ''} ${userDetails.data?.lastName || ''}`.trim() ||
             'Quo User';
 
         const deepLink = webhookData.data.deepLink || '#';
 
-        // Use CallSummaryEnrichmentService to enrich the note with update pattern
-        const enrichmentResult =
-            await CallSummaryEnrichmentService.enrichCallNote({
-                callId,
-                summaryData: { summary, nextSteps },
-                callDetails: callObject,
-                quoApi: this.quo.api,
-                crmAdapter: {
-                    canUpdateNote: () => true, // Pipedrive supports note updates!
-                    createNote: async ({ contactId, content }) => {
-                        const noteResponse =
-                            await this.pipedrive.api.createNote({
-                                content,
-                                person_id: parseInt(contactId),
-                            });
-                        return noteResponse?.data?.id || null;
+        const results = [];
+
+        // Loop through each external participant
+        for (const contactPhone of externalParticipants) {
+            let pipedrivePersonId;
+            try {
+                pipedrivePersonId =
+                    await this._findPipedriveContactByPhone(contactPhone);
+            } catch (error) {
+                console.warn(
+                    `[Quo Webhook] Failed to find Pipedrive contact for ${contactPhone}: ${error.message}`,
+                );
+                results.push({
+                    contactPhone,
+                    logged: false,
+                    error: 'Contact not found',
+                });
+                continue;
+            }
+
+            // Use CallSummaryEnrichmentService to enrich the note with update pattern
+            const enrichmentResult =
+                await CallSummaryEnrichmentService.enrichCallNote({
+                    callId,
+                    summaryData: { summary, nextSteps, jobs },
+                    callDetails: callObject,
+                    quoApi: this.quo.api,
+                    crmAdapter: {
+                        canUpdateNote: () => true, // Pipedrive supports note updates!
+                        createNote: async ({ contactId, content, title }) => {
+                            const noteResponse =
+                                await this.pipedrive.api.createNote({
+                                    content: title + content,
+                                    person_id: parseInt(contactId),
+                                });
+                            return noteResponse?.data?.id || null;
+                        },
+                        updateNote: async (noteId, { content, title }) => {
+                            // Pipedrive v1 Notes API: PUT /v1/notes/{id}
+                            const options = {
+                                url: `${this.pipedrive.api.baseUrl}/v1/notes/${noteId}`,
+                                body: { content: title + content },
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                },
+                            };
+                            return await this.pipedrive.api._put(options);
+                        },
                     },
-                    updateNote: async (noteId, { content }) => {
-                        // Pipedrive v1 Notes API: PUT /v1/notes/{id}
-                        const options = {
-                            url: `${this.pipedrive.api.baseUrl}/v1/notes/${noteId}`,
-                            body: { content },
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                        };
-                        return await this.pipedrive.api._put(options);
+                    mappingRepo: {
+                        get: async (id) => await this.getMapping(id),
+                        upsert: async (id, data) =>
+                            await this.upsertMapping(id, data),
                     },
-                },
-                mappingRepo: {
-                    get: async (id) => await this.getMapping(id),
-                    upsert: async (id, data) =>
-                        await this.upsertMapping(id, data),
-                },
-                contactId: pipedrivePersonId,
-                formatters: {
-                    formatCallHeader: (call) => {
-                        let statusDescription;
-                        if (call.status === 'completed') {
-                            statusDescription =
-                                call.direction === 'outgoing'
+                    contactId: pipedrivePersonId,
+                    formatters: {
+                        formatCallHeader: (call) => {
+                            // Check for AI-handled calls first
+                            if (call.aiHandled === 'ai-agent') {
+                                return 'Handled by Sona';
+                            }
+
+                            const wasAnswered =
+                                call.answeredAt !== null &&
+                                call.answeredAt !== undefined;
+
+                            if (call.status === 'completed' && wasAnswered) {
+                                return call.direction === 'outgoing'
                                     ? `Outgoing initiated by ${userName}`
                                     : `Incoming answered by ${userName}`;
-                        } else if (
-                            call.status === 'no-answer' ||
-                            call.status === 'missed'
-                        ) {
-                            statusDescription = 'Incoming missed';
-                        } else {
-                            statusDescription = `${call.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} ${call.status}`;
-                        }
-                        return statusDescription;
+                            } else if (
+                                call.status === 'no-answer' ||
+                                call.status === 'missed' ||
+                                (call.status === 'completed' &&
+                                    !wasAnswered &&
+                                    call.direction === 'incoming')
+                            ) {
+                                return 'Incoming missed';
+                            } else if (
+                                call.status === 'completed' &&
+                                !wasAnswered &&
+                                call.direction === 'outgoing'
+                            ) {
+                                return `Outgoing initiated by ${userName} (not answered)`;
+                            } else if (call.status === 'forwarded') {
+                                return call.forwardedTo
+                                    ? `Incoming forwarded to ${call.forwardedTo}`
+                                    : 'Incoming forwarded by phone menu';
+                            }
+                            return `${call.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} ${call.status}`;
+                        },
+                        formatTitle: (call) => {
+                            if (call.direction === 'outgoing') {
+                                return `<p><strong>☎️  Call ${inboxName} ${inboxNumber} → ${contactPhone}</strong></p>`;
+                            } else {
+                                return `<p><strong>☎️  Call ${contactPhone} → ${inboxName} ${inboxNumber}</strong></p>`;
+                            }
+                        },
+                        formatDeepLink: () => {
+                            return `\n<p><a href="${deepLink}">View the call activity in Quo</a></p>`;
+                        },
+                        // Pipedrive uses HTML format for notes
+                        useHtmlFormat: true,
                     },
-                    formatTitle: (call) => {
-                        if (call.direction === 'outgoing') {
-                            return `<p><strong>☎️  Call ${inboxName} ${inboxNumber} → ${contactPhone}</strong></p>`;
-                        } else {
-                            return `<p><strong>☎️  Call ${contactPhone} → ${inboxName} ${inboxNumber}</strong></p>`;
-                        }
-                    },
-                    formatDeepLink: () => {
-                        return `\n<p><a href="${deepLink}">View the call activity in Quo</a></p>`;
-                    },
-                    // Pipedrive uses HTML format for notes
-                    useHtmlFormat: true,
-                },
+                });
+
+            console.log(
+                `[Quo Webhook] ✓ Call summary enrichment complete for person ${pipedrivePersonId}`,
+            );
+
+            results.push({
+                contactPhone,
+                personId: pipedrivePersonId,
+                noteId: enrichmentResult.noteId,
+                logged: true,
+                recordingsCount: enrichmentResult.recordingsCount,
+                hasVoicemail: enrichmentResult.hasVoicemail,
             });
+        }
 
-        console.log(
-            `[Quo Webhook] ✓ Call summary enrichment complete for person ${pipedrivePersonId}`,
-        );
-
-        trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.CALL_LOGGED, { callId });
+        // Track analytics if at least one note was created
+        if (results.some((r) => r.logged)) {
+            trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.CALL_LOGGED, {
+                callId,
+            });
+        }
 
         return {
-            logged: true,
-            personId: pipedrivePersonId,
+            received: true,
+            logged: results.some((r) => r.logged),
+            results,
             callId,
-            noteId: enrichmentResult.noteId,
             summaryPoints: summary.length,
             nextStepsCount: nextSteps.length,
-            recordingsCount: enrichmentResult.recordingsCount,
-            hasVoicemail: enrichmentResult.hasVoicemail,
         };
     }
 

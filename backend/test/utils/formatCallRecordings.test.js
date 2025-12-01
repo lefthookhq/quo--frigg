@@ -188,3 +188,147 @@ describe('formatVoicemail', () => {
         expect(result).toBe('[➿ Voicemail (3:00)](https://storage.example.com/vm-long.mp3)');
     });
 });
+
+describe('formatCallRecordings - HTML mode', () => {
+    describe('Single Recording', () => {
+        it('should format single recording with HTML link', () => {
+            const recordings = [
+                {
+                    duration: 75,
+                    url: 'https://storage.example.com/rec1.mp3',
+                },
+            ];
+
+            const result = formatCallRecordings(recordings, 75, { useHtml: true });
+
+            expect(result).toBe('<a href="https://storage.example.com/rec1.mp3">▶️ Recording (1:15)</a>');
+        });
+
+        it('should format single recording without URL (same as markdown)', () => {
+            const recordings = [
+                {
+                    duration: 75,
+                    url: null,
+                },
+            ];
+
+            const result = formatCallRecordings(recordings, 75, { useHtml: true });
+
+            expect(result).toBe('▶️ Recording (1:15)');
+        });
+    });
+
+    describe('Multiple Recordings', () => {
+        it('should format multiple recordings with HTML links', () => {
+            const recordings = [
+                {
+                    duration: 45,
+                    url: 'https://storage.example.com/part1.mp3',
+                },
+                {
+                    duration: 30,
+                    url: 'https://storage.example.com/part2.mp3',
+                },
+            ];
+
+            const result = formatCallRecordings(recordings, 75, { useHtml: true });
+
+            expect(result).toBe(
+                '▶️ Recordings: <a href="https://storage.example.com/part1.mp3">Part 1 (0:45)</a> | <a href="https://storage.example.com/part2.mp3">Part 2 (0:30)</a>'
+            );
+        });
+
+        it('should format multiple recordings with some missing URLs', () => {
+            const recordings = [
+                {
+                    duration: 45,
+                    url: 'https://storage.example.com/part1.mp3',
+                },
+                {
+                    duration: 30,
+                    url: null,
+                },
+            ];
+
+            const result = formatCallRecordings(recordings, 75, { useHtml: true });
+
+            expect(result).toBe(
+                '▶️ Recordings: <a href="https://storage.example.com/part1.mp3">Part 1 (0:45)</a> | Part 2 (0:30)'
+            );
+        });
+    });
+
+    describe('Backward Compatibility', () => {
+        it('should default to markdown when useHtml not specified', () => {
+            const recordings = [
+                {
+                    duration: 75,
+                    url: 'https://storage.example.com/rec1.mp3',
+                },
+            ];
+
+            const result = formatCallRecordings(recordings, 75);
+
+            expect(result).toBe('[▶️ Recording (1:15)](https://storage.example.com/rec1.mp3)');
+        });
+
+        it('should use markdown when useHtml is false', () => {
+            const recordings = [
+                {
+                    duration: 75,
+                    url: 'https://storage.example.com/rec1.mp3',
+                },
+            ];
+
+            const result = formatCallRecordings(recordings, 75, { useHtml: false });
+
+            expect(result).toBe('[▶️ Recording (1:15)](https://storage.example.com/rec1.mp3)');
+        });
+    });
+});
+
+describe('formatVoicemail - HTML mode', () => {
+    it('should format voicemail with HTML link', () => {
+        const voicemail = {
+            duration: 35,
+            url: 'https://storage.example.com/vm.mp3',
+        };
+
+        const result = formatVoicemail(voicemail, { useHtml: true });
+
+        expect(result).toBe('<a href="https://storage.example.com/vm.mp3">➿ Voicemail (0:35)</a>');
+    });
+
+    it('should format voicemail without URL (same as markdown)', () => {
+        const voicemail = {
+            duration: 35,
+            url: null,
+        };
+
+        const result = formatVoicemail(voicemail, { useHtml: true });
+
+        expect(result).toBe('➿ Voicemail (0:35)');
+    });
+
+    it('should default to markdown when useHtml not specified', () => {
+        const voicemail = {
+            duration: 35,
+            url: 'https://storage.example.com/vm.mp3',
+        };
+
+        const result = formatVoicemail(voicemail);
+
+        expect(result).toBe('[➿ Voicemail (0:35)](https://storage.example.com/vm.mp3)');
+    });
+
+    it('should use markdown when useHtml is false', () => {
+        const voicemail = {
+            duration: 35,
+            url: 'https://storage.example.com/vm.mp3',
+        };
+
+        const result = formatVoicemail(voicemail, { useHtml: false });
+
+        expect(result).toBe('[➿ Voicemail (0:35)](https://storage.example.com/vm.mp3)');
+    });
+});

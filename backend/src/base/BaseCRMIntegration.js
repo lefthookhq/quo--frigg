@@ -1076,7 +1076,9 @@ class BaseCRMIntegration extends IntegrationBase {
         });
 
         const existingContact =
-            existingContacts?.data?.length > 0 ? existingContacts.data[0] : null;
+            existingContacts?.data?.length > 0
+                ? existingContacts.data[0]
+                : null;
 
         let result;
         let action;

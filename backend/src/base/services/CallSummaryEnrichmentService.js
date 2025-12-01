@@ -81,7 +81,8 @@ class CallSummaryEnrichmentService {
         // Look up existing note mapping
         const existingMapping = await mappingRepo.get(callId);
         // Extract noteId from nested mapping structure: { mapping: { noteId: '...' } }
-        const oldNoteId = existingMapping?.mapping?.noteId || existingMapping?.noteId || null;
+        const oldNoteId =
+            existingMapping?.mapping?.noteId || existingMapping?.noteId || null;
 
         if (oldNoteId) {
             console.log(
@@ -106,9 +107,7 @@ class CallSummaryEnrichmentService {
                     title: enrichedContent.title,
                 });
                 newNoteId = oldNoteId; // Same note, just updated
-                console.log(
-                    `[CallEnrichment] ✓ Updated note ${newNoteId}`,
-                );
+                console.log(`[CallEnrichment] ✓ Updated note ${newNoteId}`);
             } else {
                 // No existing note, create new
                 newNoteId = await crmAdapter.createNote({
@@ -117,9 +116,7 @@ class CallSummaryEnrichmentService {
                     title: enrichedContent.title,
                     timestamp: callDetails.createdAt,
                 });
-                console.log(
-                    `[CallEnrichment] ✓ Created new note ${newNoteId}`,
-                );
+                console.log(`[CallEnrichment] ✓ Created new note ${newNoteId}`);
             }
         } else {
             // CRM does NOT support updates (e.g., Attio)
@@ -203,58 +200,76 @@ class CallSummaryEnrichmentService {
         formatters,
     }) {
         const { summary = [], nextSteps = [], jobs = [] } = summaryData;
+        const useHtml = formatters.useHtmlFormat === true;
+
+        const bold = (text) =>
+            useHtml ? `<strong>${text}</strong>` : `**${text}**`;
+        const link = (text, url) =>
+            useHtml ? `<a href="${url}">${text}</a>` : `[${text}](${url})`;
+        const nl = useHtml ? '<br>' : '\n';
+        const nlnl = useHtml ? '<br><br>' : '\n\n';
 
         // Start with call header (status line)
         let content = formatters.formatCallHeader(callDetails);
 
         // Add recording links inline with status (using formatCallRecordings utility)
         if (recordings.length > 0) {
-            const formattedRecordings = formatCallRecordings(recordings, callDetails.duration);
+            const formattedRecordings = formatCallRecordings(
+                recordings,
+                callDetails.duration,
+                { useHtml },
+            );
             content += ' / ' + formattedRecordings;
         }
 
         // Add voicemail
         if (voicemail) {
-            content += '\n\n**Voicemail:**\n';
+            content += nlnl + bold('Voicemail:') + nl;
             const vmDuration = voicemail.duration
                 ? `(${Math.floor(voicemail.duration / 60)}:${(voicemail.duration % 60).toString().padStart(2, '0')})`
                 : '';
-            content += `• [Listen to voicemail](${voicemail.recordingUrl}) ${vmDuration}\n`;
+            content += `• ${link('Listen to voicemail', voicemail.recordingUrl)} ${vmDuration}${nl}`;
 
             if (voicemail.transcript) {
-                content += `\n**Transcript:**\n${voicemail.transcript}\n`;
+                content +=
+                    nl + bold('Transcript:') + nl + voicemail.transcript + nl;
             }
         }
 
         // Add AI summary
         if (summary.length > 0) {
-            content += '\n\n**Summary:**\n';
+            content += nlnl + bold('Summary:') + nl;
             summary.forEach((point) => {
-                content += `• ${point}\n`;
+                content += `• ${point}${nl}`;
             });
         }
 
         // Add next steps
         if (nextSteps.length > 0) {
-            content += '\n**Next Steps:**\n';
+            content += nl + bold('Next Steps:') + nl;
             nextSteps.forEach((step) => {
-                content += `• ${step}\n`;
+                content += `• ${step}${nl}`;
             });
         }
 
         // Add jobs (AI-extracted action items from Sona)
         // Jobs structure: [{ icon, name, result: { data: [{ name, value }] } }]
         if (jobs.length > 0) {
-            content += '\n**Jobs:**\n';
             jobs.forEach((job) => {
                 // Format job title with icon (e.g., "✍️ Message taking")
-                const jobTitle = job.icon ? `${job.icon} ${job.name}` : job.name;
-                content += `\n**${jobTitle}:**\n`;
+                const jobTitle = job.icon
+                    ? `${job.icon} ${job.name}`
+                    : job.name;
+                content += nl + bold(`${jobTitle}:`) + nl;
 
                 // Display each data item in the job result
-                if (job.result && job.result.data && Array.isArray(job.result.data)) {
+                if (
+                    job.result &&
+                    job.result.data &&
+                    Array.isArray(job.result.data)
+                ) {
                     job.result.data.forEach((item) => {
-                        content += `• **${item.name}:** ${item.value}\n`;
+                        content += `• ${bold(item.name + ':')} ${item.value}${nl}`;
                     });
                 }
             });

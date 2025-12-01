@@ -1183,6 +1183,10 @@ describe('Call Summary Enrichment - Pipedrive Integration', () => {
 
         mockCommands = {
             updateIntegrationConfig: jest.fn().mockResolvedValue({}),
+            findOrganizationUserById: jest.fn().mockResolvedValue({
+                id: 'test-user-id',
+                email: 'test@example.com',
+            }),
         };
 
         integration = new PipedriveIntegration({
@@ -1193,7 +1197,10 @@ describe('Call Summary Enrichment - Pipedrive Integration', () => {
         integration.pipedrive = mockPipedriveApi;
         integration.quo = mockQuoApi;
         integration.commands = mockCommands;
-        integration.config = { quoCallWebhookKey: 'test-key' };
+        integration.config = {
+            quoCallWebhookKey: 'test-key',
+            phoneNumbersMetadata: [{ number: '+15559876543' }],
+        };
 
         integration.upsertMapping = jest.fn().mockResolvedValue({});
         integration.getMapping = jest.fn().mockResolvedValue(null);
@@ -1218,6 +1225,21 @@ describe('Call Summary Enrichment - Pipedrive Integration', () => {
                     deepLink: 'https://app.openphone.com/calls/call-pd-123',
                 },
             };
+
+            // Mock getCall to return full call details
+            mockQuoApi.api.getCall.mockResolvedValue({
+                data: {
+                    id: 'call-pd-123',
+                    direction: 'incoming',
+                    status: 'completed',
+                    duration: 120,
+                    participants: ['+15551234567', '+15559876543'],
+                    phoneNumberId: 'pn-pd-456',
+                    userId: 'user-pd-789',
+                    createdAt: '2025-01-15T10:30:00Z',
+                    answeredAt: '2025-01-15T10:30:05Z',
+                },
+            });
 
             mockQuoApi.api.getPhoneNumber.mockResolvedValue({
                 data: { symbol: '📞', name: 'Sales Line', number: '+15559876543' },
@@ -1411,6 +1433,90 @@ describe('Call Summary Enrichment - Pipedrive Integration', () => {
             const updateCall = mockPipedriveApi.api._put.mock.calls[0][0];
             expect(updateCall.body.content).toContain('https://storage.example.com/pd-vm.mp3');
             expect(updateCall.body.content).toContain('Hi, please call me back about my order');
+        });
+
+        it('should show "Handled by Sona" status and include jobs data for AI-handled calls', async () => {
+            // Arrange - AI-handled call with jobs (message taking)
+            const webhookData = {
+                type: 'call.summary.completed',
+                data: {
+                    object: {
+                        callId: 'call-pd-sona',
+                        summary: ['The AI assistant took a message from the caller'],
+                        nextSteps: [],
+                        jobs: [
+                            {
+                                icon: '✍️',
+                                name: 'Message taking',
+                                result: {
+                                    data: [
+                                        { name: 'First and last name', value: 'John Doe' },
+                                        { name: 'Summarize the message', value: 'Interested in product demo' },
+                                    ],
+                                },
+                            },
+                        ],
+                        status: 'completed',
+                    },
+                    deepLink: 'https://my.quo.com/inbox/test/c/call-pd-sona',
+                },
+            };
+
+            integration.getMapping.mockResolvedValue({
+                noteId: 11111,
+                callId: 'call-pd-sona',
+                pipedrivePersonId: 'pd-person-sona',
+            });
+
+            // AI-handled call has aiHandled: 'ai-agent'
+            mockQuoApi.api.getCall.mockResolvedValue({
+                data: {
+                    id: 'call-pd-sona',
+                    direction: 'incoming',
+                    status: 'completed',
+                    duration: 120,
+                    participants: ['+15551234567', '+15559876543'],
+                    phoneNumberId: 'pn-pd-sona',
+                    userId: 'user-pd-sona',
+                    createdAt: '2025-01-15T14:00:00Z',
+                    aiHandled: 'ai-agent', // AI-handled call
+                    answeredAt: null, // Not answered by human
+                },
+            });
+
+            mockQuoApi.api.getCallRecordings.mockResolvedValue({
+                data: [{ url: 'https://storage.example.com/sona-recording.mp3', duration: 120 }],
+            });
+
+            mockQuoApi.api.getCallVoicemails.mockResolvedValue({ data: null });
+
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue({
+                data: { name: 'Main Line', number: '+15559876543' },
+            });
+
+            mockQuoApi.api.getUser.mockResolvedValue({
+                data: { firstName: 'Sona', lastName: 'AI' },
+            });
+
+            mockPipedriveApi.api._put.mockResolvedValue({
+                data: { id: 11111 },
+            });
+
+            integration._findPipedriveContactByPhone = jest
+                .fn()
+                .mockResolvedValue('pd-person-sona');
+
+            // Act
+            await integration._handleQuoCallSummaryEvent(webhookData);
+
+            // Assert - Note updated with "Handled by Sona" status
+            const updateCall = mockPipedriveApi.api._put.mock.calls[0][0];
+            expect(updateCall.body.content).toContain('Handled by Sona');
+
+            // Assert - Jobs data included
+            expect(updateCall.body.content).toContain('Message taking');
+            expect(updateCall.body.content).toContain('John Doe');
+            expect(updateCall.body.content).toContain('Interested in product demo');
         });
     });
 });
