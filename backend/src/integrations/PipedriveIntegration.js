@@ -1796,7 +1796,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                             return `\n<p><a href="${deepLink}">View the call activity in Quo</a></p>`;
                         },
                         // Pipedrive uses HTML format for notes
-                        useHtmlFormat: true,
+                        formatMethod: 'html',
                     },
                 });
 

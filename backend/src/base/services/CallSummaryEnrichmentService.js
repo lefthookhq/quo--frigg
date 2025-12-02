@@ -200,14 +200,37 @@ class CallSummaryEnrichmentService {
         formatters,
     }) {
         const { summary = [], nextSteps = [], jobs = [] } = summaryData;
-        const useHtml = formatters.useHtmlFormat === true;
 
-        const bold = (text) =>
-            useHtml ? `<strong>${text}</strong>` : `**${text}**`;
-        const link = (text, url) =>
-            useHtml ? `<a href="${url}">${text}</a>` : `[${text}](${url})`;
-        const nl = useHtml ? '<br>' : '\n';
-        const nlnl = useHtml ? '<br><br>' : '\n\n';
+        // Support formatMethod enum: 'html', 'markdown', 'plainText' (default: 'markdown')
+        // Also support legacy useHtmlFormat for backward compatibility
+        const formatMethod =
+            formatters.formatMethod ||
+            (formatters.useHtmlFormat === true ? 'html' : 'markdown');
+
+        const bold = (text) => {
+            switch (formatMethod) {
+                case 'html':
+                    return `<strong>${text}</strong>`;
+                case 'plainText':
+                    return text;
+                default:
+                    return `**${text}**`;
+            }
+        };
+
+        const link = (text, url) => {
+            switch (formatMethod) {
+                case 'html':
+                    return `<a href="${url}">${text}</a>`;
+                case 'plainText':
+                    return `${text}: ${url}`;
+                default:
+                    return `[${text}](${url})`;
+            }
+        };
+
+        const nl = formatMethod === 'html' ? '<br>' : '\n';
+        const nlnl = formatMethod === 'html' ? '<br><br>' : '\n\n';
 
         // Start with call header (status line)
         let content = formatters.formatCallHeader(callDetails);
@@ -217,7 +240,7 @@ class CallSummaryEnrichmentService {
             const formattedRecordings = formatCallRecordings(
                 recordings,
                 callDetails.duration,
-                { useHtml },
+                { formatMethod },
             );
             content += ' / ' + formattedRecordings;
         }
