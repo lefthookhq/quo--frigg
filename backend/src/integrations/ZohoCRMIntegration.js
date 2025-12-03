@@ -34,7 +34,11 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 },
             },
             zoho: {
-                definition: zohoCrm.Definition,
+                definition: {
+                    ...zohoCrm.Definition,
+                    getName: () => 'zoho',
+                    moduleName: 'zoho',
+                },
             },
         },
         webhooks: {

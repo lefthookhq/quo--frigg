@@ -149,6 +149,23 @@ describe('ZohoCRMIntegration (Refactored)', () => {
             }
         });
 
+        it('should have zoho module with moduleName override for entityType matching', () => {
+            // This test ensures the zoho module's moduleName is overridden from 'zohoCrm' to 'zoho'
+            // so that authorize requests with entityType: 'zoho' work correctly
+            expect(ZohoCRMIntegration.Definition.modules.zoho).toBeDefined();
+            expect(
+                ZohoCRMIntegration.Definition.modules.zoho.definition,
+            ).toBeDefined();
+
+            // Test moduleName override - must match the entityType sent in authorize requests
+            expect(
+                ZohoCRMIntegration.Definition.modules.zoho.definition.getName(),
+            ).toBe('zoho');
+            expect(
+                ZohoCRMIntegration.Definition.modules.zoho.definition.moduleName,
+            ).toBe('zoho');
+        });
+
         it('should have correct CRMConfig', () => {
             expect(ZohoCRMIntegration.CRMConfig).toBeDefined();
             expect(ZohoCRMIntegration.CRMConfig.personObjectTypes).toHaveLength(
