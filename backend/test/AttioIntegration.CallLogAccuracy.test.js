@@ -153,7 +153,8 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
             const noteContent = mockAttioApi.api.createNote.mock.calls[0][0].content;
             expect(noteContent).toContain('Incoming missed');
             expect(noteContent).not.toContain('Incoming answered by');
-            expect(noteContent).toContain('➿ Voicemail (0:11)');
+            expect(noteContent).toContain('**Voicemail:**');
+            expect(noteContent).toContain('(0:11)');
             expect(noteContent).toContain(
                 '[Listen to voicemail](https://files.openphone.co/dev/g/d3d0299416a54cbfaa8ef4dc64840e4b.mp3)',
             );
@@ -289,7 +290,8 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
             // Assert - Voicemail URL must be clickable markdown link
             const noteContent = mockAttioApi.api.createNote.mock.calls[0][0].content;
             expect(noteContent).toContain('Incoming missed');
-            expect(noteContent).toContain('➿ Voicemail (0:11)');
+            expect(noteContent).toContain('**Voicemail:**');
+            expect(noteContent).toContain('(0:11)');
             expect(noteContent).toContain(
                 '[Listen to voicemail](https://files.openphone.co/dev/g/d3d0299416a54cbfaa8ef4dc64840e4b.mp3)',
             );

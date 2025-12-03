@@ -110,6 +110,11 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
                 },
             };
 
+            // Mock getCall to return the call data
+            mockQuoApi.api.getCall.mockResolvedValue({
+                data: webhookData.data.object,
+            });
+
             // Mock infrastructure responses
             mockQuoApi.api.getPhoneNumber.mockResolvedValue({
                 data: { symbol: '📞', name: 'Sales Line', number: '+15559876543' },
@@ -161,6 +166,10 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
                 },
             };
 
+            mockQuoApi.api.getCall.mockResolvedValue({
+                data: webhookData.data.object,
+            });
+
             mockQuoApi.api.getPhoneNumber.mockResolvedValue({
                 data: { name: 'Support Line', number: '+15559876543' },
             });
@@ -210,6 +219,19 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
                 },
             };
 
+            mockQuoApi.api.getCall.mockResolvedValue({
+                data: webhookData.data.object,
+            });
+
+            // Mock getCallVoicemails to return voicemail data (for no-answer calls)
+            mockQuoApi.api.getCallVoicemails.mockResolvedValue({
+                data: {
+                    status: 'completed',
+                    recordingUrl: 'https://files.openphone.co/dev/g/d3d0299416a54cbfaa8ef4dc64840e4b.mp3',
+                    duration: 11,
+                },
+            });
+
             mockQuoApi.api.getPhoneNumber.mockResolvedValue({
                 data: { name: 'Sales Line', number: '+15559876543' },
             });
@@ -228,7 +250,8 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
             // Assert - Voicemail indicator with clickable URL link
             const noteContent = mockAttioApi.api.createNote.mock.calls[0][0].content;
             expect(noteContent).toContain('Incoming missed');
-            expect(noteContent).toContain('➿ Voicemail (0:11)');
+            expect(noteContent).toContain('**Voicemail:**');
+            expect(noteContent).toContain('(0:11)');
             expect(noteContent).toContain('[Listen to voicemail](https://files.openphone.co/dev/g/d3d0299416a54cbfaa8ef4dc64840e4b.mp3)');
             expect(noteContent).toContain('[View the call activity in Quo]');
         });
@@ -339,8 +362,8 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
             await integration._handleQuoCallSummaryEvent(callSummaryCompletedWebhook);
 
             // Assert: Jobs parsed correctly with icon, name, and data items
+            // Jobs are shown directly with emoji+name format (no separate "Jobs:" header)
             const callArgs = integration.logCallToActivity.mock.calls[0][0];
-            expect(callArgs.summary).toContain('**Jobs:**');
             expect(callArgs.summary).toContain('✍️ Message taking');
             expect(callArgs.summary).toContain('**First and last name:** Jane Doe');
             expect(callArgs.summary).toContain('**Summarize the message:**');
@@ -463,6 +486,10 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
                 },
             };
 
+            mockQuoApi.api.getCall.mockResolvedValue({
+                data: webhookData.data.object,
+            });
+
             mockQuoApi.api.getPhoneNumber.mockResolvedValue({
                 data: { name: 'Main Line', number: '+15559876543' },
             });
@@ -503,6 +530,10 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
                     deepLink: 'https://app.openphone.com/calls/call-fwd-menu-001',
                 },
             };
+
+            mockQuoApi.api.getCall.mockResolvedValue({
+                data: webhookData.data.object,
+            });
 
             mockQuoApi.api.getPhoneNumber.mockResolvedValue({
                 data: { name: 'Support Line', number: '+15559876543' },
@@ -552,10 +583,15 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
                         phoneNumberId: 'pn-456',
                         userId: 'user-789',
                         createdAt: '2025-01-15T17:00:00Z',
+                        answeredAt: '2025-01-15T17:00:05Z',
                     },
                     deepLink: 'https://app.openphone.com/calls/call-new-contact-001',
                 },
             };
+
+            mockQuoApi.api.getCall.mockResolvedValue({
+                data: webhookData.data.object,
+            });
 
             mockQuoApi.api.getPhoneNumber.mockResolvedValue({
                 data: { name: 'Sales Line', number: '+15559876543' },
@@ -606,16 +642,21 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
                         phoneNumberId: 'pn-nonexistent',
                         userId: 'user-789',
                         createdAt: '2025-01-15T18:00:00Z',
+                        answeredAt: '2025-01-15T18:00:05Z',
                     },
                     deepLink: 'https://app.openphone.com/calls/call-error-001',
                 },
             };
 
+            mockQuoApi.api.getCall.mockResolvedValue({
+                data: webhookData.data.object,
+            });
+
             mockQuoApi.api.getPhoneNumber.mockRejectedValue(
                 new Error('Phone number not found'),
             );
 
-            // Act & Assert - Should throw but not crash
+            // Act & Assert - Should propagate error (phone/user metadata fetch failure)
             await expect(integration._handleQuoCallEvent(webhookData)).rejects.toThrow(
                 'Phone number not found',
             );
@@ -635,10 +676,15 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
                         phoneNumberId: 'pn-456',
                         userId: 'user-789',
                         createdAt: '2025-01-15T19:00:00Z',
+                        answeredAt: '2025-01-15T19:00:05Z',
                     },
                     deepLink: 'https://app.openphone.com/calls/call-attio-error-001',
                 },
             };
+
+            mockQuoApi.api.getCall.mockResolvedValue({
+                data: webhookData.data.object,
+            });
 
             mockQuoApi.api.getPhoneNumber.mockResolvedValue({
                 data: { name: 'Sales Line', number: '+15559876543' },
@@ -652,10 +698,14 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
                 new Error('Attio API rate limit exceeded'),
             );
 
-            // Act & Assert - Should propagate error for retry
-            await expect(integration._handleQuoCallEvent(webhookData)).rejects.toThrow(
-                'Attio API rate limit exceeded',
-            );
+            // Act - Errors during activity creation are captured in results, not thrown
+            const result = await integration._handleQuoCallEvent(webhookData);
+
+            // Assert - Result shows failures for all participants with error details
+            expect(result.logged).toBe(false);
+            expect(result.results.length).toBeGreaterThan(0);
+            expect(result.results.every((r) => r.logged === false)).toBe(true);
+            expect(result.results.some((r) => r.error?.includes('Attio API rate limit exceeded'))).toBe(true);
         });
     });
 });

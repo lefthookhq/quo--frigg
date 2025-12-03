@@ -175,7 +175,7 @@ describe('AttioIntegration - Message Handler (Bug Fix)', () => {
             expect(integration.logSMSToActivity).toHaveBeenCalled();
         });
 
-        it('should still log message even if contact not found in Attio (contactExternalId = null)', async () => {
+        it('should skip logging when contact not found in Attio', async () => {
             const webhookData = {
                 type: 'message.received',
                 data: {
@@ -198,7 +198,7 @@ describe('AttioIntegration - Message Handler (Bug Fix)', () => {
             mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
             mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
 
-            await integration._handleQuoMessageEvent(webhookData);
+            const result = await integration._handleQuoMessageEvent(webhookData);
 
             // Should have checked for duplicate
             expect(integration.getMapping).toHaveBeenCalled();
@@ -206,13 +206,12 @@ describe('AttioIntegration - Message Handler (Bug Fix)', () => {
             // Should have tried to find contact
             expect(integration._findAttioContactFromQuoWebhook).toHaveBeenCalled();
 
-            // Should still log even when no contact found (contactExternalId will be null)
-            expect(integration.logSMSToActivity).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    contactExternalId: null,
-                })
-            );
-            expect(integration.upsertMapping).toHaveBeenCalled();
+            // New behavior: Should NOT log when no contact found (consistent across all integrations)
+            expect(integration.logSMSToActivity).not.toHaveBeenCalled();
+
+            // Should return appropriate error result
+            expect(result.logged).toBe(false);
+            expect(result.error).toBe('Contact not found');
         });
     });
 });

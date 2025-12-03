@@ -13,6 +13,7 @@
  */
 
 const { formatCallRecordings } = require('../../utils/formatCallRecordings');
+const QuoCallContentBuilder = require('./QuoCallContentBuilder');
 
 class CallSummaryEnrichmentService {
     /**
@@ -82,7 +83,9 @@ class CallSummaryEnrichmentService {
         const existingMapping = await mappingRepo.get(callId);
         // Extract noteId from nested mapping structure: { mapping: { noteId: '...' } }
         const oldNoteId =
-            existingMapping?.mapping?.noteId || existingMapping?.noteId || null;
+            existingMapping?.mapping?.noteId ||
+            existingMapping?.noteId ||
+            existingMapping?.mapping?.zohoCallId; // used by zoho
 
         if (oldNoteId) {
             console.log(
@@ -96,7 +99,6 @@ class CallSummaryEnrichmentService {
 
         let newNoteId;
 
-        // Phase 3: Update existing note OR delete old + create new
         if (crmAdapter.canUpdateNote && crmAdapter.canUpdateNote()) {
             // CRM supports note updates (e.g., AxisCare)
             console.log(`[CallEnrichment] CRM supports updates, updating note`);
@@ -207,30 +209,10 @@ class CallSummaryEnrichmentService {
             formatters.formatMethod ||
             (formatters.useHtmlFormat === true ? 'html' : 'markdown');
 
-        const bold = (text) => {
-            switch (formatMethod) {
-                case 'html':
-                    return `<strong>${text}</strong>`;
-                case 'plainText':
-                    return text;
-                default:
-                    return `**${text}**`;
-            }
-        };
-
-        const link = (text, url) => {
-            switch (formatMethod) {
-                case 'html':
-                    return `<a href="${url}">${text}</a>`;
-                case 'plainText':
-                    return `${text}: ${url}`;
-                default:
-                    return `[${text}](${url})`;
-            }
-        };
-
-        const nl = formatMethod === 'html' ? '<br>' : '\n';
-        const nlnl = formatMethod === 'html' ? '<br><br>' : '\n\n';
+        // Use QuoCallContentBuilder for consistent format options
+        const formatOptions =
+            QuoCallContentBuilder.getFormatOptions(formatMethod);
+        const { bold, link, lineBreak: nl, lineBreakDouble: nlnl } = formatOptions;
 
         // Start with call header (status line)
         let content = formatters.formatCallHeader(callDetails);

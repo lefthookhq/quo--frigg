@@ -14,6 +14,36 @@ const QUO_ANALYTICS_EVENTS = {
     CALL_LOG_FAILED: 'CallLogFailed',
 };
 
+/**
+ * Quo Webhook Event Types
+ * Single source of truth for all Quo/OpenPhone webhook events
+ * Used by integrations for webhook subscription and event handling
+ */
+const QuoWebhookEvents = {
+    // Message events
+    MESSAGE_RECEIVED: 'message.received',
+    MESSAGE_DELIVERED: 'message.delivered',
+
+    // Call events
+    CALL_COMPLETED: 'call.completed',
+    CALL_RECORDING_COMPLETED: 'call.recording.completed',
+    CALL_SUMMARY_COMPLETED: 'call.summary.completed',
+};
+
+/**
+ * Get webhook key type for signature verification
+ * @param {string} eventType - The webhook event type
+ * @returns {'callSummary' | 'call' | 'message' | null}
+ */
+const getWebhookKeyType = (eventType) => {
+    if (eventType.startsWith('call.summary')) return 'callSummary';
+    if (eventType.startsWith('call.')) return 'call';
+    if (eventType.startsWith('message.')) return 'message';
+    return null;
+};
+
 module.exports = {
     QUO_ANALYTICS_EVENTS,
+    QuoWebhookEvents,
+    getWebhookKeyType,
 };

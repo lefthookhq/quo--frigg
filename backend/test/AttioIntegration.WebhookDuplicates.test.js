@@ -640,7 +640,7 @@ describe('AttioIntegration - Webhook Duplicate Prevention', () => {
             ).rejects.toThrow('Attio API error');
         });
 
-        it('should throw error if note creation fails for call', async () => {
+        it('should return error result when note creation fails for call', async () => {
             // Arrange
             mockAttioApi.createNote.mockRejectedValue(
                 new Error('Attio API error'),
@@ -658,15 +658,24 @@ describe('AttioIntegration - Webhook Duplicate Prevention', () => {
                         phoneNumberId: 'phone-123',
                         userId: 'user-123',
                         createdAt: '2025-01-15T10:41:00Z',
+                        answeredAt: '2025-01-15T10:41:05Z',
                     },
                     deepLink: 'https://quo.com/call/call-error',
                 },
             };
 
-            // Act & Assert
-            await expect(
-                integration._handleQuoCallEvent(webhookData),
-            ).rejects.toThrow('Attio API error');
+            mockQuoApi.getCall.mockResolvedValue({
+                data: webhookData.data.object,
+            });
+
+            // Act - Errors are captured in results instead of thrown
+            const result = await integration._handleQuoCallEvent(webhookData);
+
+            // Assert - Result shows failure with error details
+            expect(result.logged).toBe(false);
+            expect(result.results.length).toBeGreaterThan(0);
+            expect(result.results.every((r) => r.logged === false)).toBe(true);
+            expect(result.results.some((r) => r.error?.includes('Attio API error'))).toBe(true);
         });
     });
 });

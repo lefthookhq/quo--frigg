@@ -3,6 +3,9 @@ const { createFriggCommands } = require('@friggframework/core');
 const axisCare = require('../api-modules/axiscare');
 const quo = require('../api-modules/quo');
 const CallSummaryEnrichmentService = require('../base/services/CallSummaryEnrichmentService');
+const QuoCallContentBuilder = require('../base/services/QuoCallContentBuilder');
+const QuoWebhookEventProcessor = require('../base/services/QuoWebhookEventProcessor');
+const { QuoWebhookEvents } = require('../base/constants');
 
 /**
  * AxisCareIntegration - Refactored to extend BaseCRMIntegration
@@ -93,9 +96,12 @@ class AxisCareIntegration extends BaseCRMIntegration {
      * Defines which events each webhook type listens for
      */
     static WEBHOOK_EVENTS = {
-        QUO_MESSAGES: ['message.received', 'message.delivered'],
-        QUO_CALLS: ['call.completed'],
-        QUO_CALL_SUMMARIES: ['call.summary.completed'],
+        QUO_MESSAGES: [
+            QuoWebhookEvents.MESSAGE_RECEIVED,
+            QuoWebhookEvents.MESSAGE_DELIVERED,
+        ],
+        QUO_CALLS: [QuoWebhookEvents.CALL_COMPLETED],
+        QUO_CALL_SUMMARIES: [QuoWebhookEvents.CALL_SUMMARY_COMPLETED],
     };
 
     constructor(params) {
@@ -362,10 +368,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
         return emails;
     }
 
-    // ============================================================================
-    // WEBHOOK INFRASTRUCTURE - Private Helper Methods
-    // ============================================================================
-
     /**
      * Generate webhook URL with BASE_URL validation
      * Centralizes URL construction and ensures BASE_URL is configured
@@ -480,7 +482,12 @@ class AxisCareIntegration extends BaseCRMIntegration {
             hmac.update(format.payload);
             const computedSignature = hmac.digest('base64');
 
-            const matches = computedSignature === receivedSignature;
+            // Use timing-safe comparison to prevent timing attacks
+            const computedBuffer = Buffer.from(computedSignature, 'utf8');
+            const receivedBuffer = Buffer.from(receivedSignature, 'utf8');
+            const matches =
+                computedBuffer.length === receivedBuffer.length &&
+                crypto.timingSafeEqual(computedBuffer, receivedBuffer);
 
             if (matches) {
                 matchFound = true;
@@ -496,10 +503,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
 
         console.log('[Quo Webhook] ✓ Signature verified');
     }
-
-    // ============================================================================
-    // WEBHOOK EVENT HANDLERS - HTTP Receiver
-    // ============================================================================
 
     /**
      * HTTP webhook receiver - determines source and queues for processing
@@ -565,10 +568,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
             throw error;
         }
     }
-
-    // ============================================================================
-    // WEBHOOK EVENT HANDLERS - Queue Processor
-    // ============================================================================
 
     /**
      * Process webhook events from both AxisCare and Quo
@@ -773,13 +772,13 @@ class AxisCareIntegration extends BaseCRMIntegration {
             await this._verifyQuoWebhookSignature(headers, body, eventType);
 
             let result;
-            if (eventType === 'call.completed') {
+            if (eventType === QuoWebhookEvents.CALL_COMPLETED) {
                 result = await this._handleQuoCallEvent(body);
-            } else if (eventType === 'call.summary.completed') {
+            } else if (eventType === QuoWebhookEvents.CALL_SUMMARY_COMPLETED) {
                 result = await this._handleQuoCallSummaryEvent(body);
             } else if (
-                eventType === 'message.received' ||
-                eventType === 'message.delivered'
+                eventType === QuoWebhookEvents.MESSAGE_RECEIVED ||
+                eventType === QuoWebhookEvents.MESSAGE_DELIVERED
             ) {
                 result = await this._handleQuoMessageEvent(body);
             } else {
@@ -810,208 +809,107 @@ class AxisCareIntegration extends BaseCRMIntegration {
 
     /**
      * Handle Quo call.completed webhook event
-     * Finds AxisCare contact by phone number and logs call activity
+     * Uses shared QuoWebhookEventProcessor for consistent handling across integrations
      *
      * @private
      * @param {Object} webhookData - Quo webhook payload
      * @returns {Promise<Object>} Processing result
      */
     async _handleQuoCallEvent(webhookData) {
-        const callObject = webhookData.data.object;
+        // Closure to capture AxisCare-specific contact details during lookup
+        let axiscareContactDetails = null;
+        let currentContactPhone = null;
 
-        console.log(`[Quo Webhook] Processing call: ${callObject.id}`);
-
-        const participants = callObject.participants || [];
-
-        if (participants.length < 2) {
-            throw new Error('Call must have at least 2 participants');
-        }
-
-        const contactPhone =
-            callObject.direction === 'outgoing'
-                ? participants[1]
-                : participants[0];
-
-        const axiscareContact =
-            await this._findAxisCareContactByPhone(contactPhone);
-
-        const deepLink = webhookData.data.deepLink || '#';
-
-        const phoneNumberDetails = await this.quo.api.getPhoneNumber(
-            callObject.phoneNumberId,
-        );
-        const inboxName = phoneNumberDetails.name || 'Quo Line';
-        const inboxNumber =
-            phoneNumberDetails.phoneNumber ||
-            participants[callObject.direction === 'outgoing' ? 0 : 1];
-
-        const userDetails = await this.quo.api.getUser(callObject.userId);
-        const userName =
-            userDetails.name ||
-            `${userDetails.firstName || ''} ${userDetails.lastName || ''}`.trim() ||
-            'Quo User';
-
-        const duration = callObject.duration || 0;
-        const minutes = Math.floor(duration / 60);
-        const seconds = duration % 60;
-        const durationFormatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-
-        let statusDescription;
-        if (callObject.status === 'completed') {
-            statusDescription =
-                callObject.direction === 'outgoing'
-                    ? `Outgoing initiated by ${userName}`
-                    : `Incoming answered by ${userName}`;
-        } else if (
-            callObject.status === 'no-answer' ||
-            callObject.status === 'missed'
-        ) {
-            statusDescription = 'Incoming missed';
-        } else {
-            statusDescription = `${callObject.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} ${callObject.status}`;
-        }
-
-        let formattedSummary;
-        if (callObject.direction === 'outgoing') {
-            formattedSummary = `Call: Quo ${inboxName} (${inboxNumber}) -> ${contactPhone}
-
-${statusDescription}
-
-View the call activity in Quo: ${deepLink}`;
-        } else {
-            formattedSummary = `Call: ${contactPhone} -> Quo ${inboxName} (${inboxNumber})
-
-${statusDescription}`;
-
-            if (callObject.status === 'completed' && callObject.duration > 0) {
-                formattedSummary += ` / Recording (${durationFormatted})`;
-            }
-
-            formattedSummary += `
-
-View the call activity in Quo: ${deepLink}`;
-        }
-
-        const activityData = {
-            contactId: axiscareContact.id,
-            contactType: axiscareContact.type,
-            direction:
-                callObject.direction === 'outgoing' ? 'outbound' : 'inbound',
-            timestamp: callObject.createdAt,
-            duration: callObject.duration,
-            summary: formattedSummary,
-            callerPhone: contactPhone,
-            callerName: axiscareContact.name,
-        };
-
-        const callLogId = await this.logCallToActivity(activityData);
-
-        // Store mapping: call ID -> call log ID (for later enrichment in call.summary.completed)
-        if (callLogId) {
-            await this.upsertMapping(callObject.id, {
-                callLogId,
-                callId: callObject.id,
-                axiscareContactId: axiscareContact.id,
-                axiscareContactType: axiscareContact.type,
-                createdAt: new Date().toISOString(),
-            });
-            console.log(
-                `[Quo Webhook] ✓ Mapping stored: call ${callObject.id} -> call log ${callLogId}`,
-            );
-        }
-
-        console.log(
-            `[Quo Webhook] ✓ Call logged for ${axiscareContact.type} ${axiscareContact.id}`,
-        );
-
-        return { logged: true, contactId: axiscareContact.id, callLogId };
+        return QuoWebhookEventProcessor.processCallEvent({
+            webhookData,
+            quoApi: this.quo.api,
+            phoneNumbersMetadata: this.config?.phoneNumbersMetadata || [],
+            crmAdapter: {
+                formatMethod: 'markdown',
+                findContactByPhone: async (phone) => {
+                    currentContactPhone = phone;
+                    axiscareContactDetails =
+                        await this._findAxisCareContactByPhone(phone);
+                    return axiscareContactDetails?.id;
+                },
+                createCallActivity: async (
+                    contactId,
+                    { title, content, timestamp, duration, direction },
+                ) => {
+                    return await this.logCallToActivity({
+                        contactId,
+                        contactType: axiscareContactDetails?.type,
+                        direction:
+                            direction === 'outgoing' ? 'outbound' : 'inbound',
+                        timestamp,
+                        duration,
+                        subject: title,
+                        summary: content,
+                        callerPhone: currentContactPhone,
+                        callerName: axiscareContactDetails?.name,
+                    });
+                },
+            },
+            mappingRepo: {
+                get: async (id) => await this.getMapping(id),
+                upsert: async (id, data) => await this.upsertMapping(id, data),
+            },
+        });
     }
 
     /**
      * Handle Quo message.received and message.delivered webhook events
-     * Finds AxisCare contact by phone number and logs SMS activity
+     * Uses shared QuoWebhookEventProcessor for consistent handling across integrations
      *
      * @private
      * @param {Object} webhookData - Quo webhook payload
      * @returns {Promise<Object>} Processing result
      */
     async _handleQuoMessageEvent(webhookData) {
-        const messageObject = webhookData.data.object;
+        // Closure to capture AxisCare-specific contact details during lookup
+        let axiscareContactDetails = null;
+        let currentContactPhone = null;
 
-        console.log(`[Quo Webhook] Processing message: ${messageObject.id}`);
-
-        const contactPhone =
-            messageObject.direction === 'outgoing'
-                ? messageObject.to
-                : messageObject.from;
-
-        console.log(
-            `[Quo Webhook] Message direction: ${messageObject.direction}, contact: ${contactPhone}`,
-        );
-
-        const phoneNumberDetails = await this.quo.api.getPhoneNumber(
-            messageObject.phoneNumberId,
-        );
-
-        const axiscareContact =
-            await this._findAxisCareContactByPhone(contactPhone);
-
-        const inboxName = phoneNumberDetails.data.name || 'Quo Inbox';
-
-        const userDetails = await this.quo.api.getUser(messageObject.userId);
-        const userName =
-            userDetails.name ||
-            `${userDetails.firstName || ''} ${userDetails.lastName || ''}`.trim() ||
-            'Quo User';
-
-        const deepLink = webhookData.data.deepLink || '#';
-
-        let formattedContent;
-        if (messageObject.direction === 'outgoing') {
-            formattedContent = `Message Sent
-
-From: Quo ${inboxName} (${messageObject.from})
-To: ${messageObject.to}
-
-${userName} sent:
-"${messageObject.text || '(no text)'}"
-
-View in Quo: ${deepLink}`;
-        } else {
-            formattedContent = `Message Received
-
-From: ${messageObject.from}
-To: Quo ${inboxName} (${messageObject.to})
-
-Received:
-"${messageObject.text || '(no text)'}"
-
-View in Quo: ${deepLink}`;
-        }
-
-        const activityData = {
-            contactId: axiscareContact.id,
-            contactType: axiscareContact.type,
-            direction:
-                messageObject.direction === 'outgoing' ? 'outbound' : 'inbound',
-            content: formattedContent,
-            timestamp: messageObject.createdAt,
-            callerPhone: contactPhone,
-            callerName: axiscareContact.name,
-        };
-
-        await this.logSMSToActivity(activityData);
-
-        console.log(
-            `[Quo Webhook] ✓ Message logged for ${axiscareContact.type} ${axiscareContact.id}`,
-        );
-
-        return { logged: true, contactId: axiscareContact.id };
+        return QuoWebhookEventProcessor.processMessageEvent({
+            webhookData,
+            quoApi: this.quo.api,
+            crmAdapter: {
+                formatMethod: 'markdown',
+                findContactByPhone: async (phone) => {
+                    currentContactPhone = phone;
+                    axiscareContactDetails =
+                        await this._findAxisCareContactByPhone(phone);
+                    return axiscareContactDetails?.id;
+                },
+                createMessageActivity: async (
+                    contactId,
+                    { title, content, timestamp, direction },
+                ) => {
+                    await this.logSMSToActivity({
+                        contactId,
+                        contactType: axiscareContactDetails?.type,
+                        direction:
+                            direction === 'outgoing' ? 'outbound' : 'inbound',
+                        content,
+                        timestamp,
+                        callerPhone: currentContactPhone,
+                        callerName: axiscareContactDetails?.name,
+                    });
+                    // Return a placeholder ID since logSMSToActivity doesn't return one
+                    return `sms-${Date.now()}`;
+                },
+            },
+            mappingRepo: {
+                get: async (id) => await this.getMapping(id),
+                upsert: async (id, data) => await this.upsertMapping(id, data),
+            },
+        });
     }
 
     /**
      * Handle Quo call.summary.completed webhook event
      * Stores call summary for later enrichment of call activity logs
+     * Uses CallSummaryEnrichmentService with QuoCallContentBuilder for formatters
      *
      * @private
      * @param {Object} webhookData - Quo webhook payload
@@ -1019,6 +917,7 @@ View in Quo: ${deepLink}`;
      */
     async _handleQuoCallSummaryEvent(webhookData) {
         const summaryObject = webhookData.data.object;
+        const formatOptions = QuoCallContentBuilder.getFormatOptions('markdown');
 
         console.log(
             `[Quo Webhook] Processing call summary for call: ${summaryObject.callId}`,
@@ -1074,19 +973,17 @@ View in Quo: ${deepLink}`;
 
         const deepLink = webhookData.data.deepLink || '#';
 
+        // Fetch metadata using shared utilities
         const phoneNumberDetails = await this.quo.api.getPhoneNumber(
             callObject.phoneNumberId,
         );
-        const inboxName = phoneNumberDetails.data?.name || 'Quo Line';
+        const inboxName = QuoCallContentBuilder.buildInboxName(phoneNumberDetails);
         const inboxNumber =
             phoneNumberDetails.data?.number ||
             participants[callObject.direction === 'outgoing' ? 0 : 1];
 
         const userDetails = await this.quo.api.getUser(callObject.userId);
-        const userName =
-            userDetails.data?.name ||
-            `${userDetails.data?.firstName || ''} ${userDetails.data?.lastName || ''}`.trim() ||
-            'Quo User';
+        const userName = QuoCallContentBuilder.buildUserName(userDetails);
 
         // Use CallSummaryEnrichmentService to enrich the call log
         const enrichmentResult = await CallSummaryEnrichmentService.enrichCallNote({
@@ -1126,33 +1023,25 @@ View in Quo: ${deepLink}`;
             },
             contactId: axiscareContact.id,
             formatters: {
-                formatCallHeader: (call) => {
-                    let statusDescription;
-                    if (call.status === 'completed') {
-                        statusDescription =
-                            call.direction === 'outgoing'
-                                ? `Outgoing initiated by ${userName}`
-                                : `Incoming answered by ${userName}`;
-                    } else if (
-                        call.status === 'no-answer' ||
-                        call.status === 'missed'
-                    ) {
-                        statusDescription = 'Incoming missed';
-                    } else {
-                        statusDescription = `${call.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} ${call.status}`;
-                    }
-                    return statusDescription;
-                },
-                formatTitle: (call) => {
-                    if (call.direction === 'outgoing') {
-                        return `Call Summary: Quo ${inboxName} (${inboxNumber}) → ${contactPhone}`;
-                    } else {
-                        return `Call Summary: ${contactPhone} → Quo ${inboxName} (${inboxNumber})`;
-                    }
-                },
-                formatDeepLink: () => {
-                    return `\n\nView the call activity in Quo: ${deepLink}`;
-                },
+                formatMethod: 'markdown',
+                formatCallHeader: (callData) =>
+                    QuoCallContentBuilder.buildCallStatus({
+                        call: callData,
+                        userName,
+                    }),
+                formatTitle: (callData) =>
+                    QuoCallContentBuilder.buildCallTitle({
+                        call: callData,
+                        inboxName,
+                        inboxNumber,
+                        contactPhone,
+                        formatOptions,
+                    }),
+                formatDeepLink: () =>
+                    QuoCallContentBuilder.buildDeepLink({
+                        deepLink,
+                        formatOptions,
+                    }),
             },
         });
 
@@ -1462,10 +1351,6 @@ View in Quo: ${deepLink}`;
         }
     }
 
-    // ============================================================================
-    // WEBHOOK SETUP METHODS
-    // ============================================================================
-
     /**
      * Setup webhooks for both AxisCare and Quo
      * AxisCare webhooks are configured manually via AxisCare admin UI
@@ -1742,10 +1627,6 @@ View in Quo: ${deepLink}`;
             };
         }
     }
-
-    // ============================================================================
-    // LIFECYCLE METHODS
-    // ============================================================================
 
     /**
      * Called when integration is deleted

@@ -542,6 +542,10 @@ describe('ZohoCRMIntegration (Refactored)', () => {
                 mockQuoApi.api.listContacts = jest.fn();
                 integration._fetchZohoObject = jest.fn();
                 integration.transformPersonToQuo = jest.fn();
+                integration.commands.findOrganizationUserById = jest.fn().mockResolvedValue({
+                    id: 'user-123',
+                    appOrgId: 'org-123',
+                });
             });
 
             it('should use upsertContactToQuo for insert operation', async () => {

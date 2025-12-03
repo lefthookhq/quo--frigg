@@ -57,6 +57,10 @@ describe('Call Summary Enrichment - Attio Integration', () => {
         // Mock commands
         mockCommands = {
             updateIntegrationConfig: jest.fn().mockResolvedValue({}),
+            findOrganizationUserById: jest.fn().mockResolvedValue({
+                id: 'user-123',
+                appOrgId: 'org-123',
+            }),
         };
 
         // Create integration instance
@@ -71,6 +75,10 @@ describe('Call Summary Enrichment - Attio Integration', () => {
         integration.commands = mockCommands;
         integration.config = {
             quoCallWebhookKey: 'test-key',
+            // Mark the Quo phone number as internal so only external contact is processed
+            phoneNumbersMetadata: [
+                { number: '+15551234567', name: 'Sales Line', type: 'internal' }
+            ],
         };
 
         // Mock mapping methods
@@ -89,13 +97,15 @@ describe('Call Summary Enrichment - Attio Integration', () => {
                 },
             };
 
+            // Mock Quo API calls needed by processor
+            mockQuoApi.api.getCall.mockResolvedValue(mockGetCall.completedIncoming);
+            mockQuoApi.api.getCallVoicemails.mockResolvedValue({ data: [] });
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+            mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
+
             mockAttioApi.api.getRecord.mockResolvedValue({
                 data: { id: { record_id: 'attio-contact-123' } },
             });
-
-            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
-
-            mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
 
             mockAttioApi.api.createNote.mockResolvedValue({
                 data: {
@@ -124,13 +134,13 @@ describe('Call Summary Enrichment - Attio Integration', () => {
                 created_at: mockGetCall.completedIncoming.data.createdAt,
             });
 
-            // Assert - Mapping stored: call ID -> note ID
+            // Assert - Mapping stored: call ID -> note ID (may be called multiple times for multiple participants)
             expect(integration.upsertMapping).toHaveBeenCalledWith(
                 'AC_TEST_001',
                 expect.objectContaining({
                     noteId: 'note-abc123',
                     callId: 'AC_TEST_001',
-                    attioContactId: 'attio-contact-123',
+                    contactId: 'attio-contact-123',
                 }),
             );
         });
@@ -150,12 +160,12 @@ describe('Call Summary Enrichment - Attio Integration', () => {
                 },
             };
 
-            // Mock existing mapping from Phase 1
+            // Mock existing mapping from Phase 1 (uses contactId not attioContactId)
             integration.getMapping.mockResolvedValue({
                 mapping: {
                     noteId: 'note-initial-123',
                     callId: 'AC_TEST_001',
-                    attioContactId: 'attio-contact-123',
+                    contactId: 'attio-contact-123',
                 },
             });
 
@@ -963,6 +973,7 @@ describe('Call Summary Enrichment - Zoho CRM Integration', () => {
             api: {
                 createNote: jest.fn(),
                 updateNote: jest.fn(),
+                updateCall: jest.fn(),
                 deleteNote: jest.fn(),
                 searchRecordsByCriteria: jest.fn(),
             },
@@ -980,6 +991,10 @@ describe('Call Summary Enrichment - Zoho CRM Integration', () => {
 
         mockCommands = {
             updateIntegrationConfig: jest.fn().mockResolvedValue({}),
+            findOrganizationUserById: jest.fn().mockResolvedValue({
+                id: 'user-123',
+                appOrgId: 'org-123',
+            }),
         };
 
         integration = new ZohoCRMIntegration({
@@ -990,7 +1005,12 @@ describe('Call Summary Enrichment - Zoho CRM Integration', () => {
         integration.zoho = mockZohoCrmApi;
         integration.quo = mockQuoApi;
         integration.commands = mockCommands;
-        integration.config = { quoCallWebhookKey: 'test-key' };
+        integration.config = {
+            quoCallWebhookKey: 'test-key',
+            phoneNumbersMetadata: [
+                { number: '+15551234567', name: 'Sales Line', type: 'internal' }
+            ],
+        };
 
         integration.upsertMapping = jest.fn().mockResolvedValue({});
         integration.getMapping = jest.fn().mockResolvedValue(null);
@@ -1063,19 +1083,18 @@ describe('Call Summary Enrichment - Zoho CRM Integration', () => {
             // Act
             await integration._handleQuoCallSummaryEvent(webhookData);
 
-            // Assert - updateNote called (NOT create + delete)
-            expect(mockZohoCrmApi.api.updateNote).toHaveBeenCalledWith(
-                'Contacts',
-                'zoho-contact-789',
+            // Assert - updateCall called (production uses updateCall for Calls_module)
+            expect(mockZohoCrmApi.api.updateCall).toHaveBeenCalledWith(
                 'zoho-note-456',
                 expect.objectContaining({
-                    Note_Content: expect.stringMatching(/Summary:.*Discussed product demo/s),
+                    Subject: expect.any(String),
+                    Description: expect.stringMatching(/Summary:.*Discussed product demo/s),
                 }),
             );
 
-            // Assert - Notes include recording URL
-            const updateCall = mockZohoCrmApi.api.updateNote.mock.calls[0][3];
-            expect(updateCall.Note_Content).toContain('https://storage.example.com/zoho-recording.mp3');
+            // Assert - Description includes recording URL
+            const updateCallArgs = mockZohoCrmApi.api.updateCall.mock.calls[0][1];
+            expect(updateCallArgs.Description).toContain('https://storage.example.com/zoho-recording.mp3');
 
             // Assert - createNote NOT called (update only)
             expect(mockZohoCrmApi.api.createNote).not.toHaveBeenCalled();
@@ -1133,7 +1152,7 @@ describe('Call Summary Enrichment - Zoho CRM Integration', () => {
                 data: { firstName: 'Sam', lastName: 'Wilson' },
             });
 
-            mockZohoCrmApi.api.updateNote.mockResolvedValue({
+            mockZohoCrmApi.api.updateCall.mockResolvedValue({
                 data: [{ details: { id: 'zoho-note-vm' } }],
             });
 
@@ -1144,10 +1163,10 @@ describe('Call Summary Enrichment - Zoho CRM Integration', () => {
             // Act
             await integration._handleQuoCallSummaryEvent(webhookData);
 
-            // Assert - Voicemail URL and transcript included
-            const updateCall = mockZohoCrmApi.api.updateNote.mock.calls[0][3];
-            expect(updateCall.Note_Content).toContain('https://storage.example.com/zoho-vm.mp3');
-            expect(updateCall.Note_Content).toContain('Hi, please call me back about the proposal');
+            // Assert - Voicemail URL and transcript included (uses updateCall)
+            const updateCallArgs = mockZohoCrmApi.api.updateCall.mock.calls[0][1];
+            expect(updateCallArgs.Description).toContain('https://storage.example.com/zoho-vm.mp3');
+            expect(updateCallArgs.Description).toContain('Hi, please call me back about the proposal');
         });
     });
 });
@@ -1199,7 +1218,10 @@ describe('Call Summary Enrichment - Pipedrive Integration', () => {
         integration.commands = mockCommands;
         integration.config = {
             quoCallWebhookKey: 'test-key',
-            phoneNumbersMetadata: [{ number: '+15559876543' }],
+            // Mark the Quo phone number as internal (not the contact number)
+            phoneNumbersMetadata: [
+                { number: '+15551234567', name: 'Sales Line', type: 'internal' }
+            ],
         };
 
         integration.upsertMapping = jest.fn().mockResolvedValue({});
@@ -1275,7 +1297,7 @@ describe('Call Summary Enrichment - Pipedrive Integration', () => {
                 expect.objectContaining({
                     noteId: 12345,
                     callId: 'call-pd-123',
-                    pipedrivePersonId: '456789',
+                    contactId: '456789',
                 }),
             );
         });
@@ -1301,7 +1323,7 @@ describe('Call Summary Enrichment - Pipedrive Integration', () => {
             integration.getMapping.mockResolvedValue({
                 noteId: 12345,
                 callId: 'call-pd-123',
-                pipedrivePersonId: 'pd-person-123',
+                contactId: 'pd-person-123',
             });
 
             mockQuoApi.api.getCall.mockResolvedValue({
@@ -1384,7 +1406,7 @@ describe('Call Summary Enrichment - Pipedrive Integration', () => {
             integration.getMapping.mockResolvedValue({
                 noteId: 67890,
                 callId: 'call-pd-vm',
-                pipedrivePersonId: 'pd-person-vm',
+                contactId: 'pd-person-vm',
             });
 
             mockQuoApi.api.getCall.mockResolvedValue({
@@ -1465,7 +1487,7 @@ describe('Call Summary Enrichment - Pipedrive Integration', () => {
             integration.getMapping.mockResolvedValue({
                 noteId: 11111,
                 callId: 'call-pd-sona',
-                pipedrivePersonId: 'pd-person-sona',
+                contactId: 'pd-person-sona',
             });
 
             // AI-handled call has aiHandled: 'ai-agent'
