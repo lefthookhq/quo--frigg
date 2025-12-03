@@ -71,9 +71,9 @@ const appDefinition = {
         PIPEDRIVE_CLIENT_ID: true,
         PIPEDRIVE_CLIENT_SECRET: true,
         PIPEDRIVE_SCOPE: true,
-        ZOHO_CLIENT_ID: true,
-        ZOHO_CLIENT_SECRET: true,
-        ZOHO_SCOPE: true,
+        ZOHO_CRM_CLIENT_ID: true,
+        ZOHO_CRM_CLIENT_SECRET: true,
+        ZOHO_CRM_SCOPE: true,
         SCALE_TEST_API_KEY: true,
     },
 };
