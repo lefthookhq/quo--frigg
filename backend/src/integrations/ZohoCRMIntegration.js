@@ -38,6 +38,10 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                     ...zohoCrm.Definition,
                     getName: () => 'zoho',
                     moduleName: 'zoho',
+                    env: {
+                        ...zohoCrm.Definition.env,
+                        redirect_uri: `${process.env.REDIRECT_URI}/zoho`,
+                    },
                 },
             },
         },

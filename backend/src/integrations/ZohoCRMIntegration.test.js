@@ -164,6 +164,12 @@ describe('ZohoCRMIntegration (Refactored)', () => {
             expect(
                 ZohoCRMIntegration.Definition.modules.zoho.definition.moduleName,
             ).toBe('zoho');
+
+            // Test redirect_uri override - should use /zoho instead of /zohoCrm
+            expect(
+                ZohoCRMIntegration.Definition.modules.zoho.definition.env
+                    .redirect_uri,
+            ).toMatch(/\/zoho$/);
         });
 
         it('should have correct CRMConfig', () => {
