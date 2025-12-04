@@ -425,6 +425,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 emails,
             },
             customFields: [],
+            sourceEntityType: 'person',
         };
     }
 

@@ -15,7 +15,6 @@ jest.mock('../base/BaseCRMIntegration', () => {
                     FETCH_PERSON_PAGE: { handler: jest.fn() },
                     PROCESS_PERSON_BATCH: { handler: jest.fn() },
                     COMPLETE_SYNC: { handler: jest.fn() },
-                    LOG_SMS: { handler: jest.fn() },
                     LOG_CALL: { handler: jest.fn() },
                 };
             }
@@ -170,7 +169,7 @@ describe('AxisCareIntegration', () => {
                 });
 
                 expect(result.data).toHaveLength(1);
-                expect(result.data[0]._objectType).toBe('Client');
+                expect(result.data[0].objectType).toBe('Client');
                 expect(result.cursor).toBe(null);
                 expect(result.hasMore).toBe(false);
             });
@@ -188,7 +187,7 @@ describe('AxisCareIntegration', () => {
                     status: 'active',
                     dateOfBirth: '1950-01-01',
                     residentialAddress: '123 Main St',
-                    _objectType: 'Client',
+                    objectType: 'Client',
                 };
 
                 const result = await integration.transformPersonToQuo(client);
@@ -200,20 +199,13 @@ describe('AxisCareIntegration', () => {
                 expect(result.defaultFields.phoneNumbers).toHaveLength(2);
                 expect(result.defaultFields.emails).toHaveLength(1);
                 expect(result.customFields).toEqual([]);
+                expect(result.sourceEntityType).toBe('client');
             });
         });
 
         describe('setupWebhooks', () => {
             it('should setup Quo webhooks', async () => {
                 // Mock the Quo API webhook creation
-                mockQuoApi.api.createMessageWebhook = jest
-                    .fn()
-                    .mockResolvedValue({
-                        data: {
-                            id: 'message-webhook-123',
-                            key: 'message-webhook-key',
-                        },
-                    });
                 mockQuoApi.api.createCallWebhook = jest.fn().mockResolvedValue({
                     data: {
                         id: 'call-webhook-123',
@@ -241,7 +233,6 @@ describe('AxisCareIntegration', () => {
 
                 expect(result.overallStatus).toBe('success');
                 expect(result.quo.status).toBe('configured');
-                expect(mockQuoApi.api.createMessageWebhook).toHaveBeenCalled();
                 expect(mockQuoApi.api.createCallWebhook).toHaveBeenCalled();
                 expect(
                     mockQuoApi.api.createCallSummaryWebhook,

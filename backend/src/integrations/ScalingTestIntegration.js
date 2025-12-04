@@ -207,7 +207,7 @@ class ScalingTestIntegration extends BaseCRMIntegration {
                     value: e.address,
                 })),
             },
-            // Omit customFields - they must be pre-created in OpenPhone workspace
+            sourceEntityType: 'person',
         };
 
         console.log(

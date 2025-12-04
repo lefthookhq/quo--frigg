@@ -757,6 +757,7 @@ class AttioIntegration extends BaseCRMIntegration {
                 emails,
             },
             customFields: [],
+            sourceEntityType: 'people',
         };
     }
 

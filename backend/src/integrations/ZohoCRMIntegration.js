@@ -245,6 +245,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 role: person.Title || '',
             },
             customFields: [],
+            sourceEntityType: objectType.toLowerCase(),
         };
     }
 

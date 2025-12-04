@@ -1209,12 +1209,19 @@ class BaseCRMIntegration extends IntegrationBase {
                                 ?.value;
 
                         if (phoneNumber) {
+                            const originalContact = contacts.find(
+                                (c) =>
+                                    c.externalId === createdContact.externalId,
+                            );
+
                             // Store mapping by phone number (contains both IDs)
                             const mappingData = {
                                 externalId: createdContact.externalId,
                                 quoContactId: createdContact.id,
                                 phoneNumber: phoneNumber,
-                                entityType: 'people',
+                                entityType:
+                                    originalContact?.sourceEntityType ||
+                                    'people',
                                 lastSyncedAt: new Date().toISOString(),
                                 syncMethod: 'bulk',
                                 action: 'created',

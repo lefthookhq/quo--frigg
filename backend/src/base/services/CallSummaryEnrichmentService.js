@@ -49,7 +49,6 @@ class CallSummaryEnrichmentService {
         contactId,
         formatters,
     }) {
-        // Phase 2: Fetch recordings and voicemails
         console.log(`[CallEnrichment] Fetching media for call ${callId}`);
 
         const [recordingsResponse, voicemailsResponse] = await Promise.all([
@@ -212,7 +211,12 @@ class CallSummaryEnrichmentService {
         // Use QuoCallContentBuilder for consistent format options
         const formatOptions =
             QuoCallContentBuilder.getFormatOptions(formatMethod);
-        const { bold, link, lineBreak: nl, lineBreakDouble: nlnl } = formatOptions;
+        const {
+            bold,
+            link,
+            lineBreak: nl,
+            lineBreakDouble: nlnl,
+        } = formatOptions;
 
         // Start with call header (status line)
         let content = formatters.formatCallHeader(callDetails);
