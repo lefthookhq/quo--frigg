@@ -50,8 +50,7 @@ const Definition = {
         },
         getToken: async (api, params) => {
             // For AxisCare API, use API key authentication
-            const apiKey =
-                get(params.data, 'apiKey') || get(params.data, 'access_token');
+            const apiKey = get(params.data, 'apiKey');
             const siteNumber = get(params.data, 'siteNumber');
 
             if (!apiKey) {
@@ -65,7 +64,7 @@ const Definition = {
                 );
             }
 
-            return { access_token: apiKey, siteNumber };
+            return { api_key, siteNumber };
         },
         getEntityDetails: async (
             api,
@@ -73,7 +72,7 @@ const Definition = {
             tokenResponse,
             userId,
         ) => {
-            const externalId = hashAccessToken(tokenResponse.access_token);
+            const externalId = hashAccessToken(tokenResponse.api_key);
 
             return {
                 identifiers: {
@@ -87,20 +86,19 @@ const Definition = {
             };
         },
         apiPropertiesToPersist: {
-            credential: ['access_token', 'siteNumber'],
+            credential: ['api_key', 'siteNumber'],
             entity: [],
         },
         getCredentialDetails: async (api, userId) => {
-            const accessToken = api.apiKey || api.access_token;
+            const apiKey = api.api_key;
 
-            if (!accessToken) {
+            if (!apiKey) {
                 throw new Error(
-                    'Access token is required for AxisCare credential details',
+                    'API key is required for AxisCare credential details',
                 );
             }
 
-            const externalId = hashAccessToken(accessToken);
-
+            const externalId = hashAccessToken(apiKey);
             try {
                 const credentialTest = await api.listClients();
 
@@ -113,7 +111,9 @@ const Definition = {
                         externalId,
                         user: userId,
                     },
-                    details: {},
+                    details: {
+                        api_key: apiKey, // Explicitly include api_key in details to be persisted
+                    },
                 };
             } catch (error) {
                 return {
@@ -137,7 +137,7 @@ const Definition = {
         },
         setAuthParams: async (api, params) => {
             // For API key authentication, set the key on the API instance
-            const apiKey = params.apiKey || params.access_token;
+            const apiKey = params.apiKey;
             const siteNumber = params.siteNumber;
 
             console.log(
@@ -169,7 +169,7 @@ const Definition = {
                 '[AxisCare setAuthParams] API key and site number set on API instance',
             );
 
-            return { access_token: apiKey, siteNumber };
+            return { api_key: apiKey, siteNumber };
         },
     },
     env: {},

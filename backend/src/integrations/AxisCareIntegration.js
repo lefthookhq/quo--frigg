@@ -2,6 +2,11 @@ const { BaseCRMIntegration } = require('../base/BaseCRMIntegration');
 const { createFriggCommands } = require('@friggframework/core');
 const axisCare = require('../api-modules/axiscare');
 const quo = require('../api-modules/quo');
+const CallSummaryEnrichmentService = require('../base/services/CallSummaryEnrichmentService');
+const QuoCallContentBuilder = require('../base/services/QuoCallContentBuilder');
+const QuoWebhookEventProcessor = require('../base/services/QuoWebhookEventProcessor');
+const { QuoWebhookEvents } = require('../base/constants');
+const { filterExternalParticipants } = require('../utils/participantFilter');
 
 /**
  * AxisCareIntegration - Refactored to extend BaseCRMIntegration
@@ -82,7 +87,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
      * Used for webhook labels and identification in webhook processing
      */
     static WEBHOOK_LABELS = {
-        QUO_MESSAGES: 'AxisCare Integration - Messages',
         QUO_CALLS: 'AxisCare Integration - Calls',
         QUO_CALL_SUMMARIES: 'AxisCare Integration - Call Summaries',
     };
@@ -92,9 +96,8 @@ class AxisCareIntegration extends BaseCRMIntegration {
      * Defines which events each webhook type listens for
      */
     static WEBHOOK_EVENTS = {
-        QUO_MESSAGES: ['message.received', 'message.delivered'],
-        QUO_CALLS: ['call.completed'],
-        QUO_CALL_SUMMARIES: ['call.summary.completed'],
+        QUO_CALLS: [QuoWebhookEvents.CALL_COMPLETED],
+        QUO_CALL_SUMMARIES: [QuoWebhookEvents.CALL_SUMMARY_COMPLETED],
     };
 
     constructor(params) {
@@ -214,7 +217,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
 
             const taggedPersons = persons.map((person) => ({
                 ...person,
-                _objectType: objectType,
+                objectType: objectType,
             }));
 
             console.log(
@@ -260,6 +263,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 role: objectType,
             },
             customFields: [],
+            sourceEntityType: objectType.toLowerCase(),
         };
     }
 
@@ -361,10 +365,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
         return emails;
     }
 
-    // ============================================================================
-    // WEBHOOK INFRASTRUCTURE - Private Helper Methods
-    // ============================================================================
-
     /**
      * Generate webhook URL with BASE_URL validation
      * Centralizes URL construction and ensures BASE_URL is configured
@@ -388,15 +388,30 @@ class AxisCareIntegration extends BaseCRMIntegration {
 
     /**
      * Normalize phone number for consistent matching
-     * Removes formatting characters while preserving E.164 format
+     * Strips formatting and ensures E.164-like format for comparison
+     * Assumes US (+1) country code if not present
      *
      * @private
      * @param {string} phone - Phone number to normalize
-     * @returns {string} Normalized phone number
+     * @returns {string} Normalized phone number (digits only, with country code)
      */
     _normalizePhoneNumber(phone) {
         if (!phone) return phone;
-        return phone.replace(/[\s\(\)\-]/g, '');
+
+        // Remove all non-digit characters except leading +
+        let normalized = phone.replace(/[^\d+]/g, '');
+
+        // If starts with +, remove it and keep digits
+        if (normalized.startsWith('+')) {
+            normalized = normalized.substring(1);
+        }
+
+        // If it's a 10-digit US number (no country code), prepend 1
+        if (normalized.length === 10) {
+            normalized = '1' + normalized;
+        }
+
+        return normalized;
     }
 
     /**
@@ -430,8 +445,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
             webhookKey = this.config?.quoCallSummaryWebhookKey;
         } else if (eventType.startsWith('call.')) {
             webhookKey = this.config?.quoCallWebhookKey;
-        } else if (eventType.startsWith('message.')) {
-            webhookKey = this.config?.quoMessageWebhookKey;
         } else {
             throw new Error(
                 `Unknown event type for key selection: ${eventType}`,
@@ -479,7 +492,12 @@ class AxisCareIntegration extends BaseCRMIntegration {
             hmac.update(format.payload);
             const computedSignature = hmac.digest('base64');
 
-            const matches = computedSignature === receivedSignature;
+            // Use timing-safe comparison to prevent timing attacks
+            const computedBuffer = Buffer.from(computedSignature, 'utf8');
+            const receivedBuffer = Buffer.from(receivedSignature, 'utf8');
+            const matches =
+                computedBuffer.length === receivedBuffer.length &&
+                crypto.timingSafeEqual(computedBuffer, receivedBuffer);
 
             if (matches) {
                 matchFound = true;
@@ -495,10 +513,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
 
         console.log('[Quo Webhook] ✓ Signature verified');
     }
-
-    // ============================================================================
-    // WEBHOOK EVENT HANDLERS - HTTP Receiver
-    // ============================================================================
 
     /**
      * HTTP webhook receiver - determines source and queues for processing
@@ -526,27 +540,9 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 return;
             }
 
-            const quoSignature = req.headers['openphone-signature'];
-            const axiscareUserAgent = req.headers['user-agent'];
             const axiscareWebhookId = req.headers['x-webhook-id'];
 
-            let source;
-            if (quoSignature) {
-                source = 'quo';
-            } else if (
-                axiscareUserAgent === 'AWS-Webhook-Service' &&
-                axiscareWebhookId
-            ) {
-                source = 'axiscare';
-            } else {
-                console.error(
-                    `[Webhook] Missing or invalid authentication headers`,
-                );
-                res.status(401).json({
-                    error: 'Signature or authentication required',
-                });
-                return;
-            }
+            const source = axiscareWebhookId ? 'axiscare' : 'quo';
 
             const webhookData = {
                 body: req.body,
@@ -564,10 +560,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
             throw error;
         }
     }
-
-    // ============================================================================
-    // WEBHOOK EVENT HANDLERS - Queue Processor
-    // ============================================================================
 
     /**
      * Process webhook events from both AxisCare and Quo
@@ -769,18 +761,15 @@ class AxisCareIntegration extends BaseCRMIntegration {
         console.log(`[Quo Webhook] Processing event: ${eventType}`);
 
         try {
-            await this._verifyQuoWebhookSignature(headers, body, eventType);
+            // TODO(quo-webhooks): Re-enable signature verification once Quo/OpenPhone
+            // adds OpenPhone-Signature headers to their new webhook service.
+            // await this._verifyQuoWebhookSignature(headers, body, eventType);
 
             let result;
-            if (eventType === 'call.completed') {
+            if (eventType === QuoWebhookEvents.CALL_COMPLETED) {
                 result = await this._handleQuoCallEvent(body);
-            } else if (eventType === 'call.summary.completed') {
+            } else if (eventType === QuoWebhookEvents.CALL_SUMMARY_COMPLETED) {
                 result = await this._handleQuoCallSummaryEvent(body);
-            } else if (
-                eventType === 'message.received' ||
-                eventType === 'message.delivered'
-            ) {
-                result = await this._handleQuoMessageEvent(body);
             } else {
                 console.warn(`[Quo Webhook] Unknown event type: ${eventType}`);
                 return { success: true, skipped: true, eventType };
@@ -809,194 +798,91 @@ class AxisCareIntegration extends BaseCRMIntegration {
 
     /**
      * Handle Quo call.completed webhook event
-     * Finds AxisCare contact by phone number and logs call activity
+     * Uses shared QuoWebhookEventProcessor for consistent handling across integrations
      *
      * @private
      * @param {Object} webhookData - Quo webhook payload
      * @returns {Promise<Object>} Processing result
      */
     async _handleQuoCallEvent(webhookData) {
-        const callObject = webhookData.data.object;
+        let axiscareContactDetails = null;
+        let currentContactPhone = null;
 
-        console.log(`[Quo Webhook] Processing call: ${callObject.id}`);
-
-        const participants = callObject.participants || [];
-
-        if (participants.length < 2) {
-            throw new Error('Call must have at least 2 participants');
-        }
-
-        const contactPhone =
-            callObject.direction === 'outgoing'
-                ? participants[1]
-                : participants[0];
-
-        const axiscareContact =
-            await this._findAxisCareContactByPhone(contactPhone);
-
-        const deepLink = webhookData.data.deepLink || '#';
-
-        const phoneNumberDetails = await this.quo.api.getPhoneNumber(
-            callObject.phoneNumberId,
-        );
-        const inboxName = phoneNumberDetails.name || 'Quo Line';
-        const inboxNumber =
-            phoneNumberDetails.phoneNumber ||
-            participants[callObject.direction === 'outgoing' ? 0 : 1];
-
-        const userDetails = await this.quo.api.getUser(callObject.userId);
-        const userName =
-            userDetails.name ||
-            `${userDetails.firstName || ''} ${userDetails.lastName || ''}`.trim() ||
-            'Quo User';
-
-        const duration = callObject.duration || 0;
-        const minutes = Math.floor(duration / 60);
-        const seconds = duration % 60;
-        const durationFormatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-
-        let statusDescription;
-        if (callObject.status === 'completed') {
-            statusDescription =
-                callObject.direction === 'outgoing'
-                    ? `Outgoing initiated by ${userName}`
-                    : `Incoming answered by ${userName}`;
-        } else if (
-            callObject.status === 'no-answer' ||
-            callObject.status === 'missed'
-        ) {
-            statusDescription = 'Incoming missed';
-        } else {
-            statusDescription = `${callObject.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} ${callObject.status}`;
-        }
-
-        let formattedSummary;
-        if (callObject.direction === 'outgoing') {
-            formattedSummary = `Call: Quo ${inboxName} (${inboxNumber}) -> ${contactPhone}
-
-${statusDescription}
-
-View the call activity in Quo: ${deepLink}`;
-        } else {
-            formattedSummary = `Call: ${contactPhone} -> Quo ${inboxName} (${inboxNumber})
-
-${statusDescription}`;
-
-            if (callObject.status === 'completed' && callObject.duration > 0) {
-                formattedSummary += ` / Recording (${durationFormatted})`;
+        let callerName = null;
+        const initiatedBy = webhookData?.data?.object?.initiatedBy;
+        if (initiatedBy) {
+            try {
+                const userResponse = await this.quo.api.getUser(initiatedBy);
+                const user = userResponse?.data;
+                if (user) {
+                    callerName =
+                        `${user.firstName || ''} ${user.lastName || ''}`.trim() ||
+                        null;
+                }
+            } catch (error) {
+                console.warn(
+                    `[Quo Webhook] Could not fetch user ${initiatedBy}:`,
+                    error.message,
+                );
             }
-
-            formattedSummary += `
-
-View the call activity in Quo: ${deepLink}`;
         }
 
-        const activityData = {
-            contactId: axiscareContact.id,
-            contactType: axiscareContact.type,
-            direction:
-                callObject.direction === 'outgoing' ? 'outbound' : 'inbound',
-            timestamp: callObject.createdAt,
-            duration: callObject.duration,
-            summary: formattedSummary,
-            callerPhone: contactPhone,
-            callerName: axiscareContact.name,
-        };
+        return QuoWebhookEventProcessor.processCallEvent({
+            webhookData,
+            quoApi: this.quo.api,
+            phoneNumbersMetadata: this.config?.phoneNumbersMetadata || [],
+            crmAdapter: {
+                formatMethod: 'plainText',
+                useEmoji: true,
+                findContactByPhone: async (phone) => {
+                    currentContactPhone = phone;
+                    axiscareContactDetails =
+                        await this._findAxisCareContactByPhone(phone);
 
-        await this.logCallToActivity(activityData);
+                    // If callerName not set (incoming call from AxisCare contact), fetch from AxisCare
+                    if (
+                        !callerName &&
+                        axiscareContactDetails?.id &&
+                        axiscareContactDetails?.type
+                    ) {
+                        callerName = await this._fetchAxisCareContactName(
+                            axiscareContactDetails.id,
+                            axiscareContactDetails.type,
+                        );
+                    }
 
-        console.log(
-            `[Quo Webhook] ✓ Call logged for ${axiscareContact.type} ${axiscareContact.id}`,
-        );
-
-        return { logged: true, contactId: axiscareContact.id };
-    }
-
-    /**
-     * Handle Quo message.received and message.delivered webhook events
-     * Finds AxisCare contact by phone number and logs SMS activity
-     *
-     * @private
-     * @param {Object} webhookData - Quo webhook payload
-     * @returns {Promise<Object>} Processing result
-     */
-    async _handleQuoMessageEvent(webhookData) {
-        const messageObject = webhookData.data.object;
-
-        console.log(`[Quo Webhook] Processing message: ${messageObject.id}`);
-
-        const contactPhone =
-            messageObject.direction === 'outgoing'
-                ? messageObject.to
-                : messageObject.from;
-
-        console.log(
-            `[Quo Webhook] Message direction: ${messageObject.direction}, contact: ${contactPhone}`,
-        );
-
-        const phoneNumberDetails = await this.quo.api.getPhoneNumber(
-            messageObject.phoneNumberId,
-        );
-
-        const axiscareContact =
-            await this._findAxisCareContactByPhone(contactPhone);
-
-        const inboxName = phoneNumberDetails.data.name || 'Quo Inbox';
-
-        const userDetails = await this.quo.api.getUser(messageObject.userId);
-        const userName =
-            userDetails.name ||
-            `${userDetails.firstName || ''} ${userDetails.lastName || ''}`.trim() ||
-            'Quo User';
-
-        const deepLink = webhookData.data.deepLink || '#';
-
-        let formattedContent;
-        if (messageObject.direction === 'outgoing') {
-            formattedContent = `Message Sent
-
-From: Quo ${inboxName} (${messageObject.from})
-To: ${messageObject.to}
-
-${userName} sent:
-"${messageObject.text || '(no text)'}"
-
-View in Quo: ${deepLink}`;
-        } else {
-            formattedContent = `Message Received
-
-From: ${messageObject.from}
-To: Quo ${inboxName} (${messageObject.to})
-
-Received:
-"${messageObject.text || '(no text)'}"
-
-View in Quo: ${deepLink}`;
-        }
-
-        const activityData = {
-            contactId: axiscareContact.id,
-            contactType: axiscareContact.type,
-            direction:
-                messageObject.direction === 'outgoing' ? 'outbound' : 'inbound',
-            content: formattedContent,
-            timestamp: messageObject.createdAt,
-            callerPhone: contactPhone,
-            callerName: axiscareContact.name,
-        };
-
-        await this.logSMSToActivity(activityData);
-
-        console.log(
-            `[Quo Webhook] ✓ Message logged for ${axiscareContact.type} ${axiscareContact.id}`,
-        );
-
-        return { logged: true, contactId: axiscareContact.id };
+                    return axiscareContactDetails?.id;
+                },
+                createCallActivity: async (
+                    contactId,
+                    { title, content, timestamp, duration, direction },
+                ) => {
+                    return await this.logCallToActivity({
+                        contactId,
+                        contactType: axiscareContactDetails?.type,
+                        direction:
+                            direction === 'outgoing' ? 'outbound' : 'inbound',
+                        timestamp:
+                            webhookData?.data?.object?.completedAt || timestamp,
+                        duration,
+                        subject: title,
+                        summary: content,
+                        callerPhone: currentContactPhone,
+                        callerName,
+                    });
+                },
+            },
+            mappingRepo: {
+                get: async (id) => await this.getMapping(id),
+                upsert: async (id, data) => await this.upsertMapping(id, data),
+            },
+        });
     }
 
     /**
      * Handle Quo call.summary.completed webhook event
      * Stores call summary for later enrichment of call activity logs
+     * Uses CallSummaryEnrichmentService with QuoCallContentBuilder for formatters
      *
      * @private
      * @param {Object} webhookData - Quo webhook payload
@@ -1004,6 +890,8 @@ View in Quo: ${deepLink}`;
      */
     async _handleQuoCallSummaryEvent(webhookData) {
         const summaryObject = webhookData.data.object;
+        const formatOptions =
+            QuoCallContentBuilder.getFormatOptions('plainText');
 
         console.log(
             `[Quo Webhook] Processing call summary for call: ${summaryObject.callId}`,
@@ -1018,160 +906,237 @@ View in Quo: ${deepLink}`;
             `[Quo Webhook] Call summary status: ${status}, ${summary.length} summary points, ${nextSteps.length} next steps`,
         );
 
+        // Fetch the original call details to get contact info and metadata
+        const callDetails = await this.quo.api.getCall(callId);
+        if (!callDetails?.data) {
+            console.warn(
+                `[Quo Webhook] Call ${callId} not found, cannot create summary`,
+            );
+            return {
+                received: true,
+                callId,
+                logged: false,
+                error: 'Call not found',
+            };
+        }
+
+        const callObject = callDetails.data;
+
+        // Filter out Quo phone numbers to get only external participants
+        const participants = callObject.participants || [];
+        const externalParticipants = filterExternalParticipants(
+            participants,
+            this.config?.phoneNumbersMetadata || [],
+        );
+
+        if (externalParticipants.length === 0) {
+            console.warn(
+                `[Quo Webhook] No external participants found for call ${callId}`,
+            );
+            return {
+                received: true,
+                callId,
+                logged: false,
+                error: 'No external participants',
+            };
+        }
+
+        // Try each external participant until we find one in AxisCare
+        let axiscareContact = null;
+        let contactPhone = null;
+        for (const phone of externalParticipants) {
+            axiscareContact = await this._findAxisCareContactByPhone(phone);
+            if (axiscareContact) {
+                contactPhone = phone;
+                break;
+            }
+        }
+
+        if (!axiscareContact) {
+            console.warn(
+                `[Quo Webhook] No AxisCare contact found for any participant in call ${callId}`,
+            );
+            return {
+                received: true,
+                callId,
+                logged: false,
+                error: 'Contact not found for any participant',
+            };
+        }
+
+        const deepLink = webhookData.data.deepLink || '#';
+
+        // Fetch metadata using shared utilities
+        const phoneNumberDetails = await this.quo.api.getPhoneNumber(
+            callObject.phoneNumberId,
+        );
+        const inboxName =
+            QuoCallContentBuilder.buildInboxName(phoneNumberDetails);
+        const inboxNumber =
+            phoneNumberDetails.data?.number ||
+            participants[callObject.direction === 'outgoing' ? 0 : 1];
+
+        const userDetails = await this.quo.api.getUser(callObject.userId);
+        const userName = QuoCallContentBuilder.buildUserName(userDetails);
+
+        // Use CallSummaryEnrichmentService to enrich the call log
+        const enrichmentResult =
+            await CallSummaryEnrichmentService.enrichCallNote({
+                callId,
+                summaryData: { summary, nextSteps },
+                callDetails: callObject,
+                quoApi: this.quo.api,
+                crmAdapter: {
+                    canUpdateNote: () => true, // AxisCare supports call log updates!
+                    createNote: async ({
+                        contactId,
+                        content,
+                        title,
+                        timestamp,
+                    }) => {
+                        const activityData = {
+                            contactId: axiscareContact.id,
+                            contactType: axiscareContact.type,
+                            direction:
+                                callObject.direction === 'outgoing'
+                                    ? 'outbound'
+                                    : 'inbound',
+                            timestamp: callObject.completedAt || timestamp,
+                            duration: callObject.duration,
+                            subject: title,
+                            summary: content,
+                            callerPhone: contactPhone,
+                            callerName: userName,
+                        };
+                        return await this.logCallToActivity(activityData);
+                    },
+                    updateNote: async (callLogId, { content, title }) => {
+                        return await this.axisCare.api.updateCallLog(
+                            callLogId,
+                            {
+                                subject: title,
+                                notes: content,
+                            },
+                        );
+                    },
+                },
+                mappingRepo: {
+                    get: async (id) => await this.getMapping(id),
+                    upsert: async (id, data) =>
+                        await this.upsertMapping(id, data),
+                },
+                contactId: axiscareContact.id,
+                formatters: {
+                    formatMethod: 'plainText',
+                    formatCallHeader: (callData) =>
+                        QuoCallContentBuilder.buildCallStatus({
+                            call: callData,
+                            userName,
+                        }),
+                    formatTitle: (callData) =>
+                        QuoCallContentBuilder.buildCallTitle({
+                            call: callData,
+                            inboxName,
+                            inboxNumber,
+                            contactPhone,
+                            formatOptions,
+                        }),
+                    formatDeepLink: () =>
+                        QuoCallContentBuilder.buildDeepLink({
+                            deepLink,
+                            formatOptions,
+                        }),
+                },
+            });
+
+        console.log(
+            `[Quo Webhook] ✓ Call summary enrichment complete for ${axiscareContact.type} ${axiscareContact.id}`,
+        );
+
         return {
             received: true,
             callId,
+            logged: true,
+            contactId: axiscareContact.id,
+            callLogId: enrichmentResult.noteId, // noteId is generic name, but it's callLogId for AxisCare
             summaryPoints: summary.length,
             nextStepsCount: nextSteps.length,
+            recordingsCount: enrichmentResult.recordingsCount,
+            hasVoicemail: enrichmentResult.hasVoicemail,
         };
     }
 
     /**
-     * Find AxisCare contact by phone number
-     * Searches across Client, Caregiver, Lead, and Applicant entities
-     * Only returns contacts that were synced to Quo (have mapping)
+     * Find AxisCare contact by phone number using mapping lookup
+     * O(1) database lookup instead of O(n) API calls
      *
      * @private
      * @param {string} phoneNumber - Phone number to search for
-     * @returns {Promise<Object>} Contact object with {id, type, name}
-     * @throws {Error} If contact not found or not synced to Quo
+     * @returns {Promise<{id: string, type: string}|null>} Contact info with AxisCare ID and entity type, or null if not found
      */
     async _findAxisCareContactByPhone(phoneNumber) {
         console.log(
             `[Quo Webhook] Looking up AxisCare contact by phone: ${phoneNumber}`,
         );
 
-        const normalizedPhone = this._normalizePhoneNumber(phoneNumber);
+        const result = await this.getMapping(phoneNumber);
+
+        if (!result) {
+            console.log(
+                `[Quo Webhook] No AxisCare contact found for phone: ${phoneNumber}`,
+            );
+            return null;
+        }
+
         console.log(
-            `[Quo Webhook] Normalized phone: ${phoneNumber} → ${normalizedPhone}`,
+            `[Quo Webhook] ✓ Found synced contact: ${result.mapping.externalId} (${result.mapping.entityType})`,
         );
 
-        try {
-            const entityTypes = ['client', 'caregiver', 'lead', 'applicant'];
-
-            for (const entityType of entityTypes) {
-                console.log(`[Quo Webhook] Searching in ${entityType}s...`);
-
-                let entities = [];
-                switch (entityType) {
-                    case 'client': {
-                        const response = await this.axisCare.api.listClients({
-                            limit: 1000,
-                        });
-                        entities = response.results?.clients || [];
-                        break;
-                    }
-                    case 'caregiver': {
-                        const response = await this.axisCare.api.listCaregivers(
-                            {
-                                limit: 1000,
-                            },
-                        );
-                        entities = response.caregivers || [];
-                        break;
-                    }
-                    case 'lead': {
-                        const response = await this.axisCare.api.listLeads({
-                            limit: 1000,
-                        });
-                        entities = response.results?.leads || [];
-                        break;
-                    }
-                    case 'applicant': {
-                        const response = await this.axisCare.api.listApplicants(
-                            {
-                                limit: 1000,
-                            },
-                        );
-                        entities = response.applicants || [];
-                        break;
-                    }
-                }
-
-                for (const entity of entities) {
-                    const phones = [];
-
-                    if (entityType.type === 'lead') {
-                        // Leads use different field names
-                        if (entity.phone) phones.push(entity.phone);
-                        if (entity.mobilePhone) phones.push(entity.mobilePhone);
-                    } else {
-                        // Clients, Caregivers, Applicants use these fields
-                        if (entity.homePhone) phones.push(entity.homePhone);
-                        if (entity.mobilePhone) phones.push(entity.mobilePhone);
-                        if (entity.otherPhone) phones.push(entity.otherPhone);
-                    }
-
-                    for (const phone of phones) {
-                        const normalizedEntityPhone =
-                            this._normalizePhoneNumber(phone);
-
-                        if (normalizedEntityPhone === normalizedPhone) {
-                            const mapping = await this.getMapping(
-                                String(entity.id),
-                            );
-
-                            if (mapping) {
-                                console.log(
-                                    `[Quo Webhook] ✓ Found synced ${entityType.type}: ${entity.id}`,
-                                );
-
-                                return {
-                                    id: entity.id,
-                                    type: entityType.type,
-                                    name:
-                                        entity.name ||
-                                        `${entity.firstName || ''} ${entity.lastName || ''}`.trim(),
-                                };
-                            }
-                        }
-                    }
-                }
-            }
-
-            throw new Error(
-                `No AxisCare contact found with phone number ${phoneNumber} (normalized: ${normalizedPhone}). ` +
-                    `Contact must exist in AxisCare and be synced to Quo to log activities.`,
-            );
-        } catch (error) {
-            console.error(
-                `[Quo Webhook] Contact lookup failed:`,
-                error.message,
-            );
-            throw error;
-        }
+        return {
+            id: result.mapping.externalId,
+            type: result.mapping.entityType,
+        };
     }
 
     /**
-     * Log SMS message to AxisCare as a call log
-     * @param {Object} activity - SMS activity data
-     * @returns {Promise<void>}
+     * Fetch AxisCare contact name by ID and type
+     * @private
+     * @param {string} id - Contact ID
+     * @param {string} type - Entity type (client, lead, caregiver, applicant)
+     * @returns {Promise<string|null>} Full name or null if not found
      */
-    async logSMSToActivity(activity) {
+    async _fetchAxisCareContactName(id, type) {
         try {
-            const callLogData = {
-                callerName: activity.callerName,
-                callerPhone: activity.callerPhone,
-                followUp: false,
-                dateTime: activity.timestamp,
-                subject: `SMS: ${activity.direction}`,
-                notes: activity.content,
-                tags: [
-                    {
-                        type: activity.contactType,
-                        entityId: activity.contactId,
-                    },
-                ],
-            };
+            let response;
+            switch (type?.toLowerCase()) {
+                case 'client':
+                    response = await this.axisCare.api.getClient(id);
+                    break;
+                case 'lead':
+                    response = await this.axisCare.api.getLead(id);
+                    break;
+                case 'caregiver':
+                    response = await this.axisCare.api.getCaregiver(id);
+                    break;
+                case 'applicant':
+                    response = await this.axisCare.api.getApplicant(id);
+                    break;
+                default:
+                    console.warn(`[AxisCare] Unknown entity type: ${type}`);
+                    return null;
+            }
 
-            await this.axisCare.api.createCallLog(callLogData);
-
-            console.log(
-                `[Quo Webhook] ✓ SMS logged to AxisCare ${activity.contactType} ${activity.contactId}`,
-            );
+            const data = response?.results;
+            if (data?.firstName || data?.lastName) {
+                return `${data.firstName || ''} ${data.lastName || ''}`.trim();
+            }
+            return null;
         } catch (error) {
-            console.error('Failed to log SMS activity to AxisCare:', error);
-            throw error;
+            console.warn(
+                `[AxisCare] Could not fetch ${type} ${id}:`,
+                error.message,
+            );
+            return null;
         }
     }
 
@@ -1182,26 +1147,40 @@ View in Quo: ${deepLink}`;
      */
     async logCallToActivity(activity) {
         try {
+            // Format dateTime for AxisCare: remove milliseconds, replace Z with +00:00
+            // AxisCare expects format like "2025-07-01T15:23:45-05:00"
+            const formatDateTime = (isoString) => {
+                if (!isoString) return null;
+                return isoString
+                    .replace(/\.\d{3}Z$/, '+00:00')
+                    .replace(/Z$/, '+00:00');
+            };
+
             const callLogData = {
                 callerName: activity.callerName,
                 callerPhone: activity.callerPhone,
                 followUp: false,
-                dateTime: activity.timestamp,
-                subject: `Call: ${activity.direction} (${activity.duration}s)`,
+                dateTime: formatDateTime(activity.timestamp),
+                subject:
+                    activity.subject ||
+                    `Call: ${activity.direction} (${activity.duration}s)`,
                 notes: activity.summary || 'Phone call',
                 tags: [
                     {
                         type: activity.contactType,
-                        entityId: activity.contactId,
+                        entityId: parseInt(activity.contactId, 10),
                     },
                 ],
             };
 
-            await this.axisCare.api.createCallLog(callLogData);
+            const response = await this.axisCare.api.createCallLog(callLogData);
 
             console.log(
                 `[Quo Webhook] ✓ Call logged to AxisCare ${activity.contactType} ${activity.contactId}`,
             );
+
+            // Return the created call log ID
+            return response?.id || null;
         } catch (error) {
             console.error('Failed to log call activity to AxisCare:', error);
             throw error;
@@ -1296,18 +1275,10 @@ View in Quo: ${deepLink}`;
                 throw new Error('Quo API not available');
             }
 
-            // Use bulkUpsertToQuo for both created and updated operations
-            const result = await this.bulkUpsertToQuo([quoContact]);
-
-            if (result.errorCount > 0) {
-                const error = result.errors[0];
-                throw new Error(
-                    `Failed to ${action} contact: ${error?.error || 'Unknown error'}`,
-                );
-            }
+            const result = await this.upsertContactToQuo(quoContact);
 
             console.log(
-                `[AxisCare] ✓ Contact synced to Quo via bulkUpsertToQuo (${action}, externalId: ${quoContact.externalId})`,
+                `[AxisCare] ✓ Contact ${result.action} in Quo (externalId: ${quoContact.externalId}, quoContactId: ${result.quoContactId})`,
             );
 
             console.log(`[AxisCare] ✓ Person ${person.id} synced to Quo`);
@@ -1319,10 +1290,6 @@ View in Quo: ${deepLink}`;
             throw error;
         }
     }
-
-    // ============================================================================
-    // WEBHOOK SETUP METHODS
-    // ============================================================================
 
     /**
      * Setup webhooks for both AxisCare and Quo
@@ -1359,7 +1326,7 @@ View in Quo: ${deepLink}`;
     }
 
     /**
-     * Setup Quo webhooks (message, call, and call-summary webhooks)
+     * Setup Quo webhooks (call and call-summary webhooks)
      * Registers webhooks with Quo API and stores webhook IDs + keys in config
      * Uses atomic pattern: creates all webhooks before saving config, with rollback on failure
      * @private
@@ -1370,16 +1337,14 @@ View in Quo: ${deepLink}`;
 
         try {
             if (
-                this.config?.quoMessageWebhookId &&
                 this.config?.quoCallWebhookId &&
                 this.config?.quoCallSummaryWebhookId
             ) {
                 console.log(
-                    `[Quo] Webhooks already registered: message=${this.config.quoMessageWebhookId}, call=${this.config.quoCallWebhookId}, callSummary=${this.config.quoCallSummaryWebhookId}`,
+                    `[Quo] Webhooks already registered: call=${this.config.quoCallWebhookId}, callSummary=${this.config.quoCallSummaryWebhookId}`,
                 );
                 return {
                     status: 'already_configured',
-                    messageWebhookId: this.config.quoMessageWebhookId,
                     callWebhookId: this.config.quoCallWebhookId,
                     callSummaryWebhookId: this.config.quoCallSummaryWebhookId,
                     webhookUrl: this.config.quoWebhooksUrl,
@@ -1387,7 +1352,6 @@ View in Quo: ${deepLink}`;
             }
 
             const hasPartialConfig =
-                this.config?.quoMessageWebhookId ||
                 this.config?.quoCallWebhookId ||
                 this.config?.quoCallSummaryWebhookId;
 
@@ -1395,21 +1359,6 @@ View in Quo: ${deepLink}`;
                 console.warn(
                     '[Quo] Partial webhook configuration detected - cleaning up before retry',
                 );
-
-                if (this.config?.quoMessageWebhookId) {
-                    try {
-                        await this.quo.api.deleteWebhook(
-                            this.config.quoMessageWebhookId,
-                        );
-                        console.log(
-                            `[Quo] Cleaned up orphaned message webhook: ${this.config.quoMessageWebhookId}`,
-                        );
-                    } catch (cleanupError) {
-                        console.warn(
-                            `[Quo] Could not clean up message webhook (may have been deleted): ${cleanupError.message}`,
-                        );
-                    }
-                }
 
                 if (this.config?.quoCallWebhookId) {
                     try {
@@ -1444,41 +1393,7 @@ View in Quo: ${deepLink}`;
 
             const webhookUrl = this._generateWebhookUrl(`/webhooks/${this.id}`);
 
-            console.log(
-                `[Quo] Registering message and call webhooks at: ${webhookUrl}`,
-            );
-
-            const messageWebhookResponse =
-                await this.quo.api.createMessageWebhook({
-                    url: webhookUrl,
-                    events: this.constructor.WEBHOOK_EVENTS.QUO_MESSAGES,
-                    label: this.constructor.WEBHOOK_LABELS.QUO_MESSAGES,
-                    status: 'enabled',
-                });
-
-            if (!messageWebhookResponse?.data?.id) {
-                throw new Error(
-                    'Invalid Quo message webhook response: missing webhook ID',
-                );
-            }
-
-            if (!messageWebhookResponse.data.key) {
-                throw new Error(
-                    'Invalid Quo message webhook response: missing webhook key',
-                );
-            }
-
-            const messageWebhookId = messageWebhookResponse.data.id;
-            const messageWebhookKey = messageWebhookResponse.data.key;
-
-            createdWebhooks.push({
-                type: 'message',
-                id: messageWebhookId,
-            });
-
-            console.log(
-                `[Quo] ✓ Message webhook registered with ID: ${messageWebhookId}`,
-            );
+            console.log(`[Quo] Registering call webhooks at: ${webhookUrl}`);
 
             const callWebhookResponse = await this.quo.api.createCallWebhook({
                 url: webhookUrl,
@@ -1545,8 +1460,6 @@ View in Quo: ${deepLink}`;
 
             const updatedConfig = {
                 ...this.config,
-                quoMessageWebhookId: messageWebhookId,
-                quoMessageWebhookKey: messageWebhookKey,
                 quoCallWebhookId: callWebhookId,
                 quoCallWebhookKey: callWebhookKey,
                 quoCallSummaryWebhookId: callSummaryWebhookId,
@@ -1566,7 +1479,6 @@ View in Quo: ${deepLink}`;
 
             return {
                 status: 'configured',
-                messageWebhookId: messageWebhookId,
                 callWebhookId: callWebhookId,
                 callSummaryWebhookId: callSummaryWebhookId,
                 webhookUrl: webhookUrl,
@@ -1601,10 +1513,6 @@ View in Quo: ${deepLink}`;
         }
     }
 
-    // ============================================================================
-    // LIFECYCLE METHODS
-    // ============================================================================
-
     /**
      * Called when integration is deleted
      * Clean up webhook registration with AxisCare
@@ -1614,16 +1522,15 @@ View in Quo: ${deepLink}`;
      */
     async onDelete(params) {
         const deletionResults = {
-            quoMessage: null,
             quoCall: null,
             quoCallSummary: null,
         };
 
         try {
             // Validate that API modules are loaded before attempting webhook deletion
-            if (!this.axiscare?.api || !this.quo?.api) {
+            if (!this.axisCare?.api || !this.quo?.api) {
                 const missingModules = [];
-                if (!this.axiscare?.api) missingModules.push('axiscare');
+                if (!this.axisCare?.api) missingModules.push('axiscare');
                 if (!this.quo?.api) missingModules.push('quo');
 
                 console.error(
@@ -1639,11 +1546,6 @@ View in Quo: ${deepLink}`;
                 if (this.config?.axiscareWebhookId) {
                     console.warn(
                         `  - AxisCare webhook: ${this.config.axiscareWebhookId}`,
-                    );
-                }
-                if (this.config?.quoMessageWebhookId) {
-                    console.warn(
-                        `  - Quo message webhook: ${this.config.quoMessageWebhookId}`,
                     );
                 }
                 if (this.config?.quoCallWebhookId) {
@@ -1673,33 +1575,6 @@ View in Quo: ${deepLink}`;
                 );
             } else {
                 console.log('[AxisCare] No webhook configured');
-            }
-
-            // Delete Quo message webhook
-            const quoMessageWebhookId = this.config?.quoMessageWebhookId;
-            if (quoMessageWebhookId) {
-                console.log(
-                    `[Quo] Deleting message webhook: ${quoMessageWebhookId}`,
-                );
-
-                try {
-                    await this.quo.api.deleteWebhook(quoMessageWebhookId);
-                    deletionResults.quoMessage = 'success';
-                    console.log(
-                        `[Quo] ✓ Message webhook ${quoMessageWebhookId} deleted from Quo`,
-                    );
-                } catch (error) {
-                    deletionResults.quoMessage = 'failed';
-                    console.error(
-                        `[Quo] Failed to delete message webhook from Quo:`,
-                        error.message,
-                    );
-                    console.warn(
-                        `[Quo] Message webhook ID ${quoMessageWebhookId} preserved in config for manual cleanup`,
-                    );
-                }
-            } else {
-                console.log('[Quo] No message webhook to delete');
             }
 
             // Delete Quo call webhook

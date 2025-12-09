@@ -5,6 +5,9 @@
 const { globalSetup, globalTeardown } = require('@friggframework/test');
 
 module.exports = {
+    // Use groups runner for --group flag support
+    runner: 'groups',
+
     // All imported modules in your tests should be mocked automatically
     // automock: false,
 

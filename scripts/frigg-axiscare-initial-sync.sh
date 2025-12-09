@@ -28,7 +28,7 @@ if [ -n "$FRIGG_API_KEY" ] && [ -n "$FRIGG_APP_USER_ID" ]; then
   # Trigger initial sync with shared secret
   echo "Triggering initial sync..."
   SYNC_RESPONSE=$(curl -s -X POST "${FRIGG_URL}/api/integrations/${INTEGRATION_ID}/actions/INITIAL_SYNC" \
-    -H "x-frigg-api-key: ${FRIGG_API_KEY}" \
+    -H 'x-frigg-api-key: '"${FRIGG_API_KEY}" \
     -H "x-frigg-appuserid: ${FRIGG_APP_USER_ID}" \
     -H "Content-Type: application/json" \
     -d '{}')

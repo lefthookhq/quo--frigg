@@ -8,7 +8,13 @@ class Api extends ApiKeyRequester {
             process.env.QUO_BASE_URL ||
             'https://dev-public-api.openphone.dev';
 
-        this.API_KEY_NAME = 'Authorization';
+        this.analyticsBaseUrl =
+            params.analyticsBaseUrl ||
+            process.env.QUO_ANALYTICS_BASE_URL ||
+            'https://integration.openphone.dev';
+
+        // Set the API key header name (parent class uses api_key_name)
+        this.api_key_name = 'Authorization';
 
         if (params.api_key) {
             this.setApiKey(params.api_key);
@@ -51,7 +57,24 @@ class Api extends ApiKeyRequester {
             webhookMessages: '/v2/webhooks/messages',
             webhookCallSummaries: '/v2/webhooks/call-summaries',
             webhookCallTranscripts: '/v2/webhooks/call-transcripts',
+
+            // Frigg-specific endpoints (require x-frigg-api-key header)
+            friggContacts: '/frigg/contact',
+            friggContactById: (id) => `/frigg/contact/${id}`,
+
+            // Analytics endpoint
+            analytics: '/v2/analytics',
         };
+    }
+
+    /**
+     * Backward compatibility getter for API_KEY_VALUE
+     * The frigg framework's ApiKeyRequester uses api_key (snake_case),
+     * but definition.js expects API_KEY_VALUE for getCredentialDetails
+     * @returns {string|null} The API key value
+     */
+    get API_KEY_VALUE() {
+        return this.api_key;
     }
 
     // Call Management
@@ -199,7 +222,6 @@ class Api extends ApiKeyRequester {
     /**
      * Bulk create multiple contacts in OpenPhone
      *
-     * @param {string} orgId - Organization ID
      * @param {CreateContactData[]} data - Array of contact data objects to create
      * @returns {Promise<Object>} Response containing the created contacts with their ids, externalIds, sources, defaultFields, customFields, createdAt, updatedAt, and createdByUserIds
      * @throws {Error} 400 - Invalid custom field item
@@ -209,15 +231,14 @@ class Api extends ApiKeyRequester {
      * @throws {Error} 409 - Conflict
      * @throws {Error} 500 - Unknown error
      */
-    async bulkCreateContacts(orgId, data) {
+    async bulkCreateContacts(data) {
         const options = {
             url: this.baseUrl + this.URLs.contacts + '/bulk',
             headers: {
                 'Content-Type': 'application/json',
+                'x-frigg-api-key': process.env.FRIGG_API_KEY,
             },
             body: {
-                // orgId,
-                // TODO: Uncomment this when orgId is available
                 contacts: data,
             },
         };
@@ -229,6 +250,45 @@ class Api extends ApiKeyRequester {
             url: this.baseUrl + this.URLs.contactById(id),
             headers: {
                 'Content-Type': 'application/json',
+            },
+            body: data,
+        };
+        return this._patch(options);
+    }
+
+    /**
+     * Create a contact via Frigg-authenticated endpoint
+     * Uses /frigg/contact which requires x-frigg-api-key header
+     *
+     * @param {CreateContactData} data - The contact data to create
+     * @returns {Promise<Object>} The created contact
+     */
+    async createFriggContact(data) {
+        const options = {
+            url: this.baseUrl + this.URLs.friggContacts,
+            headers: {
+                'Content-Type': 'application/json',
+                'x-frigg-api-key': process.env.FRIGG_API_KEY,
+            },
+            body: data,
+        };
+        return this._post(options);
+    }
+
+    /**
+     * Update a contact via Frigg-authenticated endpoint
+     * Uses /frigg/contact/:id which requires x-frigg-api-key header
+     *
+     * @param {string} id - The Quo contact ID to update
+     * @param {Object} data - The contact data to update
+     * @returns {Promise<Object>} The updated contact
+     */
+    async updateFriggContact(id, data) {
+        const options = {
+            url: this.baseUrl + this.URLs.friggContactById(id),
+            headers: {
+                'Content-Type': 'application/json',
+                'x-frigg-api-key': process.env.FRIGG_API_KEY,
             },
             body: data,
         };
@@ -393,6 +453,23 @@ class Api extends ApiKeyRequester {
             url: this.baseUrl + this.URLs.webhookById(id),
         };
         return this._delete(options);
+    }
+
+    async sendAnalyticsEvent({ orgId, userId, integration, event, data }) {
+        try {
+            const options = {
+                url: this.analyticsBaseUrl + this.URLs.analytics,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-frigg-api-key': process.env.FRIGG_API_KEY,
+                },
+                body: { orgId, userId, integration, event, data },
+            };
+            const response = await this._post(options);
+            return response;
+        } catch (error) {
+            throw error;
+        }
     }
 }
 

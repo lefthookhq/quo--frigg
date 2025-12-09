@@ -37,12 +37,11 @@ class Api extends ApiKeyRequester {
             this.baseUrl = `https://${this.siteNumber}.axiscare.com`;
         }
 
-        this.API_KEY_NAME = 'Authorization';
-        this.API_KEY_VALUE = `Bearer ${params.access_token}`;
+        this.api_key_name = 'Authorization';
+        this.API_KEY_VALUE = `Bearer ${params.api_key}`;
         // Get API key from params
-        if (params.access_token) {
-            this.setApiKey(params.access_token);
-            this.access_token = params.access_token; // temporary to store the apiKey in the Credential data
+        if (params.api_key) {
+            this.setApiKey(params.api_key);
         }
     }
 
@@ -51,8 +50,7 @@ class Api extends ApiKeyRequester {
      * @param {string} apiKey - The API key
      */
     setApiKey(apiKey) {
-        this.API_KEY_VALUE = `Bearer ${apiKey}`;
-        this.access_token = apiKey;
+        this.api_key = `Bearer ${apiKey}`;
     }
 
     /**

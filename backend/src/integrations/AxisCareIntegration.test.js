@@ -15,7 +15,6 @@ jest.mock('../base/BaseCRMIntegration', () => {
                     FETCH_PERSON_PAGE: { handler: jest.fn() },
                     PROCESS_PERSON_BATCH: { handler: jest.fn() },
                     COMPLETE_SYNC: { handler: jest.fn() },
-                    LOG_SMS: { handler: jest.fn() },
                     LOG_CALL: { handler: jest.fn() },
                 };
             }
@@ -170,7 +169,7 @@ describe('AxisCareIntegration', () => {
                 });
 
                 expect(result.data).toHaveLength(1);
-                expect(result.data[0]._objectType).toBe('Client');
+                expect(result.data[0].objectType).toBe('Client');
                 expect(result.cursor).toBe(null);
                 expect(result.hasMore).toBe(false);
             });
@@ -188,7 +187,7 @@ describe('AxisCareIntegration', () => {
                     status: 'active',
                     dateOfBirth: '1950-01-01',
                     residentialAddress: '123 Main St',
-                    _objectType: 'Client',
+                    objectType: 'Client',
                 };
 
                 const result = await integration.transformPersonToQuo(client);
@@ -200,20 +199,13 @@ describe('AxisCareIntegration', () => {
                 expect(result.defaultFields.phoneNumbers).toHaveLength(2);
                 expect(result.defaultFields.emails).toHaveLength(1);
                 expect(result.customFields).toEqual([]);
+                expect(result.sourceEntityType).toBe('client');
             });
         });
 
         describe('setupWebhooks', () => {
             it('should setup Quo webhooks', async () => {
                 // Mock the Quo API webhook creation
-                mockQuoApi.api.createMessageWebhook = jest
-                    .fn()
-                    .mockResolvedValue({
-                        data: {
-                            id: 'message-webhook-123',
-                            key: 'message-webhook-key',
-                        },
-                    });
                 mockQuoApi.api.createCallWebhook = jest.fn().mockResolvedValue({
                     data: {
                         id: 'call-webhook-123',
@@ -241,7 +233,6 @@ describe('AxisCareIntegration', () => {
 
                 expect(result.overallStatus).toBe('success');
                 expect(result.quo.status).toBe('configured');
-                expect(mockQuoApi.api.createMessageWebhook).toHaveBeenCalled();
                 expect(mockQuoApi.api.createCallWebhook).toHaveBeenCalled();
                 expect(
                     mockQuoApi.api.createCallSummaryWebhook,
@@ -350,7 +341,7 @@ describe('AxisCareIntegration', () => {
         });
     });
 
-    describe('_syncPersonToQuo with bulkUpsertToQuo', () => {
+    describe('_syncPersonToQuo with upsertContactToQuo', () => {
         beforeEach(() => {
             mockQuoApi.api.createContact = jest.fn();
             mockQuoApi.api.updateContact = jest.fn();
@@ -358,7 +349,7 @@ describe('AxisCareIntegration', () => {
             integration.transformPersonToQuo = jest.fn();
         });
 
-        it('should use bulkUpsertToQuo for created action', async () => {
+        it('should use upsertContactToQuo for created action', async () => {
             const person = {
                 id: 123,
                 firstName: 'John',
@@ -377,48 +368,39 @@ describe('AxisCareIntegration', () => {
             };
 
             integration.transformPersonToQuo.mockResolvedValue(mockQuoContact);
-            integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
-                successCount: 1,
-                errorCount: 0,
-                errors: [],
+            integration.upsertContactToQuo = jest.fn().mockResolvedValue({
+                action: 'created',
+                quoContactId: 'quo-contact-123',
+                externalId: '123',
             });
 
             await integration._syncPersonToQuo(person, 'created');
 
-            expect(integration.bulkUpsertToQuo).toHaveBeenCalledWith(
-                expect.arrayContaining([
-                    expect.objectContaining({
-                        externalId: '123',
-                    }),
-                ]),
+            expect(integration.upsertContactToQuo).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    externalId: '123',
+                }),
             );
             expect(mockQuoApi.api.createContact).not.toHaveBeenCalled();
         });
 
-        it('should handle bulkUpsertToQuo errors for created action', async () => {
+        it('should handle upsertContactToQuo errors for created action', async () => {
             const person = { id: 456, firstName: 'Error', lastName: 'Test' };
 
             integration.transformPersonToQuo.mockResolvedValue({
                 externalId: '456',
                 defaultFields: { firstName: 'Error' },
             });
-            integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
-                successCount: 0,
-                errorCount: 1,
-                errors: [
-                    {
-                        error: 'Failed to create contact',
-                        externalId: '456',
-                    },
-                ],
-            });
+            integration.upsertContactToQuo = jest
+                .fn()
+                .mockRejectedValue(new Error('Failed to create contact'));
 
             await expect(
                 integration._syncPersonToQuo(person, 'created'),
-            ).rejects.toThrow('Failed to created contact');
+            ).rejects.toThrow('Failed to create contact');
         });
 
-        it('should use bulkUpsertToQuo for updated action', async () => {
+        it('should use upsertContactToQuo for updated action', async () => {
             const person = {
                 id: 789,
                 firstName: 'Jane',
@@ -436,45 +418,36 @@ describe('AxisCareIntegration', () => {
             };
 
             integration.transformPersonToQuo.mockResolvedValue(mockQuoContact);
-            integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
-                successCount: 1,
-                errorCount: 0,
-                errors: [],
+            integration.upsertContactToQuo = jest.fn().mockResolvedValue({
+                action: 'updated',
+                quoContactId: 'quo-contact-789',
+                externalId: '789',
             });
 
             await integration._syncPersonToQuo(person, 'updated');
 
-            expect(integration.bulkUpsertToQuo).toHaveBeenCalledWith(
-                expect.arrayContaining([
-                    expect.objectContaining({
-                        externalId: '789',
-                    }),
-                ]),
+            expect(integration.upsertContactToQuo).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    externalId: '789',
+                }),
             );
             expect(mockQuoApi.api.updateContact).not.toHaveBeenCalled();
         });
 
-        it('should handle bulkUpsertToQuo errors for updated action', async () => {
+        it('should handle upsertContactToQuo errors for updated action', async () => {
             const person = { id: 999, firstName: 'Update', lastName: 'Error' };
 
             integration.transformPersonToQuo.mockResolvedValue({
                 externalId: '999',
                 defaultFields: { firstName: 'Update' },
             });
-            integration.bulkUpsertToQuo = jest.fn().mockResolvedValue({
-                successCount: 0,
-                errorCount: 1,
-                errors: [
-                    {
-                        error: 'Contact update failed',
-                        externalId: '999',
-                    },
-                ],
-            });
+            integration.upsertContactToQuo = jest
+                .fn()
+                .mockRejectedValue(new Error('Contact update failed'));
 
             await expect(
                 integration._syncPersonToQuo(person, 'updated'),
-            ).rejects.toThrow('Failed to updated contact');
+            ).rejects.toThrow('Contact update failed');
         });
     });
 });

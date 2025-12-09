@@ -62,6 +62,7 @@ Frigg Management API supports two authentication methods:
 Use JWT tokens for user-facing applications. Users must create an account and login to get a token.
 
 **Required Headers:**
+
 ```bash
 Authorization: Bearer ${FRIGG_JWT_TOKEN}
 ```
@@ -73,6 +74,7 @@ Authorization: Bearer ${FRIGG_JWT_TOKEN}
 Use x-frigg headers for backend-to-backend communication, automated scripts, and testing.
 
 **Required Headers:**
+
 ```bash
 x-frigg-api-key: ${FRIGG_API_KEY}
 x-frigg-appuserid: ${FRIGG_APP_USER_ID}
@@ -81,16 +83,18 @@ x-frigg-appuserid: ${FRIGG_APP_USER_ID}
 **Use Case:** Backend services, automated scripts, CI/CD pipelines, OAuth redirect handlers
 
 **Environment Variables:**
+
 ```bash
 export FRIGG_API_KEY="your-shared-secret-key"
 export FRIGG_APP_USER_ID="your-user-identifier"
 ```
 
 **Example Request:**
+
 ```bash
 curl -X GET "${FRIGG_URL}/api/integrations" \
   -H "Content-Type: application/json" \
-  -H "x-frigg-api-key: ${FRIGG_API_KEY}" \
+  -H 'x-frigg-api-key: '"${FRIGG_API_KEY}" \
   -H "x-frigg-appuserid: ${FRIGG_APP_USER_ID}"
 ```
 
@@ -155,15 +159,17 @@ API key modules use a simple 2-step process:
 #### Step 1: Get Authorization Requirements
 
 **Using JWT Token:**
+
 ```bash
 curl -X GET "${FRIGG_URL}/api/authorize?entityType=quo" \
   -H "Authorization: Bearer ${FRIGG_JWT_TOKEN}"
 ```
 
 **Using Shared Secret:**
+
 ```bash
 curl -X GET "${FRIGG_URL}/api/authorize?entityType=quo" \
-  -H "x-frigg-api-key: ${FRIGG_API_KEY}" \
+  -H 'x-frigg-api-key: '"${FRIGG_API_KEY}" \
   -H "x-frigg-appuserid: ${FRIGG_APP_USER_ID}"
 ```
 
@@ -205,7 +211,7 @@ curl -X POST "${FRIGG_URL}/api/authorize" \
 
 ```bash
 curl -X POST "${FRIGG_URL}/api/authorize" \
-  -H "x-frigg-api-key: ${FRIGG_API_KEY}" \
+  -H 'x-frigg-api-key: '"${FRIGG_API_KEY}" \
   -H "x-frigg-appuserid: ${FRIGG_APP_USER_ID}" \
   -H "Content-Type: application/json" \
   -d '{
@@ -233,15 +239,17 @@ OAuth modules require user interaction through a browser:
 #### Step 1: Get OAuth Authorization URL
 
 **Using JWT Token:**
+
 ```bash
 curl -X GET "${FRIGG_URL}/api/authorize?entityType=attio" \
   -H "Authorization: Bearer ${FRIGG_JWT_TOKEN}"
 ```
 
 **Using Shared Secret:**
+
 ```bash
 curl -X GET "${FRIGG_URL}/api/authorize?entityType=attio" \
-  -H "x-frigg-api-key: ${FRIGG_API_KEY}" \
+  -H 'x-frigg-api-key: '"${FRIGG_API_KEY}" \
   -H "x-frigg-appuserid: ${FRIGG_APP_USER_ID}"
 ```
 
@@ -272,6 +280,7 @@ Once you have authenticated multiple API modules (entities), you can create an i
 **Important**: The `entities` parameter must be an **array of entity IDs**, not an object.
 
 **Using JWT Token:**
+
 ```bash
 curl -X POST "${FRIGG_URL}/api/integrations" \
   -H "Authorization: Bearer ${FRIGG_JWT_TOKEN}" \
@@ -285,9 +294,10 @@ curl -X POST "${FRIGG_URL}/api/integrations" \
 ```
 
 **Using Shared Secret:**
+
 ```bash
 curl -X POST "${FRIGG_URL}/api/integrations" \
-  -H "x-frigg-api-key: ${FRIGG_API_KEY}" \
+  -H 'x-frigg-api-key: '"${FRIGG_API_KEY}" \
   -H "x-frigg-appuserid: ${FRIGG_APP_USER_ID}" \
   -H "Content-Type: application/json" \
   -d '{

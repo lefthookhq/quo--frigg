@@ -2,6 +2,13 @@ const { BaseCRMIntegration } = require('../base/BaseCRMIntegration');
 const { createFriggCommands } = require('@friggframework/core');
 const attio = require('@friggframework/api-module-attio');
 const quo = require('../api-modules/quo');
+const CallSummaryEnrichmentService = require('../base/services/CallSummaryEnrichmentService');
+const QuoWebhookEventProcessor = require('../base/services/QuoWebhookEventProcessor');
+const QuoCallContentBuilder = require('../base/services/QuoCallContentBuilder');
+const { filterExternalParticipants } = require('../utils/participantFilter');
+const { logWebhook, logApiCall } = require('../utils/requestLogger');
+const { QUO_ANALYTICS_EVENTS, QuoWebhookEvents } = require('../base/constants');
+const { trackAnalyticsEvent } = require('../utils/trackAnalyticsEvent');
 
 /**
  * AttioIntegration - Refactored to extend BaseCRMIntegration
@@ -107,9 +114,15 @@ class AttioIntegration extends BaseCRMIntegration {
             { event_type: 'record.updated', filter: null },
             { event_type: 'record.deleted', filter: null },
         ],
-        QUO_MESSAGES: ['message.received', 'message.delivered'],
-        QUO_CALLS: ['call.completed'],
-        QUO_CALL_SUMMARIES: ['call.summary.completed'],
+        QUO_MESSAGES: [
+            QuoWebhookEvents.MESSAGE_RECEIVED,
+            QuoWebhookEvents.MESSAGE_DELIVERED,
+        ],
+        QUO_CALLS: [
+            QuoWebhookEvents.CALL_COMPLETED,
+            QuoWebhookEvents.CALL_RECORDING_COMPLETED,
+        ],
+        QUO_CALL_SUMMARIES: [QuoWebhookEvents.CALL_SUMMARY_COMPLETED],
     };
 
     constructor(params) {
@@ -157,10 +170,6 @@ class AttioIntegration extends BaseCRMIntegration {
             },
         };
     }
-
-    // ============================================================================
-    // WEBHOOK INFRASTRUCTURE - Private Helper Methods
-    // ============================================================================
 
     /**
      * Verify Attio webhook signature
@@ -384,10 +393,6 @@ class AttioIntegration extends BaseCRMIntegration {
         }
     }
 
-    // ============================================================================
-    // WEBHOOK EVENT HANDLERS - Called from onWebhook()
-    // ============================================================================
-
     /**
      * Handle record.created webhook event
      * Fetches full record data and syncs to Quo
@@ -575,6 +580,12 @@ class AttioIntegration extends BaseCRMIntegration {
                     );
                 }
 
+                trackAnalyticsEvent(
+                    this,
+                    QUO_ANALYTICS_EVENTS.CONTACT_DELETED,
+                    { contactId: record_id },
+                );
+
                 console.log(
                     `[Attio Webhook] ✓ Contact ${quoContactId} deleted from Quo (externalId: ${record_id})`,
                 );
@@ -588,13 +599,18 @@ class AttioIntegration extends BaseCRMIntegration {
                 `[Attio Webhook] Failed to handle deletion of ${record_id}:`,
                 error.message,
             );
+
+            if (objectType === 'people') {
+                trackAnalyticsEvent(
+                    this,
+                    QUO_ANALYTICS_EVENTS.CONTACT_SYNC_FAILED,
+                    { contactId: record_id, error: error.message },
+                );
+            }
+
             throw error;
         }
     }
-
-    // ============================================================================
-    // REQUIRED METHODS - BaseCRMIntegration Abstract Methods
-    // ============================================================================
 
     /**
      * Fetch a page of persons from Attio (CURSOR_BASED)
@@ -726,8 +742,7 @@ class AttioIntegration extends BaseCRMIntegration {
             }
         }
 
-        // Generate sourceUrl for linking back to Attio
-        const sourceUrl = `https://app.attio.com/people/${person.id.record_id}`;
+        const sourceUrl = person.web_url || null;
 
         return {
             externalId: person.id.record_id,
@@ -742,6 +757,7 @@ class AttioIntegration extends BaseCRMIntegration {
                 emails,
             },
             customFields: [],
+            sourceEntityType: 'people',
         };
     }
 
@@ -859,7 +875,7 @@ class AttioIntegration extends BaseCRMIntegration {
     /**
      * Log SMS message to Attio as a note/interaction
      * @param {Object} activity - SMS activity
-     * @returns {Promise<void>}
+     * @returns {Promise<string|null>} Note ID
      */
     async logSMSToActivity(activity) {
         try {
@@ -871,7 +887,7 @@ class AttioIntegration extends BaseCRMIntegration {
                 console.warn(
                     `Person not found for SMS logging: ${activity.contactExternalId}`,
                 );
-                return;
+                return null;
             }
 
             const noteData = {
@@ -883,7 +899,9 @@ class AttioIntegration extends BaseCRMIntegration {
                 created_at: activity.timestamp,
             };
 
-            await this.attio.api.createNote(noteData);
+            const noteResponse = await this.attio.api.createNote(noteData);
+            const noteId = noteResponse?.data?.id?.note_id || null;
+            return noteId;
         } catch (error) {
             console.error('Failed to log SMS activity to Attio:', error);
             throw error;
@@ -893,7 +911,7 @@ class AttioIntegration extends BaseCRMIntegration {
     /**
      * Log phone call to Attio as a note/interaction
      * @param {Object} activity - Call activity
-     * @returns {Promise<void>}
+     * @returns {Promise<string|null>} Note ID
      */
     async logCallToActivity(activity) {
         try {
@@ -905,7 +923,7 @@ class AttioIntegration extends BaseCRMIntegration {
                 console.warn(
                     `Person not found for call logging: ${activity.contactExternalId}`,
                 );
-                return;
+                return null;
             }
 
             const noteData = {
@@ -919,9 +937,41 @@ class AttioIntegration extends BaseCRMIntegration {
                 created_at: activity.timestamp,
             };
 
-            await this.attio.api.createNote(noteData);
+            const noteResponse = await this.attio.api.createNote(noteData);
+
+            // Return the created note ID
+            return noteResponse?.data?.id?.note_id || null;
         } catch (error) {
             console.error('Failed to log call activity to Attio:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Update existing call note with new information (e.g., recording link)
+     * Note: Attio doesn't support note updates, so we keep the original note
+     * and just log that we attempted an update.
+     *
+     * @param {string} noteId - Existing note ID
+     * @param {Object} activity - Updated call activity data
+     * @returns {Promise<void>}
+     */
+    async updateCallActivity(noteId, activity) {
+        try {
+            // Attio API doesn't support updating notes directly
+            // We would need to delete and recreate, but that loses history
+            // For now, just log the update attempt
+            console.log(
+                `[Attio] Note update requested for ${noteId} but Attio doesn't support note updates`,
+            );
+            console.log(`[Attio] Updated content would be: ${activity.title}`);
+
+            // Future: If Attio adds note update API, implement here
+            // For now, the original note remains and we just track the mapping
+
+            return noteId;
+        } catch (error) {
+            console.error('Failed to update call activity in Attio:', error);
             throw error;
         }
     }
@@ -1580,13 +1630,18 @@ class AttioIntegration extends BaseCRMIntegration {
             // await this._verifyQuoWebhookSignature(headers, body, eventType);
 
             let result;
-            if (eventType === 'call.completed') {
+            if (eventType === QuoWebhookEvents.CALL_COMPLETED) {
+                // Phase 1: Create initial call note
                 result = await this._handleQuoCallEvent(body);
-            } else if (eventType === 'call.summary.completed') {
+            } else if (eventType === QuoWebhookEvents.CALL_RECORDING_COMPLETED) {
+                // Phase 2: Enrich with recording (find existing note, delete, create new with recording)
+                result = await this._handleQuoCallRecordingEvent(body);
+            } else if (eventType === QuoWebhookEvents.CALL_SUMMARY_COMPLETED) {
+                // Phase 3: Enrich with AI summary (find existing note, delete, create new with summary + recording)
                 result = await this._handleQuoCallSummaryEvent(body);
             } else if (
-                eventType === 'message.received' ||
-                eventType === 'message.delivered'
+                eventType === QuoWebhookEvents.MESSAGE_RECEIVED ||
+                eventType === QuoWebhookEvents.MESSAGE_DELIVERED
             ) {
                 result = await this._handleQuoMessageEvent(body);
             } else {
@@ -1602,6 +1657,29 @@ class AttioIntegration extends BaseCRMIntegration {
             };
         } catch (error) {
             console.error('[Quo Webhook] Processing error:', error);
+
+            if (
+                eventType === QuoWebhookEvents.MESSAGE_RECEIVED ||
+                eventType === QuoWebhookEvents.MESSAGE_DELIVERED
+            ) {
+                const messageId = body.data?.object?.id;
+                trackAnalyticsEvent(
+                    this,
+                    QUO_ANALYTICS_EVENTS.MESSAGE_LOG_FAILED,
+                    { messageId, error: error.message },
+                );
+            } else if (
+                eventType === QuoWebhookEvents.CALL_COMPLETED ||
+                eventType === QuoWebhookEvents.CALL_SUMMARY_COMPLETED
+            ) {
+                const callId =
+                    body.data?.object?.id || body.data?.object?.callId;
+                trackAnalyticsEvent(
+                    this,
+                    QUO_ANALYTICS_EVENTS.CALL_LOG_FAILED,
+                    { callId, error: error.message },
+                );
+            }
 
             if (this.id) {
                 await this.updateIntegrationMessages.execute(
@@ -1626,115 +1704,41 @@ class AttioIntegration extends BaseCRMIntegration {
      * @returns {Promise<Object>} Processing result
      */
     async _handleQuoCallEvent(webhookData) {
-        const callObject = webhookData.data.object;
+        const result = await QuoWebhookEventProcessor.processCallEvent({
+            webhookData,
+            quoApi: this.quo.api,
+            phoneNumbersMetadata: this.config?.phoneNumbersMetadata || [],
+            crmAdapter: {
+                formatMethod: 'markdown',
+                useEmoji: true,
+                findContactByPhone: (phone) =>
+                    this._findAttioContactFromQuoWebhook(phone),
+                createCallActivity: async (contactId, activity) => {
+                    return this.logCallToActivity({
+                        contactExternalId: contactId,
+                        direction:
+                            activity.direction === 'outgoing'
+                                ? 'outbound'
+                                : 'inbound',
+                        timestamp: activity.timestamp,
+                        duration: activity.duration,
+                        title: activity.title,
+                        summary: activity.content,
+                    });
+                },
+            },
+            mappingRepo: {
+                get: (id) => this.getMapping(id),
+                upsert: (id, data) => this.upsertMapping(id, data),
+            },
+            onActivityCreated: ({ callId }) => {
+                trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.CALL_LOGGED, {
+                    callId,
+                });
+            },
+        });
 
-        console.log(`[Quo Webhook] Processing call: ${callObject.id}`);
-
-        const participants = callObject.participants || [];
-
-        if (participants.length < 2) {
-            throw new Error('Call must have at least 2 participants');
-        }
-
-        // Find the contact phone (not the user's phone)
-        // Quo webhook participant indexing:
-        // - Outgoing: [user_phone, contact_phone] → contact is index 1
-        // - Incoming: [contact_phone, user_phone] → contact is index 0
-        const contactPhone =
-            callObject.direction === 'outgoing'
-                ? participants[1]
-                : participants[0];
-
-        const attioRecordId =
-            await this._findAttioContactFromQuoWebhook(contactPhone);
-
-        const deepLink = webhookData.data.deepLink || '#';
-
-        const phoneNumberDetails = await this.quo.api.getPhoneNumber(
-            callObject.phoneNumberId,
-        );
-        const inboxName =
-            phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
-                ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
-                : phoneNumberDetails.data?.name || 'Quo Line';
-        const inboxNumber =
-            phoneNumberDetails.data?.number ||
-            participants[callObject.direction === 'outgoing' ? 0 : 1];
-
-        const userDetails = await this.quo.api.getUser(callObject.userId);
-        const userName =
-            `${userDetails.data?.firstName || ''} ${userDetails.data?.lastName || ''}`.trim() ||
-            'Quo User';
-
-        const minutes = Math.floor(callObject.duration / 60);
-        const seconds = callObject.duration % 60;
-        const durationFormatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-
-        let statusDescription;
-        if (callObject.status === 'completed') {
-            statusDescription =
-                callObject.direction === 'outgoing'
-                    ? `Outgoing initiated by ${userName}`
-                    : `Incoming answered by ${userName}`;
-        } else if (
-            callObject.status === 'no-answer' ||
-            callObject.status === 'missed'
-        ) {
-            statusDescription = 'Incoming missed';
-        } else if (callObject.status === 'forwarded') {
-            // Handle forwarded calls
-            statusDescription = callObject.forwardedTo
-                ? `Incoming forwarded to ${callObject.forwardedTo}`
-                : 'Incoming forwarded by phone menu';
-        } else {
-            statusDescription = `${callObject.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} ${callObject.status}`;
-        }
-
-        let formattedSummary, title;
-        if (callObject.direction === 'outgoing') {
-            title = `☎️  Call ${inboxName} ${inboxNumber} → ${contactPhone}`;
-            formattedSummary = `${statusDescription}
-
-[View the call activity in Quo](${deepLink})`;
-        } else {
-            // Incoming call
-            title = `☎️  Call ${contactPhone} → ${inboxName} ${inboxNumber}`;
-            let statusLine = statusDescription;
-
-            // Add recording indicator if completed with duration
-            if (callObject.status === 'completed' && callObject.duration > 0) {
-                statusLine += ` / ▶️ Recording (${durationFormatted})`;
-            }
-
-            // Add voicemail indicator if present
-            if (callObject.voicemail) {
-                const voicemailDuration = callObject.voicemail.duration || 0;
-                const vmMinutes = Math.floor(voicemailDuration / 60);
-                const vmSeconds = voicemailDuration % 60;
-                const vmFormatted = `${vmMinutes}:${vmSeconds.toString().padStart(2, '0')}`;
-                statusLine += ` / ➿ Voicemail (${vmFormatted})`;
-            }
-
-            formattedSummary = `${statusLine}
-
-[View the call activity in Quo](${deepLink})`;
-        }
-
-        const activityData = {
-            contactExternalId: attioRecordId,
-            direction:
-                callObject.direction === 'outgoing' ? 'outbound' : 'inbound',
-            timestamp: callObject.createdAt,
-            duration: callObject.duration,
-            title: title,
-            summary: formattedSummary,
-        };
-
-        await this.logCallToActivity(activityData);
-
-        console.log(`[Quo Webhook] ✓ Call logged for contact ${attioRecordId}`);
-
-        return { logged: true, contactId: attioRecordId };
+        return result;
     }
 
     /**
@@ -1746,71 +1750,185 @@ class AttioIntegration extends BaseCRMIntegration {
      * @returns {Promise<Object>} Processing result
      */
     async _handleQuoMessageEvent(webhookData) {
-        const messageObject = webhookData.data.object;
+        const result = await QuoWebhookEventProcessor.processMessageEvent({
+            webhookData,
+            quoApi: this.quo.api,
+            crmAdapter: {
+                formatMethod: 'markdown',
+                useEmoji: true,
+                findContactByPhone: (phone) =>
+                    this._findAttioContactFromQuoWebhook(phone),
+                createMessageActivity: async (contactId, activity) => {
+                    return this.logSMSToActivity({
+                        contactExternalId: contactId,
+                        direction:
+                            activity.direction === 'outgoing'
+                                ? 'outbound'
+                                : 'inbound',
+                        title: activity.title,
+                        content: activity.content,
+                        timestamp: activity.timestamp,
+                    });
+                },
+            },
+            mappingRepo: {
+                get: (id) => this.getMapping(id),
+                upsert: (id, data) => this.upsertMapping(id, data),
+            },
+            onActivityCreated: ({ messageId }) => {
+                trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.MESSAGE_LOGGED, {
+                    messageId,
+                });
+            },
+        });
 
-        console.log(`[Quo Webhook] Processing message: ${messageObject.id}`);
+        return result;
+    }
 
-        // Determine contact phone based on direction
-        // - Outgoing: we sent to contact (use 'to')
-        // - Incoming: contact sent to us (use 'from')
-        const contactPhone =
-            messageObject.direction === 'outgoing'
-                ? messageObject.to
-                : messageObject.from;
+    /**
+     * Handle Quo call.recording.completed webhook event
+     * Enriches existing call note with recording links
+     *
+     * @private
+     * @param {Object} webhookData - Quo webhook payload
+     * @returns {Promise<Object>} Processing result
+     */
+    async _handleQuoCallRecordingEvent(webhookData) {
+        const callId =
+            webhookData.data.object.callId || webhookData.data.object.id;
 
         console.log(
-            `[Quo Webhook] Message direction: ${messageObject.direction}, contact: ${contactPhone}`,
+            `[Quo Webhook] Processing recording.completed for call: ${callId}`,
         );
 
-        const attioRecordId =
-            await this._findAttioContactFromQuoWebhook(contactPhone);
-
-        const phoneNumberDetails = await this.quo.api.getPhoneNumber(
-            messageObject.phoneNumberId,
-        );
-        const inboxName =
-            phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
-                ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
-                : phoneNumberDetails.data?.name || 'Quo Inbox';
-
-        const userDetails = await this.quo.api.getUser(messageObject.userId);
-        const userName =
-            `${userDetails.data?.firstName || ''} ${userDetails.data?.lastName || ''}`.trim() ||
-            'Quo User';
-
-        const deepLink = webhookData.data.deepLink || '#';
-
-        let formattedContent, title;
-        if (messageObject.direction === 'outgoing') {
-            // Outgoing: Quo → Contact
-            title = `💬 Message ${inboxName} ${messageObject.from} → ${messageObject.to}`;
-            formattedContent = `${userName} sent: ${messageObject.text || '(no text)'}
-
-[View the message activity in Quo](${deepLink})`;
-        } else {
-            // Incoming: Contact → Quo
-            title = `💬 Message ${messageObject.from} → ${inboxName} ${messageObject.to}`;
-            formattedContent = `Received: ${messageObject.text || '(no text)'}
-
-[View the message activity in Quo](${deepLink})`;
+        const callDetails = await this.quo.api.getCall(callId);
+        if (!callDetails?.data) {
+            console.warn(`[Quo Webhook] Call ${callId} not found`);
+            return {
+                received: true,
+                callId,
+                enriched: false,
+                error: 'Call not found',
+            };
         }
 
-        const activityData = {
-            contactExternalId: attioRecordId,
-            direction:
-                messageObject.direction === 'outgoing' ? 'outbound' : 'inbound',
-            title: title,
-            content: formattedContent,
-            timestamp: messageObject.createdAt,
-        };
-
-        await this.logSMSToActivity(activityData);
-
-        console.log(
-            `[Quo Webhook] ✓ Message logged for contact ${attioRecordId}`,
+        const call = callDetails.data;
+        const externalParticipants = filterExternalParticipants(
+            call.participants || [],
+            this.config?.phoneNumbersMetadata || [],
         );
 
-        return { logged: true, contactId: attioRecordId };
+        if (externalParticipants.length === 0) {
+            console.warn(
+                `[Quo Webhook] No external participants found for call ${callId}`,
+            );
+            return {
+                received: true,
+                callId,
+                enriched: false,
+                error: 'No external participants',
+            };
+        }
+
+        const [phoneNumberDetails, userDetails] = await Promise.all([
+            this.quo.api.getPhoneNumber(call.phoneNumberId),
+            this.quo.api.getUser(call.userId),
+        ]);
+
+        const inboxName = QuoCallContentBuilder.buildInboxName(phoneNumberDetails);
+        const inboxNumber = phoneNumberDetails.data?.number || '';
+        const userName = QuoCallContentBuilder.buildUserName(userDetails);
+        const formatOptions = QuoCallContentBuilder.getFormatOptions('markdown');
+
+        const results = [];
+
+        for (const contactPhone of externalParticipants) {
+            const attioRecordId =
+                await this._findAttioContactFromQuoWebhook(contactPhone);
+
+            if (!attioRecordId) {
+                console.warn(
+                    `[Quo Webhook] No Attio contact found for ${contactPhone}`,
+                );
+                results.push({
+                    contactPhone,
+                    enriched: false,
+                    error: 'Contact not found',
+                });
+                continue;
+            }
+
+            const enrichmentResult =
+                await CallSummaryEnrichmentService.enrichCallNote({
+                    callId,
+                    summaryData: { summary: [], nextSteps: [] },
+                    callDetails: call,
+                    quoApi: this.quo.api,
+                    crmAdapter: {
+                        canUpdateNote: () => false,
+                        createNote: async ({
+                            contactId,
+                            content,
+                            title,
+                            timestamp,
+                        }) => {
+                            return await this.logCallToActivity({
+                                contactExternalId: contactId,
+                                title,
+                                summary: content,
+                                timestamp,
+                            });
+                        },
+                        deleteNote: async (noteId) =>
+                            await this.attio.api.deleteNote(noteId),
+                    },
+                    mappingRepo: {
+                        get: async (id) => await this.getMapping(id),
+                        upsert: async (id, data) =>
+                            await this.upsertMapping(id, data),
+                    },
+                    contactId: attioRecordId,
+                    formatters: {
+                        formatCallHeader: (callData) =>
+                            QuoCallContentBuilder.buildCallStatus({
+                                call: callData,
+                                userName,
+                            }),
+                        formatTitle: (callData) =>
+                            QuoCallContentBuilder.buildCallTitle({
+                                call: callData,
+                                inboxName,
+                                inboxNumber,
+                                contactPhone,
+                                formatOptions,
+                            }),
+                        formatDeepLink: () =>
+                            QuoCallContentBuilder.buildDeepLink({
+                                deepLink: webhookData.data.deepLink || '#',
+                                formatOptions,
+                            }),
+                    },
+                });
+
+            results.push({
+                contactPhone,
+                attioRecordId,
+                noteId: enrichmentResult.noteId,
+                enriched: true,
+            });
+
+            console.log(
+                `[Quo Webhook] ✓ Recording enrichment for ${contactPhone}, note: ${enrichmentResult.noteId}`,
+            );
+        }
+
+        return {
+            received: true,
+            callId,
+            enriched: results.some((r) => r.enriched),
+            participantCount: externalParticipants.length,
+            results,
+        };
     }
 
     /**
@@ -1823,26 +1941,19 @@ class AttioIntegration extends BaseCRMIntegration {
      */
     async _handleQuoCallSummaryEvent(webhookData) {
         const summaryObject = webhookData.data.object;
-
-        console.log(
-            `[Quo Webhook] Processing call summary for call: ${summaryObject.callId}`,
-        );
-
         const callId = summaryObject.callId;
         const summary = summaryObject.summary || [];
         const nextSteps = summaryObject.nextSteps || [];
-        const status = summaryObject.status;
+        const jobs = summaryObject.jobs || [];
 
         console.log(
-            `[Quo Webhook] Call summary status: ${status}, ${summary.length} summary points, ${nextSteps.length} next steps`,
+            `[Quo Webhook] Processing call.summary.completed: ${callId}`,
         );
 
-        // Fetch the original call details to get contact info and metadata
+        // Always fetch full call details
         const callDetails = await this.quo.api.getCall(callId);
         if (!callDetails?.data) {
-            console.warn(
-                `[Quo Webhook] Call ${callId} not found, cannot create summary note`,
-            );
+            console.warn(`[Quo Webhook] Call ${callId} not found`);
             return {
                 received: true,
                 callId,
@@ -1851,128 +1962,136 @@ class AttioIntegration extends BaseCRMIntegration {
             };
         }
 
-        const callObject = callDetails.data;
+        const call = callDetails.data;
 
-        // Find the contact phone number (same logic as _handleQuoCallEvent)
-        const participants = callObject.participants || [];
-        if (participants.length < 2) {
+        // Get ALL external participants (supports multi-party)
+        const externalParticipants = filterExternalParticipants(
+            call.participants || [],
+            this.config?.phoneNumbersMetadata || [],
+        );
+
+        if (externalParticipants.length === 0) {
             console.warn(
-                `[Quo Webhook] Call ${callId} has insufficient participants`,
+                `[Quo Webhook] No external participants for call ${callId}`,
             );
             return {
                 received: true,
                 callId,
                 logged: false,
-                error: 'Insufficient participants',
+                error: 'No external participants',
             };
         }
 
-        const contactPhone =
-            callObject.direction === 'outgoing'
-                ? participants[1]
-                : participants[0];
+        // Fetch metadata once for all participants
+        const [phoneNumberDetails, userDetails] = await Promise.all([
+            this.quo.api.getPhoneNumber(call.phoneNumberId),
+            this.quo.api.getUser(call.userId),
+        ]);
 
-        // Find Attio contact
-        const attioRecordId =
-            await this._findAttioContactFromQuoWebhook(contactPhone);
+        const inboxName = QuoCallContentBuilder.buildInboxName(phoneNumberDetails);
+        const inboxNumber = phoneNumberDetails.data?.number || '';
+        const userName = QuoCallContentBuilder.buildUserName(userDetails);
+        const formatOptions = QuoCallContentBuilder.getFormatOptions('markdown');
 
-        // Fetch phone number and user details for formatting
-        const phoneNumberDetails = await this.quo.api.getPhoneNumber(
-            callObject.phoneNumberId,
-        );
-        const inboxName =
-            phoneNumberDetails.data?.symbol && phoneNumberDetails.data?.name
-                ? `${phoneNumberDetails.data.symbol} ${phoneNumberDetails.data.name}`
-                : phoneNumberDetails.data?.name || 'Quo Line';
-        const inboxNumber =
-            phoneNumberDetails.data?.number ||
-            participants[callObject.direction === 'outgoing' ? 0 : 1];
+        const results = [];
 
-        const userDetails = await this.quo.api.getUser(callObject.userId);
-        const userName =
-            `${userDetails.data?.firstName || ''} ${userDetails.data?.lastName || ''}`.trim() ||
-            'Quo User';
+        // Loop through each external participant
+        for (const contactPhone of externalParticipants) {
+            const attioRecordId =
+                await this._findAttioContactFromQuoWebhook(contactPhone);
 
-        // Format call duration
-        const minutes = Math.floor(callObject.duration / 60);
-        const seconds = callObject.duration % 60;
-        const durationFormatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            if (!attioRecordId) {
+                console.warn(
+                    `[Quo Webhook] No Attio contact found for ${contactPhone}`,
+                );
+                results.push({
+                    contactPhone,
+                    logged: false,
+                    error: 'Contact not found',
+                });
+                continue;
+            }
 
-        // Build status line (similar to call.completed handler)
-        let statusDescription;
-        if (callObject.status === 'completed') {
-            statusDescription =
-                callObject.direction === 'outgoing'
-                    ? `Outgoing initiated by ${userName}`
-                    : `Incoming answered by ${userName}`;
-        } else if (
-            callObject.status === 'no-answer' ||
-            callObject.status === 'missed'
-        ) {
-            statusDescription = 'Incoming missed';
-        } else if (callObject.status === 'forwarded') {
-            statusDescription = callObject.forwardedTo
-                ? `Incoming forwarded to ${callObject.forwardedTo}`
-                : 'Incoming forwarded by phone menu';
-        } else {
-            statusDescription = `${callObject.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} ${callObject.status}`;
-        }
+            // Use CallSummaryEnrichmentService for enrichment
+            const enrichmentResult =
+                await CallSummaryEnrichmentService.enrichCallNote({
+                    callId,
+                    summaryData: { summary, nextSteps, jobs },
+                    callDetails: call,
+                    quoApi: this.quo.api,
+                    crmAdapter: {
+                        canUpdateNote: () => false,
+                        createNote: async ({
+                            contactId,
+                            content,
+                            title,
+                            timestamp,
+                        }) => {
+                            return await this.logCallToActivity({
+                                contactExternalId: contactId,
+                                title,
+                                summary: content,
+                                timestamp,
+                            });
+                        },
+                        deleteNote: async (noteId) =>
+                            await this.attio.api.deleteNote(noteId),
+                    },
+                    mappingRepo: {
+                        get: async (id) => await this.getMapping(id),
+                        upsert: async (id, data) =>
+                            await this.upsertMapping(id, data),
+                    },
+                    contactId: attioRecordId,
+                    formatters: {
+                        formatCallHeader: (callData) =>
+                            QuoCallContentBuilder.buildCallStatus({
+                                call: callData,
+                                userName,
+                            }),
+                        formatTitle: (callData) =>
+                            QuoCallContentBuilder.buildCallTitle({
+                                call: callData,
+                                inboxName,
+                                inboxNumber,
+                                contactPhone,
+                                formatOptions,
+                            }),
+                        formatDeepLink: () =>
+                            QuoCallContentBuilder.buildDeepLink({
+                                deepLink: webhookData.data.deepLink || '#',
+                                formatOptions,
+                            }),
+                    },
+                });
 
-        // Add recording indicator if completed with duration
-        if (callObject.status === 'completed' && callObject.duration > 0) {
-            statusDescription += ` / ▶️ Recording (${durationFormatted})`;
-        }
-
-        // Format summary content
-        let summaryContent = statusDescription;
-
-        if (summary.length > 0) {
-            summaryContent += '\n\n**Summary:**\n';
-            summary.forEach((point) => {
-                summaryContent += `• ${point}\n`;
+            results.push({
+                contactPhone,
+                attioRecordId,
+                noteId: enrichmentResult.noteId,
+                oldNoteId: enrichmentResult.oldNoteId,
+                logged: true,
+                summaryPoints: summary.length,
+                nextStepsCount: nextSteps.length,
+                recordingsCount: enrichmentResult.recordingsCount,
+                hasVoicemail: enrichmentResult.hasVoicemail,
             });
-        }
 
-        if (nextSteps.length > 0) {
-            summaryContent += '\n**Next Steps:**\n';
-            nextSteps.forEach((step) => {
-                summaryContent += `• ${step}\n`;
+            trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.CALL_LOGGED, {
+                callId,
             });
+
+            console.log(
+                `[Quo Webhook] ✓ Summary enrichment for ${contactPhone}, note: ${enrichmentResult.noteId}`,
+            );
         }
-
-        // Add deep link
-        const deepLink = webhookData.data.deepLink || '#';
-        summaryContent += `\n[View the call activity in Quo](${deepLink})`;
-
-        // Build title
-        let title;
-        if (callObject.direction === 'outgoing') {
-            title = `☎️  Call Summary: ${inboxName} ${inboxNumber} → ${contactPhone}`;
-        } else {
-            title = `☎️  Call Summary: ${contactPhone} → ${inboxName} ${inboxNumber}`;
-        }
-
-        // Create the note in Attio
-        const activityData = {
-            contactExternalId: attioRecordId,
-            title: title,
-            summary: summaryContent,
-            timestamp: callObject.createdAt,
-        };
-
-        await this.logCallToActivity(activityData);
-
-        console.log(
-            `[Quo Webhook] ✓ Call summary logged for contact ${attioRecordId}`,
-        );
 
         return {
             received: true,
             callId,
-            logged: true,
-            contactId: attioRecordId,
-            summaryPoints: summary.length,
-            nextStepsCount: nextSteps.length,
+            logged: results.some((r) => r.logged),
+            participantCount: externalParticipants.length,
+            results,
         };
     }
 
@@ -2201,10 +2320,6 @@ class AttioIntegration extends BaseCRMIntegration {
         }
     }
 
-    // ============================================================================
-    // OPTIONAL HELPER METHODS
-    // ============================================================================
-
     /**
      * Fetch a single person by ID
      * @param {string} id - Person ID
@@ -2232,15 +2347,12 @@ class AttioIntegration extends BaseCRMIntegration {
         return persons;
     }
 
-    // ============================================================================
-    // WEBHOOK SYNC HELPER METHODS
-    // ============================================================================
-
     /**
      * Sync Attio person record to Quo
      * Transforms Attio person data to Quo contact format
      *
-     * Phase 2 Fix: Handles 409 conflicts by fetching existing contact and creating mapping
+     * Uses upsertContactToQuo which handles lookup-then-create/update
+     * via Frigg-authenticated endpoints
      *
      * @private
      * @param {Object} attioRecord - Attio person record
@@ -2253,6 +2365,8 @@ class AttioIntegration extends BaseCRMIntegration {
             attioRecord.id,
         );
 
+        const externalId = attioRecord.id?.record_id || attioRecord.id;
+
         try {
             const quoContact = await this.transformPersonToQuo(attioRecord);
 
@@ -2260,34 +2374,19 @@ class AttioIntegration extends BaseCRMIntegration {
                 throw new Error('Quo API not available');
             }
 
-            if (action === 'created') {
-                // Use bulkUpsertToQuo instead of singleton createContact
-                const result = await this.bulkUpsertToQuo([quoContact]);
+            const result = await this.upsertContactToQuo(quoContact);
 
-                if (result.errorCount > 0) {
-                    const error = result.errors[0];
-                    throw new Error(
-                        `Failed to create contact: ${error?.error || 'Unknown error'}`,
-                    );
-                }
+            console.log(
+                `[Attio] ✓ Contact ${result.action} in Quo (externalId: ${quoContact.externalId}, quoContactId: ${result.quoContactId})`,
+            );
 
-                console.log(
-                    `[Attio] ✓ Contact created in Quo via bulkUpsertToQuo (externalId: ${quoContact.externalId})`,
-                );
-            } else {
-                const result = await this.bulkUpsertToQuo([quoContact]);
-
-                if (result.errorCount > 0) {
-                    const error = result.errors[0];
-                    throw new Error(
-                        `Failed to update contact: ${error?.error || 'Unknown error'}`,
-                    );
-                }
-
-                console.log(
-                    `[Attio] ✓ Contact updated in Quo via bulkUpsertToQuo (externalId: ${quoContact.externalId})`,
-                );
-            }
+            const analyticsEvent =
+                action === 'created'
+                    ? QUO_ANALYTICS_EVENTS.CONTACT_IMPORT
+                    : QUO_ANALYTICS_EVENTS.CONTACT_UPDATED;
+            trackAnalyticsEvent(this, analyticsEvent, {
+                contactId: quoContact.externalId,
+            });
 
             console.log(
                 `[Attio] ✓ Person ${attioRecord.id.record_id} synced to Quo`,
@@ -2297,13 +2396,16 @@ class AttioIntegration extends BaseCRMIntegration {
                 `[Attio] Failed to sync person ${attioRecord.id}:`,
                 error.message,
             );
+
+            trackAnalyticsEvent(
+                this,
+                QUO_ANALYTICS_EVENTS.CONTACT_SYNC_FAILED,
+                { contactId: externalId, error: error.message },
+            );
+
             throw error;
         }
     }
-
-    // ============================================================================
-    // LIFECYCLE METHODS
-    // ============================================================================
 
     /**
      * Called when integration is deleted
@@ -2501,10 +2603,6 @@ class AttioIntegration extends BaseCRMIntegration {
 
         await super.onDelete(params);
     }
-
-    // ============================================================================
-    // EXISTING METHODS - Backward Compatibility
-    // ============================================================================
 
     async listObjects({ req, res }) {
         try {

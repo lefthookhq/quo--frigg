@@ -93,25 +93,29 @@ jest.mock('@friggframework/core', () => ({
             this.baseUrl = params.baseUrl || '';
             this.headers = params.headers || {};
             this.requesterType = 'apiKey';
-            this.API_KEY_NAME = 'key';
-            this.API_KEY_VALUE = null;
+            // Match actual frigg framework: uses snake_case (api_key_name, api_key)
+            this.api_key_name = params.api_key_name || 'key';
+            this.api_key = params.api_key || null;
         }
         async addAuthHeaders(headers) {
-            if (this.API_KEY_VALUE) {
-                headers[this.API_KEY_NAME] = this.API_KEY_VALUE;
+            if (this.api_key) {
+                headers[this.api_key_name] = this.api_key;
             }
             return headers;
         }
         isAuthenticated() {
             return (
-                this.API_KEY_VALUE !== null &&
-                this.API_KEY_VALUE !== undefined &&
-                this.API_KEY_VALUE.trim &&
-                this.API_KEY_VALUE.trim().length > 0
+                this.api_key !== null &&
+                this.api_key !== undefined &&
+                typeof this.api_key === 'string' &&
+                this.api_key.trim().length > 0
             );
         }
         setApiKey(api_key) {
-            this.API_KEY_VALUE = api_key;
+            this.api_key = api_key;
+        }
+        setApiKeyName(api_key_name) {
+            this.api_key_name = api_key_name;
         }
     },
     OAuth2Requester: class OAuth2Requester {

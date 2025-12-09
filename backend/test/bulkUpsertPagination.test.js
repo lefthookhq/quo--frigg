@@ -48,22 +48,6 @@ describe('bulkUpsertToQuo - Pagination', () => {
             userId: 'user-456',
         });
 
-        // Mock the userId
-        integration.userId = 'org-user-123';
-
-        // Create mock user repository
-        const mockUserRepo = {
-            findUserById: jest.fn().mockResolvedValue({
-                appOrgId: 'test-org-456',
-            }),
-        };
-
-        // Mock the user repository factory
-        const userRepoFactory = require('@friggframework/core/user/repositories/user-repository-factory');
-        jest.spyOn(userRepoFactory, 'createUserRepository').mockReturnValue(
-            mockUserRepo,
-        );
-
         // Mock upsertMapping
         integration.upsertMapping = jest.fn().mockResolvedValue();
     });
@@ -145,12 +129,9 @@ describe('bulkUpsertToQuo - Pagination', () => {
 
             const result = await integration.bulkUpsertToQuo(contacts);
 
-            // Should call bulkCreateContacts once with all contacts
+            // Should call bulkCreateContacts once with all contacts (no orgId)
             expect(mockBulkCreate).toHaveBeenCalledTimes(1);
-            expect(mockBulkCreate).toHaveBeenCalledWith(
-                'test-org-456',
-                contacts,
-            );
+            expect(mockBulkCreate).toHaveBeenCalledWith(contacts);
 
             // Should call listContacts twice (2 pages of 50)
             expect(mockListContacts).toHaveBeenCalledTimes(2);

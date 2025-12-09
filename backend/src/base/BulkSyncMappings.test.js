@@ -66,17 +66,6 @@ describe('Bulk Sync Mapping Creation', () => {
         integration._processManager = mockProcessManager;
         integration._queueManager = mockQueueManager;
         integration._syncOrchestrator = mockSyncOrchestrator;
-
-        // Mock user repository for bulkUpsertToQuo
-        const mockUserRepo = {
-            findUserById: jest.fn().mockResolvedValue({
-                appOrgId: 'test-org-456',
-            }),
-        };
-        const userRepoFactory = require('@friggframework/core/user/repositories/user-repository-factory');
-        jest.spyOn(userRepoFactory, 'createUserRepository').mockReturnValue(
-            mockUserRepo,
-        );
     });
 
     afterEach(() => {
@@ -126,7 +115,6 @@ describe('Bulk Sync Mapping Creation', () => {
             const result = await integration.bulkUpsertToQuo(contacts);
 
             expect(integration.quo.api.bulkCreateContacts).toHaveBeenCalledWith(
-                'test-org-456',
                 contacts,
             );
 

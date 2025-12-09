@@ -1046,6 +1046,85 @@ class BaseCRMIntegration extends IntegrationBase {
     // ============================================================================
 
     /**
+     * Upsert a single contact to Quo using Frigg-authenticated endpoints
+     *
+     * This method implements the lookup-then-create/update pattern:
+     * 1. Look up contact by externalId using listContacts
+     * 2. If found, update using updateFriggContact
+     * 3. If not found, create using createFriggContact
+     * 4. Store mapping by phone number
+     *
+     * Uses /frigg/contacts endpoints which require x-frigg-api-key header.
+     *
+     * @param {Object} quoContact - Contact data in Quo format
+     * @param {string} quoContact.externalId - External CRM ID (required)
+     * @param {Object} quoContact.defaultFields - Contact fields
+     * @returns {Promise<{action: 'created'|'updated', quoContactId: string, externalId: string}>}
+     */
+    async upsertContactToQuo(quoContact) {
+        if (!this.quo?.api) {
+            throw new Error('Quo API not available');
+        }
+
+        if (!quoContact.externalId) {
+            throw new Error('Contact must have an externalId');
+        }
+
+        const existingContacts = await this.quo.api.listContacts({
+            externalIds: [quoContact.externalId],
+            maxResults: 1,
+        });
+
+        const existingContact =
+            existingContacts?.data?.length > 0
+                ? existingContacts.data[0]
+                : null;
+
+        let result;
+        let action;
+
+        if (existingContact) {
+            const response = await this.quo.api.updateFriggContact(
+                existingContact.id,
+                quoContact,
+            );
+            result = response.data;
+            action = 'updated';
+        } else {
+            const response = await this.quo.api.createFriggContact(quoContact);
+            result = response.data;
+            action = 'created';
+        }
+
+        const quoContactId = result.id;
+        const phoneNumber = quoContact.defaultFields?.phoneNumbers?.[0]?.value;
+
+        if (phoneNumber) {
+            const mappingData = {
+                externalId: quoContact.externalId,
+                quoContactId,
+                phoneNumber,
+                entityType: 'people',
+                lastSyncedAt: new Date().toISOString(),
+                syncMethod: 'upsert',
+                action,
+            };
+
+            await this.upsertMapping(phoneNumber, mappingData);
+        } else {
+            console.warn(
+                `No phone number for ${quoContact.externalId}, skipping mapping`,
+            );
+        }
+
+        return {
+            action,
+            quoContactId,
+            externalId: quoContact.externalId,
+        };
+    }
+
+    /**
      * Fetch contacts by external IDs with automatic pagination to respect API limits
      *
      * The Quo API has a maxResults limit of 50. This method automatically handles
@@ -1112,22 +1191,8 @@ class BaseCRMIntegration extends IntegrationBase {
         const errors = [];
 
         try {
-            // Get orgId from Frigg user table
-            const {
-                createUserRepository,
-            } = require('@friggframework/core/user/repositories/user-repository-factory');
-            const userRepo = createUserRepository();
-
-            // Get the organization user (this.userId points to org user when primary: 'organization')
-            const orgUser = await userRepo.findUserById(this.userId);
-            const orgId = orgUser.appOrgId;
-
-            if (!orgId) {
-                throw new Error('Organization ID not found for user');
-            }
-
-            // Call bulkCreateContacts with orgId and contacts
-            await this.quo.api.bulkCreateContacts(orgId, contacts);
+            // Call bulkCreateContacts with contacts
+            await this.quo.api.bulkCreateContacts(contacts);
 
             await new Promise((resolve) => setTimeout(resolve, 1000));
 
@@ -1144,12 +1209,19 @@ class BaseCRMIntegration extends IntegrationBase {
                                 ?.value;
 
                         if (phoneNumber) {
+                            const originalContact = contacts.find(
+                                (c) =>
+                                    c.externalId === createdContact.externalId,
+                            );
+
                             // Store mapping by phone number (contains both IDs)
                             const mappingData = {
                                 externalId: createdContact.externalId,
                                 quoContactId: createdContact.id,
                                 phoneNumber: phoneNumber,
-                                entityType: 'people',
+                                entityType:
+                                    originalContact?.sourceEntityType ||
+                                    'people',
                                 lastSyncedAt: new Date().toISOString(),
                                 syncMethod: 'bulk',
                                 action: 'created',
@@ -1529,8 +1601,12 @@ class BaseCRMIntegration extends IntegrationBase {
 
         console.log('[Config Update] Processing configuration update');
 
+        // Translate external field names to internal field names
+        // Quo backend sends `resourceIds` but we store as `enabledPhoneIds`
+        const translatedConfig = this._translateConfigFields(updateConfig);
+
         // PATCH semantics: Merge update into existing config (deep merge for nested objects)
-        const patchedConfig = this._deepMerge(this.config, updateConfig);
+        const patchedConfig = this._deepMerge(this.config, translatedConfig);
 
         // Check if enabledPhoneIds changed (before updating config)
         const oldPhoneIds = this.config?.enabledPhoneIds || [];
@@ -1612,6 +1688,35 @@ class BaseCRMIntegration extends IntegrationBase {
         console.log('[Config Update] ✓ Update complete');
 
         return validationResult;
+    }
+
+    /**
+     * Translate external config field names to internal field names
+     *
+     * The Quo backend sends config updates using their external API field names,
+     * which need to be translated to our internal field names for storage.
+     *
+     * Translations:
+     * - `resourceIds` → `enabledPhoneIds` (phone numbers to filter webhooks)
+     *
+     * @private
+     * @param {Object} config - Config object with external field names
+     * @returns {Object} Config object with internal field names
+     */
+    _translateConfigFields(config) {
+        if (!config) {
+            return {};
+        }
+
+        const translated = { ...config };
+
+        // Translate resourceIds → enabledPhoneIds
+        if ('resourceIds' in translated) {
+            translated.enabledPhoneIds = translated.resourceIds;
+            delete translated.resourceIds;
+        }
+
+        return translated;
     }
 
     /**

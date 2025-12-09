@@ -5,8 +5,8 @@ import getPhoneNumber from "./get-phone-number.graphql"
 export const callInQuoAction: App.Record.Action = {
     id: "call-in-quo",
     label: "Call in Quo",
-    objects: ["people", "companies"], // Specify which object types this action applies to
-    onTrigger: async ({recordId, object}) => {
+    objects: ["people", "companies"],
+    onTrigger: async ({recordId, object}: {recordId: string, object: string}) => {
         // Get the record data to access the phone number using GraphQL
         const result = (await runQuery(getPhoneNumber, {recordId, object})) as {
             object: {

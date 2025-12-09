@@ -161,17 +161,6 @@ describe('BaseCRMIntegration', () => {
 
         // Mock upsertMapping
         integration.upsertMapping = jest.fn().mockResolvedValue();
-
-        // Mock user repository for bulkUpsertToQuo
-        const mockUserRepo = {
-            findUserById: jest.fn().mockResolvedValue({
-                appOrgId: 'test-org-456',
-            }),
-        };
-        const userRepoFactory = require('@friggframework/core/user/repositories/user-repository-factory');
-        jest.spyOn(userRepoFactory, 'createUserRepository').mockReturnValue(
-            mockUserRepo,
-        );
     });
 
     afterEach(() => {
@@ -645,22 +634,6 @@ describe('BaseCRMIntegration', () => {
                 }),
             ];
 
-            // Mock the userId
-            integration.userId = 'org-user-123';
-
-            // Create mock user repository
-            const mockUserRepo = {
-                findUserById: jest.fn().mockResolvedValue({
-                    appOrgId: 'test-org-456',
-                }),
-            };
-
-            // Mock the user repository factory using jest.spyOn on require cache
-            const userRepoFactory = require('@friggframework/core/user/repositories/user-repository-factory');
-            const createUserRepositorySpy = jest
-                .spyOn(userRepoFactory, 'createUserRepository')
-                .mockReturnValue(mockUserRepo);
-
             // Mock quo.api methods for bulk upsert
             integration.quo.api.bulkCreateContacts.mockResolvedValue({});
             integration.quo.api.listContacts.mockResolvedValue({
@@ -687,23 +660,16 @@ describe('BaseCRMIntegration', () => {
 
             const result = await integration.bulkUpsertToQuo(contacts);
 
-            // Should call bulkCreateContacts with orgId and contacts
+            // Should call bulkCreateContacts with contacts only (no orgId)
             expect(integration.quo.api.bulkCreateContacts).toHaveBeenCalledWith(
-                'test-org-456',
                 contacts,
             );
             expect(integration.quo.api.listContacts).toHaveBeenCalled();
-            expect(mockUserRepo.findUserById).toHaveBeenCalledWith(
-                'org-user-123',
-            );
             expect(result).toEqual({
                 successCount: 2,
                 errorCount: 0,
                 errors: [],
             });
-
-            // Clean up spy
-            createUserRepositorySpy.mockRestore();
         });
 
         it('should handle bulk upsert errors', async () => {
@@ -717,22 +683,6 @@ describe('BaseCRMIntegration', () => {
                     defaultFields: { phoneNumbers: [{ value: '+0987654321' }] },
                 }),
             ];
-
-            // Mock the userId
-            integration.userId = 'org-user-123';
-
-            // Create mock user repository
-            const mockUserRepo = {
-                findUserById: jest.fn().mockResolvedValue({
-                    appOrgId: 'test-org-456',
-                }),
-            };
-
-            // Mock the user repository factory
-            const userRepoFactory = require('@friggframework/core/user/repositories/user-repository-factory');
-            const createUserRepositorySpy = jest
-                .spyOn(userRepoFactory, 'createUserRepository')
-                .mockReturnValue(mockUserRepo);
 
             // Mock bulkCreateContacts to fail
             integration.quo.api.bulkCreateContacts.mockRejectedValue(
@@ -752,9 +702,6 @@ describe('BaseCRMIntegration', () => {
                     },
                 ],
             });
-
-            // Clean up spy
-            createUserRepositorySpy.mockRestore();
         });
     });
 
@@ -874,17 +821,6 @@ describe('BaseCRMIntegration', () => {
 
             // Mock upsertMapping
             cursorIntegration.upsertMapping = jest.fn().mockResolvedValue();
-
-            // Mock user repository for bulkUpsertToQuo
-            const mockUserRepo = {
-                findUserById: jest.fn().mockResolvedValue({
-                    appOrgId: 'test-org-456',
-                }),
-            };
-            const userRepoFactory = require('@friggframework/core/user/repositories/user-repository-factory');
-            jest.spyOn(userRepoFactory, 'createUserRepository').mockReturnValue(
-                mockUserRepo,
-            );
         });
 
         it('should process pages sequentially', async () => {
@@ -1057,6 +993,534 @@ describe('BaseCRMIntegration', () => {
                     cursor: 'cursor-1',
                 }),
             );
+        });
+    });
+
+    describe('upsertContactToQuo', () => {
+        beforeEach(() => {
+            integration.quo = {
+                api: {
+                    listContacts: jest.fn(),
+                    createFriggContact: jest.fn(),
+                    updateFriggContact: jest.fn(),
+                },
+            };
+            integration.upsertMapping = jest.fn().mockResolvedValue();
+        });
+
+        it('should create contact when none exists with matching externalId', async () => {
+            const quoContact = {
+                externalId: 'crm-123',
+                defaultFields: {
+                    firstName: 'John',
+                    lastName: 'Doe',
+                    phoneNumbers: [{ name: 'mobile', value: '+15551234567' }],
+                },
+            };
+
+            integration.quo.api.listContacts.mockResolvedValue({ data: [] });
+            integration.quo.api.createFriggContact.mockResolvedValue({
+                data: { id: 'quo-contact-new', ...quoContact },
+            });
+
+            const result = await integration.upsertContactToQuo(quoContact);
+
+            expect(integration.quo.api.listContacts).toHaveBeenCalledWith({
+                externalIds: ['crm-123'],
+                maxResults: 1,
+            });
+            expect(integration.quo.api.createFriggContact).toHaveBeenCalledWith(
+                quoContact,
+            );
+            expect(integration.quo.api.updateFriggContact).not.toHaveBeenCalled();
+            expect(result).toEqual({
+                action: 'created',
+                quoContactId: 'quo-contact-new',
+                externalId: 'crm-123',
+            });
+        });
+
+        it('should update contact when one exists with matching externalId', async () => {
+            const quoContact = {
+                externalId: 'crm-456',
+                defaultFields: {
+                    firstName: 'Jane',
+                    lastName: 'Smith',
+                    phoneNumbers: [{ name: 'work', value: '+15559876543' }],
+                },
+            };
+
+            integration.quo.api.listContacts.mockResolvedValue({
+                data: [{ id: 'quo-existing-id', externalId: 'crm-456' }],
+            });
+            integration.quo.api.updateFriggContact.mockResolvedValue({
+                data: { id: 'quo-existing-id', ...quoContact },
+            });
+
+            const result = await integration.upsertContactToQuo(quoContact);
+
+            expect(integration.quo.api.listContacts).toHaveBeenCalledWith({
+                externalIds: ['crm-456'],
+                maxResults: 1,
+            });
+            expect(integration.quo.api.updateFriggContact).toHaveBeenCalledWith(
+                'quo-existing-id',
+                quoContact,
+            );
+            expect(integration.quo.api.createFriggContact).not.toHaveBeenCalled();
+            expect(result).toEqual({
+                action: 'updated',
+                quoContactId: 'quo-existing-id',
+                externalId: 'crm-456',
+            });
+        });
+
+        it('should store mapping after creating contact', async () => {
+            const quoContact = {
+                externalId: 'crm-789',
+                defaultFields: {
+                    firstName: 'Bob',
+                    phoneNumbers: [{ name: 'mobile', value: '+15551112222' }],
+                },
+            };
+
+            integration.quo.api.listContacts.mockResolvedValue({ data: [] });
+            integration.quo.api.createFriggContact.mockResolvedValue({
+                data: { id: 'quo-new-id', externalId: 'crm-789' },
+            });
+
+            await integration.upsertContactToQuo(quoContact);
+
+            expect(integration.upsertMapping).toHaveBeenCalledWith(
+                '+15551112222',
+                expect.objectContaining({
+                    externalId: 'crm-789',
+                    quoContactId: 'quo-new-id',
+                    phoneNumber: '+15551112222',
+                    action: 'created',
+                }),
+            );
+        });
+
+        it('should store mapping after updating contact', async () => {
+            const quoContact = {
+                externalId: 'crm-999',
+                defaultFields: {
+                    firstName: 'Alice',
+                    phoneNumbers: [{ name: 'home', value: '+15553334444' }],
+                },
+            };
+
+            integration.quo.api.listContacts.mockResolvedValue({
+                data: [{ id: 'quo-existing-999', externalId: 'crm-999' }],
+            });
+            integration.quo.api.updateFriggContact.mockResolvedValue({
+                data: { id: 'quo-existing-999', externalId: 'crm-999' },
+            });
+
+            await integration.upsertContactToQuo(quoContact);
+
+            expect(integration.upsertMapping).toHaveBeenCalledWith(
+                '+15553334444',
+                expect.objectContaining({
+                    externalId: 'crm-999',
+                    quoContactId: 'quo-existing-999',
+                    phoneNumber: '+15553334444',
+                    action: 'updated',
+                }),
+            );
+        });
+
+        it('should throw error when Quo API is not available', async () => {
+            integration.quo = null;
+
+            await expect(
+                integration.upsertContactToQuo({ externalId: 'test' }),
+            ).rejects.toThrow('Quo API not available');
+        });
+
+        it('should throw error when contact has no externalId', async () => {
+            await expect(
+                integration.upsertContactToQuo({ defaultFields: { firstName: 'Test' } }),
+            ).rejects.toThrow('Contact must have an externalId');
+        });
+
+        it('should skip mapping when contact has no phone numbers', async () => {
+            const quoContact = {
+                externalId: 'crm-no-phone',
+                defaultFields: {
+                    firstName: 'NoPhone',
+                },
+            };
+
+            integration.quo.api.listContacts.mockResolvedValue({ data: [] });
+            integration.quo.api.createFriggContact.mockResolvedValue({
+                data: { id: 'quo-no-phone-id', externalId: 'crm-no-phone' },
+            });
+
+            const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+
+            await integration.upsertContactToQuo(quoContact);
+
+            expect(integration.upsertMapping).not.toHaveBeenCalled();
+            expect(consoleSpy).toHaveBeenCalledWith(
+                expect.stringContaining('No phone number'),
+            );
+
+            consoleSpy.mockRestore();
+        });
+
+        it('should handle listContacts API errors gracefully', async () => {
+            const quoContact = {
+                externalId: 'crm-error',
+                defaultFields: { firstName: 'Error' },
+            };
+
+            integration.quo.api.listContacts.mockRejectedValue(
+                new Error('API connection failed'),
+            );
+
+            await expect(
+                integration.upsertContactToQuo(quoContact),
+            ).rejects.toThrow('API connection failed');
+        });
+
+        it('should handle createFriggContact API errors', async () => {
+            const quoContact = {
+                externalId: 'crm-create-error',
+                defaultFields: { firstName: 'CreateError' },
+            };
+
+            integration.quo.api.listContacts.mockResolvedValue({ data: [] });
+            integration.quo.api.createFriggContact.mockRejectedValue(
+                new Error('Create failed'),
+            );
+
+            await expect(
+                integration.upsertContactToQuo(quoContact),
+            ).rejects.toThrow('Create failed');
+        });
+
+        it('should handle updateFriggContact API errors', async () => {
+            const quoContact = {
+                externalId: 'crm-update-error',
+                defaultFields: { firstName: 'UpdateError' },
+            };
+
+            integration.quo.api.listContacts.mockResolvedValue({
+                data: [{ id: 'existing-id', externalId: 'crm-update-error' }],
+            });
+            integration.quo.api.updateFriggContact.mockRejectedValue(
+                new Error('Update failed'),
+            );
+
+            await expect(
+                integration.upsertContactToQuo(quoContact),
+            ).rejects.toThrow('Update failed');
+        });
+    });
+
+    describe('onUpdate - Configuration Updates', () => {
+        /**
+         * TDD Tests for onUpdate with resourceIds → enabledPhoneIds translation
+         *
+         * Requirements:
+         * 1. Translate Quo's `resourceIds` to our internal `enabledPhoneIds`
+         * 2. Use PATCH semantics (merge, don't replace config)
+         * 3. Update Quo webhooks when phone IDs change
+         * 4. Preserve existing config fields not in the update
+         */
+
+        beforeEach(() => {
+            // Set up existing config with webhooks configured
+            integration.config = {
+                enabledPhoneIds: ['PN-old-1', 'PN-old-2'],
+                quoMessageWebhookId: 'webhook-msg-123',
+                quoCallWebhookId: 'webhook-call-123',
+                quoCallSummaryWebhookId: 'webhook-summary-123',
+                someOtherConfig: 'should-be-preserved',
+            };
+
+            integration.id = 'integration-123';
+
+            // Mock Quo API webhook updates
+            integration.quo.api.updateWebhook = jest.fn().mockResolvedValue({});
+
+            // Mock validateConfig to return valid
+            integration.validateConfig = jest
+                .fn()
+                .mockReturnValue({ isValid: true });
+        });
+
+        describe('resourceIds translation', () => {
+            it('should translate resourceIds to enabledPhoneIds', async () => {
+                const newResourceIds = ['PN-new-1', 'PN-new-2', 'PN-new-3'];
+
+                await integration.onUpdate({
+                    config: { resourceIds: newResourceIds },
+                });
+
+                // Verify config was updated with translated field name
+                expect(
+                    integration.commands.updateIntegrationConfig,
+                ).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        config: expect.objectContaining({
+                            enabledPhoneIds: newResourceIds,
+                        }),
+                    }),
+                );
+
+                // Local config should also be updated
+                expect(integration.config.enabledPhoneIds).toEqual(
+                    newResourceIds,
+                );
+            });
+
+            it('should NOT store resourceIds in config (only enabledPhoneIds)', async () => {
+                await integration.onUpdate({
+                    config: { resourceIds: ['PN-1', 'PN-2'] },
+                });
+
+                // resourceIds should be translated, not stored directly
+                expect(integration.config.resourceIds).toBeUndefined();
+                expect(integration.config.enabledPhoneIds).toEqual([
+                    'PN-1',
+                    'PN-2',
+                ]);
+            });
+        });
+
+        describe('PATCH semantics', () => {
+            it('should preserve existing config fields not in update', async () => {
+                await integration.onUpdate({
+                    config: { resourceIds: ['PN-new-1'] },
+                });
+
+                // Original fields should be preserved
+                expect(integration.config.someOtherConfig).toBe(
+                    'should-be-preserved',
+                );
+                expect(integration.config.quoMessageWebhookId).toBe(
+                    'webhook-msg-123',
+                );
+            });
+
+            it('should merge nested objects (deep merge)', async () => {
+                integration.config.nested = {
+                    existingKey: 'existing-value',
+                    anotherKey: 'another-value',
+                };
+
+                await integration.onUpdate({
+                    config: {
+                        nested: { newKey: 'new-value' },
+                    },
+                });
+
+                expect(integration.config.nested).toEqual({
+                    existingKey: 'existing-value',
+                    anotherKey: 'another-value',
+                    newKey: 'new-value',
+                });
+            });
+
+            it('should handle empty config update gracefully', async () => {
+                const originalConfig = { ...integration.config };
+
+                await integration.onUpdate({ config: {} });
+
+                // Config should remain unchanged
+                expect(integration.config.enabledPhoneIds).toEqual(
+                    originalConfig.enabledPhoneIds,
+                );
+            });
+
+            it('should handle undefined config gracefully', async () => {
+                const originalConfig = { ...integration.config };
+
+                await integration.onUpdate({});
+
+                // Config should remain unchanged
+                expect(integration.config.enabledPhoneIds).toEqual(
+                    originalConfig.enabledPhoneIds,
+                );
+            });
+        });
+
+        describe('webhook updates on phone ID changes', () => {
+            it('should update all Quo webhooks when resourceIds change', async () => {
+                const newResourceIds = ['PN-new-1', 'PN-new-2'];
+
+                await integration.onUpdate({
+                    config: { resourceIds: newResourceIds },
+                });
+
+                // All three webhooks should be updated
+                expect(integration.quo.api.updateWebhook).toHaveBeenCalledTimes(
+                    3,
+                );
+                expect(integration.quo.api.updateWebhook).toHaveBeenCalledWith(
+                    'webhook-msg-123',
+                    { resourceIds: newResourceIds },
+                );
+                expect(integration.quo.api.updateWebhook).toHaveBeenCalledWith(
+                    'webhook-call-123',
+                    { resourceIds: newResourceIds },
+                );
+                expect(integration.quo.api.updateWebhook).toHaveBeenCalledWith(
+                    'webhook-summary-123',
+                    { resourceIds: newResourceIds },
+                );
+            });
+
+            it('should NOT update webhooks if phone IDs have not changed', async () => {
+                // Update with same phone IDs
+                await integration.onUpdate({
+                    config: {
+                        resourceIds: ['PN-old-1', 'PN-old-2'],
+                    },
+                });
+
+                expect(
+                    integration.quo.api.updateWebhook,
+                ).not.toHaveBeenCalled();
+            });
+
+            it('should detect phone ID changes regardless of array order', async () => {
+                // Same IDs but different order - should NOT trigger update
+                await integration.onUpdate({
+                    config: {
+                        resourceIds: ['PN-old-2', 'PN-old-1'],
+                    },
+                });
+
+                expect(
+                    integration.quo.api.updateWebhook,
+                ).not.toHaveBeenCalled();
+            });
+
+            it('should update webhooks when phone IDs are added', async () => {
+                await integration.onUpdate({
+                    config: {
+                        resourceIds: ['PN-old-1', 'PN-old-2', 'PN-new-3'],
+                    },
+                });
+
+                expect(integration.quo.api.updateWebhook).toHaveBeenCalledTimes(
+                    3,
+                );
+            });
+
+            it('should update webhooks when phone IDs are removed', async () => {
+                await integration.onUpdate({
+                    config: { resourceIds: ['PN-old-1'] },
+                });
+
+                expect(integration.quo.api.updateWebhook).toHaveBeenCalledTimes(
+                    3,
+                );
+            });
+
+            it('should warn but not fail if Quo API is not configured', async () => {
+                const consoleSpy = jest
+                    .spyOn(console, 'warn')
+                    .mockImplementation();
+                integration.quo = null;
+
+                await integration.onUpdate({
+                    config: { resourceIds: ['PN-new-1'] },
+                });
+
+                expect(consoleSpy).toHaveBeenCalledWith(
+                    expect.stringContaining('Quo API not configured'),
+                );
+                consoleSpy.mockRestore();
+            });
+        });
+
+        describe('error handling', () => {
+            it('should throw if webhook update fails', async () => {
+                integration.quo.api.updateWebhook.mockRejectedValue(
+                    new Error('Webhook update failed'),
+                );
+
+                await expect(
+                    integration.onUpdate({
+                        config: { resourceIds: ['PN-new-1'] },
+                    }),
+                ).rejects.toThrow('Webhook update failed');
+            });
+
+            it('should throw if webhooks are not configured but phone IDs change', async () => {
+                integration.config.quoMessageWebhookId = null;
+
+                await expect(
+                    integration.onUpdate({
+                        config: { resourceIds: ['PN-new-1'] },
+                    }),
+                ).rejects.toThrow('Webhooks not configured');
+            });
+        });
+
+        describe('validation', () => {
+            it('should call validateConfig after update', async () => {
+                await integration.onUpdate({
+                    config: { resourceIds: ['PN-1'] },
+                });
+
+                expect(integration.validateConfig).toHaveBeenCalled();
+            });
+
+            it('should return validation result', async () => {
+                integration.validateConfig.mockReturnValue({
+                    isValid: true,
+                    errors: [],
+                });
+
+                const result = await integration.onUpdate({
+                    config: { resourceIds: ['PN-1'] },
+                });
+
+                expect(result).toEqual({ isValid: true, errors: [] });
+            });
+        });
+
+        describe('_translateConfigFields', () => {
+            it('should translate resourceIds to enabledPhoneIds', () => {
+                const result = integration._translateConfigFields({
+                    resourceIds: ['PN-1', 'PN-2'],
+                    otherField: 'value',
+                });
+
+                expect(result).toEqual({
+                    enabledPhoneIds: ['PN-1', 'PN-2'],
+                    otherField: 'value',
+                });
+                expect(result.resourceIds).toBeUndefined();
+            });
+
+            it('should handle null config', () => {
+                expect(integration._translateConfigFields(null)).toEqual({});
+            });
+
+            it('should handle undefined config', () => {
+                expect(integration._translateConfigFields(undefined)).toEqual(
+                    {},
+                );
+            });
+
+            it('should pass through config without resourceIds unchanged', () => {
+                const result = integration._translateConfigFields({
+                    someField: 'value',
+                    nested: { key: 'val' },
+                });
+
+                expect(result).toEqual({
+                    someField: 'value',
+                    nested: { key: 'val' },
+                });
+            });
         });
     });
 });

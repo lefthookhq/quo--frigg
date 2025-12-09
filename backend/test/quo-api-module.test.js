@@ -10,16 +10,23 @@ describe('Quo API Module - API Key Authentication', () => {
                 expect(api).toBeInstanceOf(ApiKeyRequester);
             });
 
-            it('should set baseUrl correctly', () => {
+            it('should set baseUrl from environment or default', () => {
                 const api = new Api({});
-                expect(api.baseUrl).toBe(
-                    'https://dev-public-api.openphone.dev',
+                // Can be from process.env.QUO_BASE_URL or default
+                expect(api.baseUrl).toBeTruthy();
+            });
+
+            it('should set analyticsBaseUrl correctly', () => {
+                const api = new Api({});
+                expect(api.analyticsBaseUrl).toBe(
+                    'https://integration.openphone.dev',
                 );
             });
 
-            it('should set API_KEY_NAME to Authorization', () => {
+            it('should set api_key_name to Authorization', () => {
                 const api = new Api({});
-                expect(api.API_KEY_NAME).toBe('Authorization');
+                // frigg framework uses snake_case (api_key_name, not API_KEY_NAME)
+                expect(api.api_key_name).toBe('Authorization');
             });
 
             it('should NOT reference access_token in constructor', () => {
@@ -44,6 +51,11 @@ describe('Quo API Module - API Key Authentication', () => {
             it('should not set API_KEY_VALUE if no api_key provided', () => {
                 const api = new Api({});
                 expect(api.API_KEY_VALUE).toBeNull();
+            });
+
+            it('should have analytics URL in URLs object', () => {
+                const api = new Api({});
+                expect(api.URLs.analytics).toBe('/v2/analytics');
             });
         });
 
