@@ -19,7 +19,7 @@ describe('Quo API Module - API Key Authentication', () => {
             it('should set analyticsBaseUrl correctly', () => {
                 const api = new Api({});
                 expect(api.analyticsBaseUrl).toBe(
-                    'https://integration.openphoneapi.com',
+                    'https://integration.openphone.dev',
                 );
             });
 
