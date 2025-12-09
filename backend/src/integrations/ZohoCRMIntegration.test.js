@@ -40,6 +40,7 @@ jest.mock('../base/BaseCRMIntegration', () => {
 });
 
 const ZohoCRMIntegration = require('./ZohoCRMIntegration');
+const QuoWebhookEventProcessor = require('../base/services/QuoWebhookEventProcessor');
 
 describe('ZohoCRMIntegration (Refactored)', () => {
     let integration;
@@ -685,6 +686,43 @@ describe('ZohoCRMIntegration (Refactored)', () => {
                         operation,
                     ),
                 ).rejects.toThrow('Contact update failed');
+            });
+        });
+
+        describe('_handleQuoMessageEvent', () => {
+            it('should use HTML formatting without emoji for message content', async () => {
+                const processMessageEventSpy = jest
+                    .spyOn(QuoWebhookEventProcessor, 'processMessageEvent')
+                    .mockResolvedValue({
+                        received: true,
+                        logged: true,
+                    });
+
+                const webhookData = {
+                    data: {
+                        object: {
+                            id: 'msg-123',
+                            direction: 'incoming',
+                            from: '+15551234567',
+                            to: '+15559876543',
+                            text: 'Test message',
+                        },
+                    },
+                };
+
+                await integration._handleQuoMessageEvent(webhookData);
+
+                expect(processMessageEventSpy).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        webhookData,
+                        crmAdapter: expect.objectContaining({
+                            formatMethod: 'html',
+                            useEmoji: false,
+                        }),
+                    }),
+                );
+
+                processMessageEventSpy.mockRestore();
             });
         });
     });

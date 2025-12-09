@@ -320,6 +320,7 @@ describe('PipedriveIntegration (Refactored)', () => {
                 expect(result).toEqual({
                     externalId: '123',
                     source: 'openphone-pipedrive',
+                    sourceEntityType: 'person',
                     sourceUrl: 'https://app.pipedrive.com/person/123',
                     defaultFields: {
                         firstName: 'John',

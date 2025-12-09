@@ -833,6 +833,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
             phoneNumbersMetadata: this.config?.phoneNumbersMetadata || [],
             crmAdapter: {
                 formatMethod: 'plainText',
+                useEmoji: true,
                 findContactByPhone: async (phone) => {
                     currentContactPhone = phone;
                     axiscareContactDetails =

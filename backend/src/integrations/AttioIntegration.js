@@ -1710,6 +1710,7 @@ class AttioIntegration extends BaseCRMIntegration {
             phoneNumbersMetadata: this.config?.phoneNumbersMetadata || [],
             crmAdapter: {
                 formatMethod: 'markdown',
+                useEmoji: true,
                 findContactByPhone: (phone) =>
                     this._findAttioContactFromQuoWebhook(phone),
                 createCallActivity: async (contactId, activity) => {
@@ -1754,6 +1755,7 @@ class AttioIntegration extends BaseCRMIntegration {
             quoApi: this.quo.api,
             crmAdapter: {
                 formatMethod: 'markdown',
+                useEmoji: true,
                 findContactByPhone: (phone) =>
                     this._findAttioContactFromQuoWebhook(phone),
                 createMessageActivity: async (contactId, activity) => {

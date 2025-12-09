@@ -49,7 +49,7 @@ class QuoCallContentBuilder {
                         voicemail: '',
                     },
                 };
-            default: // markdown
+            default:
                 return {
                     formatMethod: 'markdown',
                     lineBreak: '\n',
@@ -144,14 +144,22 @@ class QuoCallContentBuilder {
         inboxNumber,
         contactPhone,
         formatOptions,
+        useEmoji = true,
     }) {
-        const { emoji } = formatOptions || this.getFormatOptions('markdown');
-        const prefix = emoji.call ? `${emoji.call}  ` : '';
+        if (useEmoji) {
+            const { emoji } =
+                formatOptions || this.getFormatOptions('markdown');
+            const prefix = emoji.call ? `${emoji.call}  ` : '';
+            if (call.direction === 'outgoing') {
+                return `${prefix}Call ${inboxName} ${inboxNumber} → ${contactPhone}`;
+            }
+            return `${prefix}Call ${contactPhone} → ${inboxName} ${inboxNumber}`;
+        }
 
         if (call.direction === 'outgoing') {
-            return `${prefix}Call ${inboxName} ${inboxNumber} → ${contactPhone}`;
+            return `Call from ${inboxNumber} to ${contactPhone}`;
         }
-        return `${prefix}Call ${contactPhone} → ${inboxName} ${inboxNumber}`;
+        return `Call from ${contactPhone} to ${inboxNumber}`;
     }
 
     /**
@@ -171,14 +179,22 @@ class QuoCallContentBuilder {
         inboxNumber,
         contactPhone,
         formatOptions,
+        useEmoji = true,
     }) {
-        const { emoji } = formatOptions || this.getFormatOptions('markdown');
-        const prefix = emoji.message ? `${emoji.message} ` : '';
+        if (useEmoji) {
+            const { emoji } =
+                formatOptions || this.getFormatOptions('markdown');
+            const prefix = emoji.message ? `${emoji.message} ` : '';
+            if (message.direction === 'outgoing') {
+                return `${prefix}Message ${inboxName} ${inboxNumber} → ${contactPhone}`;
+            }
+            return `${prefix}Message ${contactPhone} → ${inboxName} ${inboxNumber}`;
+        }
 
         if (message.direction === 'outgoing') {
-            return `${prefix}Message ${inboxName} ${inboxNumber} → ${contactPhone}`;
+            return `Message from ${inboxNumber} to ${contactPhone}`;
         }
-        return `${prefix}Message ${contactPhone} → ${inboxName} ${inboxNumber}`;
+        return `Message from ${contactPhone} to ${inboxNumber}`;
     }
 
     /**
@@ -192,15 +208,18 @@ class QuoCallContentBuilder {
      * @returns {string} Formatted content
      */
     static buildMessageContent({ message, userName, deepLink, formatOptions }) {
-        const { link, lineBreakDouble } = formatOptions;
+        const { link, lineBreakDouble, formatMethod } = formatOptions;
 
         const messageText = message.text || '(no text)';
         const deepLinkLine = link('View the message activity in Quo', deepLink);
 
+        let content;
         if (message.direction === 'outgoing') {
-            return `${userName} sent: ${messageText}${lineBreakDouble}${deepLinkLine}`;
+            content = `${userName} sent: ${messageText}${lineBreakDouble}${deepLinkLine}`;
+        } else {
+            content = `Received: ${messageText}${lineBreakDouble}${deepLinkLine}`;
         }
-        return `Received: ${messageText}${lineBreakDouble}${deepLinkLine}`;
+        return formatMethod === 'html' ? `<span>${content}</span>` : content;
     }
 
     /**
@@ -303,6 +322,8 @@ class QuoCallContentBuilder {
      * @returns {string} Complete formatted content
      */
     static buildCallContent({ call, userName, deepLink, formatOptions }) {
+        const { formatMethod } = formatOptions;
+
         // Start with status description
         let content = this.buildCallStatus({ call, userName });
 
@@ -318,7 +339,7 @@ class QuoCallContentBuilder {
         // Add deep link
         content += this.buildDeepLink({ deepLink, formatOptions });
 
-        return content;
+        return formatMethod === 'html' ? `<span>${content}</span>` : content;
     }
 
     /**

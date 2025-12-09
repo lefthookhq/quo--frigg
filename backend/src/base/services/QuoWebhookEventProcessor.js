@@ -37,6 +37,7 @@ class QuoWebhookEventProcessor {
         const formatOptions = QuoCallContentBuilder.getFormatOptions(
             crmAdapter.formatMethod,
         );
+        const useEmoji = crmAdapter.useEmoji !== false;
 
         console.log(`[QuoEventProcessor] Processing call.completed: ${callId}`);
 
@@ -100,6 +101,7 @@ class QuoWebhookEventProcessor {
                     inboxNumber,
                     contactPhone,
                     formatOptions,
+                    useEmoji,
                 });
 
                 const content = QuoCallContentBuilder.buildCallContent({
@@ -200,6 +202,7 @@ class QuoWebhookEventProcessor {
         const formatOptions = QuoCallContentBuilder.getFormatOptions(
             crmAdapter.formatMethod,
         );
+        const useEmoji = crmAdapter.useEmoji !== false;
 
         console.log(
             `[QuoEventProcessor] Processing message: ${messageId} (${eventType})`,
@@ -266,6 +269,7 @@ class QuoWebhookEventProcessor {
             inboxNumber,
             contactPhone,
             formatOptions,
+            useEmoji,
         });
 
         const content = QuoCallContentBuilder.buildMessageContent({

@@ -1300,7 +1300,8 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             webhookData,
             quoApi: this.quo.api,
             crmAdapter: {
-                formatMethod: 'plainText',
+                formatMethod: 'html',
+                useEmoji: false,
                 findContactByPhone: async (phone) => {
                     return await this._findZohoContactByPhone(phone);
                 },

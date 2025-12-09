@@ -1309,6 +1309,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
             phoneNumbersMetadata: this.config?.phoneNumbersMetadata || [],
             crmAdapter: {
                 formatMethod: 'html',
+                useEmoji: true,
                 findContactByPhone: async (phone) => {
                     try {
                         return await this._findPipedriveContactByPhone(phone);
@@ -1354,6 +1355,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
             quoApi: this.quo.api,
             crmAdapter: {
                 formatMethod: 'html',
+                useEmoji: true,
                 findContactByPhone: async (phone) => {
                     try {
                         return await this._findPipedriveContactByPhone(phone);

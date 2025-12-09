@@ -229,6 +229,32 @@ describe('QuoCallContentBuilder', () => {
 
             expect(result).toBe('Call 📞 Sales +1234567890 → +0987654321');
         });
+
+        it('builds outgoing call title with "from X to Y" format when useEmoji is false', () => {
+            const formatOptions =
+                QuoCallContentBuilder.getFormatOptions('markdown');
+            const result = QuoCallContentBuilder.buildCallTitle({
+                call: { direction: 'outgoing' },
+                ...baseParams,
+                formatOptions,
+                useEmoji: false,
+            });
+
+            expect(result).toBe('Call from +1234567890 to +0987654321');
+        });
+
+        it('builds incoming call title with "from X to Y" format when useEmoji is false', () => {
+            const formatOptions =
+                QuoCallContentBuilder.getFormatOptions('markdown');
+            const result = QuoCallContentBuilder.buildCallTitle({
+                call: { direction: 'incoming' },
+                ...baseParams,
+                formatOptions,
+                useEmoji: false,
+            });
+
+            expect(result).toBe('Call from +0987654321 to +1234567890');
+        });
     });
 
     describe('buildMessageTitle', () => {
@@ -276,6 +302,32 @@ describe('QuoCallContentBuilder', () => {
             });
 
             expect(result).toBe('Message 💬 Support +1234567890 → +0987654321');
+        });
+
+        it('builds outgoing message title with "from X to Y" format when useEmoji is false', () => {
+            const formatOptions =
+                QuoCallContentBuilder.getFormatOptions('markdown');
+            const result = QuoCallContentBuilder.buildMessageTitle({
+                message: { direction: 'outgoing' },
+                ...baseParams,
+                formatOptions,
+                useEmoji: false,
+            });
+
+            expect(result).toBe('Message from +1234567890 to +0987654321');
+        });
+
+        it('builds incoming message title with "from X to Y" format when useEmoji is false', () => {
+            const formatOptions =
+                QuoCallContentBuilder.getFormatOptions('markdown');
+            const result = QuoCallContentBuilder.buildMessageTitle({
+                message: { direction: 'incoming' },
+                ...baseParams,
+                formatOptions,
+                useEmoji: false,
+            });
+
+            expect(result).toBe('Message from +0987654321 to +1234567890');
         });
     });
 

@@ -289,6 +289,7 @@ describe('AttioIntegration (Refactored)', () => {
                 expect(result).toEqual({
                     externalId: 'rec123',
                     source: 'openphone-attio',
+                    sourceEntityType: 'people',
                     sourceUrl: null,
                     defaultFields: {
                         firstName: 'John',

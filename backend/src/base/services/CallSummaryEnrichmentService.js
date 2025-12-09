@@ -202,13 +202,8 @@ class CallSummaryEnrichmentService {
     }) {
         const { summary = [], nextSteps = [], jobs = [] } = summaryData;
 
-        // Support formatMethod enum: 'html', 'markdown', 'plainText' (default: 'markdown')
-        // Also support legacy useHtmlFormat for backward compatibility
-        const formatMethod =
-            formatters.formatMethod ||
-            (formatters.useHtmlFormat === true ? 'html' : 'markdown');
+        const formatMethod = formatters.formatMethod || 'markdown';
 
-        // Use QuoCallContentBuilder for consistent format options
         const formatOptions =
             QuoCallContentBuilder.getFormatOptions(formatMethod);
         const {
@@ -218,10 +213,8 @@ class CallSummaryEnrichmentService {
             lineBreakDouble: nlnl,
         } = formatOptions;
 
-        // Start with call header (status line)
         let content = formatters.formatCallHeader(callDetails);
 
-        // Add recording links inline with status (using formatCallRecordings utility)
         if (recordings.length > 0) {
             const formattedRecordings = formatCallRecordings(
                 recordings,
@@ -231,7 +224,6 @@ class CallSummaryEnrichmentService {
             content += ' / ' + formattedRecordings;
         }
 
-        // Add voicemail
         if (voicemail) {
             content += nlnl + bold('Voicemail:') + nl;
             const vmDuration = voicemail.duration
@@ -245,7 +237,6 @@ class CallSummaryEnrichmentService {
             }
         }
 
-        // Add AI summary
         if (summary.length > 0) {
             content += nlnl + bold('Summary:') + nl;
             summary.forEach((point) => {
@@ -253,7 +244,6 @@ class CallSummaryEnrichmentService {
             });
         }
 
-        // Add next steps
         if (nextSteps.length > 0) {
             content += nl + bold('Next Steps:') + nl;
             nextSteps.forEach((step) => {
@@ -261,17 +251,14 @@ class CallSummaryEnrichmentService {
             });
         }
 
-        // Add jobs (AI-extracted action items from Sona)
-        // Jobs structure: [{ icon, name, result: { data: [{ name, value }] } }]
+        // Jobs: AI-extracted action items from Sona
         if (jobs.length > 0) {
             jobs.forEach((job) => {
-                // Format job title with icon (e.g., "✍️ Message taking")
                 const jobTitle = job.icon
                     ? `${job.icon} ${job.name}`
                     : job.name;
                 content += nl + bold(`${jobTitle}:`) + nl;
 
-                // Display each data item in the job result
                 if (
                     job.result &&
                     job.result.data &&
@@ -284,13 +271,12 @@ class CallSummaryEnrichmentService {
             });
         }
 
-        // Add deep link
         content += formatters.formatDeepLink(callDetails);
 
-        // Build title
         const title = formatters.formatTitle(callDetails);
-
-        return { content, title };
+        const wrappedContent =
+            formatMethod === 'html' ? `<span>${content}</span>` : content;
+        return { content: wrappedContent, title };
     }
 }
 
