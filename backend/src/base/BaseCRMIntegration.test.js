@@ -317,37 +317,6 @@ describe('BaseCRMIntegration', () => {
             });
         });
 
-        // NOTE: onUpdate was refactored to handle configuration updates with deep merge
-        // and phone ID change detection (line 1415). The old triggerInitialSync behavior
-        // (line 481) has been overridden. These tests test the old behavior.
-        it.skip('should handle onUpdate with triggerInitialSync', async () => {
-            const startInitialSyncSpy = jest
-                .spyOn(integration, 'startInitialSync')
-                .mockResolvedValue({ processIds: ['process-1'] });
-
-            await integration.onUpdate({
-                integrationId: 'integration-123',
-                config: { triggerInitialSync: true },
-            });
-
-            expect(startInitialSyncSpy).toHaveBeenCalledWith({
-                integrationId: 'integration-123',
-            });
-        });
-
-        it.skip('should not trigger sync if triggerInitialSync is false', async () => {
-            const startInitialSyncSpy = jest.spyOn(
-                integration,
-                'startInitialSync',
-            );
-
-            await integration.onUpdate({
-                integrationId: 'integration-123',
-                config: { triggerInitialSync: false },
-            });
-
-            expect(startInitialSyncSpy).not.toHaveBeenCalled();
-        });
     });
 
     describe('public orchestration methods', () => {

@@ -465,36 +465,13 @@ class BaseCRMIntegration extends IntegrationBase {
         return {
             jsonSchema: {
                 type: 'object',
-                properties: {
-                    triggerInitialSync: {
-                        type: 'boolean',
-                        title: 'Trigger Initial Sync Now?',
-                        default: false,
-                    },
-                },
+                properties: {},
             },
             uiSchema: {
                 type: 'VerticalLayout',
-                elements: [
-                    {
-                        type: 'Control',
-                        scope: '#/properties/triggerInitialSync',
-                    },
-                ],
+                elements: [],
             },
         };
-    }
-
-    /**
-     * Called when user updates config
-     * @param {Object} params
-     * @param {string} params.integrationId - Integration ID
-     * @param {Object} params.config - Updated config
-     */
-    async onUpdate({ integrationId, config }) {
-        if (config && config.triggerInitialSync) {
-            await this.startInitialSync({ integrationId });
-        }
     }
 
     /**
