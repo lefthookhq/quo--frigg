@@ -48,8 +48,8 @@ app.get('/redirect/:appId', async (req, res) => {
         if (FRIGG_API_KEY) {
             console.log(`Using x-frigg-api-key header for authentication`);
             headers['x-frigg-api-key'] = FRIGG_API_KEY;
-            headers['x-frigg-appUserId'] = FRIGG_APP_USER_ID;
-            headers['x-frigg-appOrgId'] = FRIGG_APP_ORG_ID;
+            headers['x-frigg-appuserid'] = FRIGG_APP_USER_ID;
+            headers['x-frigg-apporgid'] = FRIGG_APP_ORG_ID;
         }
 
         const response = await fetch(`${BACKEND_URL}/api/authorize`, {

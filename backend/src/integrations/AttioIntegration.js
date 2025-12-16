@@ -6,7 +6,6 @@ const CallSummaryEnrichmentService = require('../base/services/CallSummaryEnrich
 const QuoWebhookEventProcessor = require('../base/services/QuoWebhookEventProcessor');
 const QuoCallContentBuilder = require('../base/services/QuoCallContentBuilder');
 const { filterExternalParticipants } = require('../utils/participantFilter');
-const { logWebhook, logApiCall } = require('../utils/requestLogger');
 const { QUO_ANALYTICS_EVENTS, QuoWebhookEvents } = require('../base/constants');
 const { trackAnalyticsEvent } = require('../utils/trackAnalyticsEvent');
 
@@ -1633,7 +1632,9 @@ class AttioIntegration extends BaseCRMIntegration {
             if (eventType === QuoWebhookEvents.CALL_COMPLETED) {
                 // Phase 1: Create initial call note
                 result = await this._handleQuoCallEvent(body);
-            } else if (eventType === QuoWebhookEvents.CALL_RECORDING_COMPLETED) {
+            } else if (
+                eventType === QuoWebhookEvents.CALL_RECORDING_COMPLETED
+            ) {
                 // Phase 2: Enrich with recording (find existing note, delete, create new with recording)
                 result = await this._handleQuoCallRecordingEvent(body);
             } else if (eventType === QuoWebhookEvents.CALL_SUMMARY_COMPLETED) {
@@ -1835,10 +1836,12 @@ class AttioIntegration extends BaseCRMIntegration {
             this.quo.api.getUser(call.userId),
         ]);
 
-        const inboxName = QuoCallContentBuilder.buildInboxName(phoneNumberDetails);
+        const inboxName =
+            QuoCallContentBuilder.buildInboxName(phoneNumberDetails);
         const inboxNumber = phoneNumberDetails.data?.number || '';
         const userName = QuoCallContentBuilder.buildUserName(userDetails);
-        const formatOptions = QuoCallContentBuilder.getFormatOptions('markdown');
+        const formatOptions =
+            QuoCallContentBuilder.getFormatOptions('markdown');
 
         const results = [];
 
@@ -1988,10 +1991,12 @@ class AttioIntegration extends BaseCRMIntegration {
             this.quo.api.getUser(call.userId),
         ]);
 
-        const inboxName = QuoCallContentBuilder.buildInboxName(phoneNumberDetails);
+        const inboxName =
+            QuoCallContentBuilder.buildInboxName(phoneNumberDetails);
         const inboxNumber = phoneNumberDetails.data?.number || '';
         const userName = QuoCallContentBuilder.buildUserName(userDetails);
-        const formatOptions = QuoCallContentBuilder.getFormatOptions('markdown');
+        const formatOptions =
+            QuoCallContentBuilder.getFormatOptions('markdown');
 
         const results = [];
 
