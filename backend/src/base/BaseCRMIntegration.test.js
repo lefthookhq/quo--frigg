@@ -49,6 +49,18 @@ describe('BaseCRMIntegration', () => {
                 },
             };
 
+            static WEBHOOK_EVENTS = {
+                QUO_MESSAGES: ['message.received', 'message.delivered'],
+                QUO_CALLS: ['call.completed', 'call.recording.completed'],
+                QUO_CALL_SUMMARIES: ['call.summary.completed'],
+            };
+
+            static WEBHOOK_LABELS = {
+                QUO_MESSAGES: 'Test CRM - Messages',
+                QUO_CALLS: 'Test CRM - Calls',
+                QUO_CALL_SUMMARIES: 'Test CRM - Call Summaries',
+            };
+
             async fetchPersonPage(params) {
                 return buildPersonPageResponse({
                     data: [
@@ -1243,13 +1255,35 @@ describe('BaseCRMIntegration', () => {
 
             integration.id = 'integration-123';
 
-            // Mock Quo API webhook updates
-            integration.quo.api.updateWebhook = jest.fn().mockResolvedValue({});
+            // Mock Quo API methods for new delete + create webhook pattern
+            let webhookIdCounter = 0;
+            integration.quo.api.listPhoneNumbers = jest.fn().mockResolvedValue({
+                data: [
+                    { id: 'PN-1', number: '+11111111111', name: 'Phone 1' },
+                    { id: 'PN-2', number: '+12222222222', name: 'Phone 2' },
+                    { id: 'PN-new-1', number: '+13333333333', name: 'New Phone 1' },
+                    { id: 'PN-new-2', number: '+14444444444', name: 'New Phone 2' },
+                    { id: 'PN-new-3', number: '+15555555555', name: 'New Phone 3' },
+                ],
+            });
+            integration.quo.api.deleteWebhook = jest.fn().mockResolvedValue({ success: true });
+            integration.quo.api.createMessageWebhook = jest.fn().mockImplementation(() => {
+                const id = `new-msg-webhook-${++webhookIdCounter}`;
+                return Promise.resolve({ data: { id, key: `key-${id}` } });
+            });
+            integration.quo.api.createCallWebhook = jest.fn().mockImplementation(() => {
+                const id = `new-call-webhook-${++webhookIdCounter}`;
+                return Promise.resolve({ data: { id, key: `key-${id}` } });
+            });
+            integration.quo.api.createCallSummaryWebhook = jest.fn().mockImplementation(() => {
+                const id = `new-summary-webhook-${++webhookIdCounter}`;
+                return Promise.resolve({ data: { id, key: `key-${id}` } });
+            });
 
-            // Mock validateConfig to return valid
-            integration.validateConfig = jest
-                .fn()
-                .mockReturnValue({ isValid: true });
+            // Mock _generateWebhookUrl
+            integration._generateWebhookUrl = jest.fn().mockReturnValue(
+                'https://example.com/webhooks/integration-123'
+            );
         });
 
         describe('resourceIds translation', () => {
@@ -1292,18 +1326,22 @@ describe('BaseCRMIntegration', () => {
         });
 
         describe('PATCH semantics', () => {
-            it('should preserve existing config fields not in update', async () => {
+            it('should preserve non-webhook config fields when phone IDs change', async () => {
                 await integration.onUpdate({
                     config: { resourceIds: ['PN-new-1'] },
                 });
 
-                // Original fields should be preserved
+                // Non-webhook fields should be preserved
                 expect(integration.config.someOtherConfig).toBe(
                     'should-be-preserved',
                 );
-                expect(integration.config.quoMessageWebhookId).toBe(
+
+                // Webhook IDs will change because webhooks are recreated
+                // when phone IDs change (delete + create pattern)
+                expect(integration.config.quoMessageWebhookId).not.toBe(
                     'webhook-msg-123',
                 );
+                expect(integration.config.quoMessageWebhookId).toBeDefined();
             });
 
             it('should merge nested objects (deep merge)', async () => {
@@ -1349,28 +1387,33 @@ describe('BaseCRMIntegration', () => {
         });
 
         describe('webhook updates on phone ID changes', () => {
-            it('should update all Quo webhooks when resourceIds change', async () => {
+            it('should recreate all Quo webhooks when resourceIds change', async () => {
                 const newResourceIds = ['PN-new-1', 'PN-new-2'];
 
                 await integration.onUpdate({
                     config: { resourceIds: newResourceIds },
                 });
 
-                // All three webhooks should be updated
-                expect(integration.quo.api.updateWebhook).toHaveBeenCalledTimes(
-                    3,
+                // Old webhooks should be deleted
+                expect(integration.quo.api.deleteWebhook).toHaveBeenCalledWith('webhook-msg-123');
+                expect(integration.quo.api.deleteWebhook).toHaveBeenCalledWith('webhook-call-123');
+                expect(integration.quo.api.deleteWebhook).toHaveBeenCalledWith('webhook-summary-123');
+
+                // New webhooks should be created with updated resourceIds
+                expect(integration.quo.api.createMessageWebhook).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        resourceIds: newResourceIds,
+                    }),
                 );
-                expect(integration.quo.api.updateWebhook).toHaveBeenCalledWith(
-                    'webhook-msg-123',
-                    { resourceIds: newResourceIds },
+                expect(integration.quo.api.createCallWebhook).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        resourceIds: newResourceIds,
+                    }),
                 );
-                expect(integration.quo.api.updateWebhook).toHaveBeenCalledWith(
-                    'webhook-call-123',
-                    { resourceIds: newResourceIds },
-                );
-                expect(integration.quo.api.updateWebhook).toHaveBeenCalledWith(
-                    'webhook-summary-123',
-                    { resourceIds: newResourceIds },
+                expect(integration.quo.api.createCallSummaryWebhook).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        resourceIds: newResourceIds,
+                    }),
                 );
             });
 
@@ -1382,9 +1425,8 @@ describe('BaseCRMIntegration', () => {
                     },
                 });
 
-                expect(
-                    integration.quo.api.updateWebhook,
-                ).not.toHaveBeenCalled();
+                expect(integration.quo.api.deleteWebhook).not.toHaveBeenCalled();
+                expect(integration.quo.api.createMessageWebhook).not.toHaveBeenCalled();
             });
 
             it('should detect phone ID changes regardless of array order', async () => {
@@ -1395,31 +1437,32 @@ describe('BaseCRMIntegration', () => {
                     },
                 });
 
-                expect(
-                    integration.quo.api.updateWebhook,
-                ).not.toHaveBeenCalled();
+                expect(integration.quo.api.deleteWebhook).not.toHaveBeenCalled();
+                expect(integration.quo.api.createMessageWebhook).not.toHaveBeenCalled();
             });
 
-            it('should update webhooks when phone IDs are added', async () => {
+            it('should recreate webhooks when phone IDs are added', async () => {
                 await integration.onUpdate({
                     config: {
                         resourceIds: ['PN-old-1', 'PN-old-2', 'PN-new-3'],
                     },
                 });
 
-                expect(integration.quo.api.updateWebhook).toHaveBeenCalledTimes(
-                    3,
-                );
+                // Webhooks should be recreated
+                expect(integration.quo.api.createMessageWebhook).toHaveBeenCalledTimes(1);
+                expect(integration.quo.api.createCallWebhook).toHaveBeenCalledTimes(1);
+                expect(integration.quo.api.createCallSummaryWebhook).toHaveBeenCalledTimes(1);
             });
 
-            it('should update webhooks when phone IDs are removed', async () => {
+            it('should recreate webhooks when phone IDs are removed', async () => {
                 await integration.onUpdate({
                     config: { resourceIds: ['PN-old-1'] },
                 });
 
-                expect(integration.quo.api.updateWebhook).toHaveBeenCalledTimes(
-                    3,
-                );
+                // Webhooks should be recreated
+                expect(integration.quo.api.createMessageWebhook).toHaveBeenCalledTimes(1);
+                expect(integration.quo.api.createCallWebhook).toHaveBeenCalledTimes(1);
+                expect(integration.quo.api.createCallSummaryWebhook).toHaveBeenCalledTimes(1);
             });
 
             it('should warn but not fail if Quo API is not configured', async () => {
@@ -1440,16 +1483,16 @@ describe('BaseCRMIntegration', () => {
         });
 
         describe('error handling', () => {
-            it('should throw if webhook update fails', async () => {
-                integration.quo.api.updateWebhook.mockRejectedValue(
-                    new Error('Webhook update failed'),
+            it('should throw if webhook creation fails', async () => {
+                integration.quo.api.createMessageWebhook.mockRejectedValue(
+                    new Error('Webhook creation failed'),
                 );
 
                 await expect(
                     integration.onUpdate({
                         config: { resourceIds: ['PN-new-1'] },
                     }),
-                ).rejects.toThrow('Webhook update failed');
+                ).rejects.toThrow('Webhook creation failed');
             });
 
             it('should throw if webhooks are not configured but phone IDs change', async () => {
@@ -1463,26 +1506,18 @@ describe('BaseCRMIntegration', () => {
             });
         });
 
-        describe('validation', () => {
-            it('should call validateConfig after update', async () => {
-                await integration.onUpdate({
-                    config: { resourceIds: ['PN-1'] },
-                });
-
-                expect(integration.validateConfig).toHaveBeenCalled();
-            });
-
-            it('should return validation result', async () => {
-                integration.validateConfig.mockReturnValue({
-                    isValid: true,
-                    errors: [],
-                });
-
+        describe('return value', () => {
+            it('should return success status and updated config', async () => {
                 const result = await integration.onUpdate({
                     config: { resourceIds: ['PN-1'] },
                 });
 
-                expect(result).toEqual({ isValid: true, errors: [] });
+                expect(result).toEqual({
+                    success: true,
+                    config: expect.objectContaining({
+                        enabledPhoneIds: ['PN-1'],
+                    }),
+                });
             });
         });
 
