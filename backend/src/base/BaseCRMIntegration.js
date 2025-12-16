@@ -1398,6 +1398,52 @@ class BaseCRMIntegration extends IntegrationBase {
     }
 
     /**
+     * Fetch phone metadata for specific phone IDs from Quo API
+     */
+    async _fetchPhoneMetadataForIds(phoneIds) {
+        if (!this.quo?.api) {
+            throw new Error(
+                'Quo API not configured - cannot fetch phone metadata',
+            );
+        }
+
+        if (!phoneIds || phoneIds.length === 0) {
+            console.log('[Quo] No phone IDs provided, returning empty metadata');
+            return [];
+        }
+
+        console.log(
+            `[Quo] Fetching metadata for ${phoneIds.length} phone number(s)`,
+        );
+
+        // Fetch all phone numbers from Quo API
+        // Note: Quo API doesn't support filtering by IDs, so we fetch all and filter locally
+        const response = await this.quo.api.listPhoneNumbers({
+            maxResults: 100,
+        });
+
+        const allPhones = response.data || [];
+        const phoneIdSet = new Set(phoneIds);
+        const matchedPhones = allPhones.filter((phone) =>
+            phoneIdSet.has(phone.id),
+        );
+
+        const foundIds = new Set(matchedPhones.map((p) => p.id));
+        const missingIds = phoneIds.filter((id) => !foundIds.has(id));
+        if (missingIds.length > 0) {
+            console.warn(
+                `[Quo] ${missingIds.length} phone ID(s) not found in Quo: ${missingIds.join(', ')}`,
+            );
+        }
+
+        console.log(
+            `[Quo] ✓ Fetched metadata for ${matchedPhones.length}/${phoneIds.length} phone number(s)`,
+        );
+
+        return matchedPhones;
+    }
+
+    /**
      * Create Quo webhooks with phone number IDs as resourceIds
      * This enables filtering webhook events to specific phone numbers only.
      *
@@ -1419,7 +1465,6 @@ class BaseCRMIntegration extends IntegrationBase {
             status: 'enabled',
         };
 
-        // Only add resourceIds if phone IDs are configured
         if (phoneIds.length > 0) {
             webhookData.resourceIds = phoneIds;
             console.log(
@@ -1431,7 +1476,6 @@ class BaseCRMIntegration extends IntegrationBase {
             );
         }
 
-        // Get webhook events and labels from child class
         const WEBHOOK_EVENTS = this.constructor.WEBHOOK_EVENTS;
         const WEBHOOK_LABELS = this.constructor.WEBHOOK_LABELS;
 
@@ -1441,7 +1485,6 @@ class BaseCRMIntegration extends IntegrationBase {
             );
         }
 
-        // Create message webhook
         const messageWebhookResponse = await this.quo.api.createMessageWebhook({
             ...webhookData,
             events: WEBHOOK_EVENTS.QUO_MESSAGES,
@@ -1463,7 +1506,6 @@ class BaseCRMIntegration extends IntegrationBase {
         const messageWebhookId = messageWebhookResponse.data.id;
         const messageWebhookKey = messageWebhookResponse.data.key;
 
-        // Create call webhook
         const callWebhookResponse = await this.quo.api.createCallWebhook({
             ...webhookData,
             events: WEBHOOK_EVENTS.QUO_CALLS,
@@ -1485,7 +1527,6 @@ class BaseCRMIntegration extends IntegrationBase {
         const callWebhookId = callWebhookResponse.data.id;
         const callWebhookKey = callWebhookResponse.data.key;
 
-        // Create call summary webhook
         const callSummaryWebhookResponse =
             await this.quo.api.createCallSummaryWebhook({
                 ...webhookData,
@@ -1521,160 +1562,240 @@ class BaseCRMIntegration extends IntegrationBase {
     }
 
     /**
-     * Handle updates to enabledPhoneIds by updating webhook subscriptions
-     * This is called during config updates to synchronize webhook resourceIds.
-     *
-     * All CRM integrations can use this method to handle phone ID changes.
-     *
-     * @param {Object} newConfig - New configuration with potentially updated enabledPhoneIds
-     * @returns {Promise<boolean>} True if changes were detected and webhooks updated
-     * @throws {Error} If Quo API is not configured or webhooks are not set up
+     * Recreate Quo webhooks with updated phone IDs (delete + create pattern)
+     * Creates new webhooks first, then deletes old ones for minimal downtime.
+     * Rolls back on failure.
      */
-    async _handlePhoneIdUpdate(newConfig) {
+    async _recreateQuoWebhooks(newPhoneIds) {
         if (!this.quo?.api) {
-            throw new Error('Quo API not configured - cannot update webhooks');
+            throw new Error('Quo API not configured - cannot recreate webhooks');
         }
 
-        const oldPhoneIds = this.config?.enabledPhoneIds || [];
-        const newPhoneIds = newConfig?.enabledPhoneIds || [];
+        const oldWebhookIds = {
+            message: this.config?.quoMessageWebhookId,
+            call: this.config?.quoCallWebhookId,
+            callSummary: this.config?.quoCallSummaryWebhookId,
+        };
 
-        // Check if phone IDs have changed
-        const hasChanges =
-            JSON.stringify(oldPhoneIds.sort()) !==
-            JSON.stringify(newPhoneIds.sort());
-
-        if (!hasChanges) {
-            console.log('[Quo] No changes detected in enabledPhoneIds');
-            return false;
-        }
-
-        console.log(
-            `[Quo] Phone ID changes detected: ${oldPhoneIds.length} → ${newPhoneIds.length}`,
-        );
-
-        // Verify webhooks are configured
-        const messageWebhookId = this.config?.quoMessageWebhookId;
-        const callWebhookId = this.config?.quoCallWebhookId;
-        const callSummaryWebhookId = this.config?.quoCallSummaryWebhookId;
-
-        if (!messageWebhookId || !callWebhookId || !callSummaryWebhookId) {
+        if (
+            !oldWebhookIds.message ||
+            !oldWebhookIds.call ||
+            !oldWebhookIds.callSummary
+        ) {
             throw new Error(
-                'Webhooks not configured - cannot update phone number subscriptions',
+                'Webhooks not configured - cannot recreate. Run initial webhook setup first.',
             );
         }
 
-        // Update all three webhooks with new resourceIds
-        const updateData = {
-            resourceIds: newPhoneIds,
-        };
-
         console.log(
-            `[Quo] Updating webhooks with ${newPhoneIds.length} phone number ID(s)`,
+            `[Quo] Recreating webhooks with ${newPhoneIds.length} phone number ID(s)`,
         );
 
-        await Promise.all([
-            this.quo.api.updateWebhook(messageWebhookId, updateData),
-            this.quo.api.updateWebhook(callWebhookId, updateData),
-            this.quo.api.updateWebhook(callSummaryWebhookId, updateData),
-        ]);
+        const createdWebhooks = [];
+        const webhookUrl = this._generateWebhookUrl(`/webhooks/${this.id}`);
+        const webhookData = {
+            url: webhookUrl,
+            status: 'enabled',
+        };
 
-        console.log('[Quo] ✓ Webhook subscriptions updated with new phone IDs');
+        if (newPhoneIds.length > 0) {
+            webhookData.resourceIds = newPhoneIds;
+        } else {
+            console.warn(
+                '[Quo] No phone IDs configured, recreating webhooks without resourceIds',
+            );
+        }
 
-        return true;
+        const WEBHOOK_EVENTS = this.constructor.WEBHOOK_EVENTS;
+        const WEBHOOK_LABELS = this.constructor.WEBHOOK_LABELS;
+
+        if (!WEBHOOK_EVENTS || !WEBHOOK_LABELS) {
+            throw new Error(
+                `${this.constructor.name} must define static WEBHOOK_EVENTS and WEBHOOK_LABELS constants`,
+            );
+        }
+
+        try {
+            // Create new webhooks FIRST to minimize downtime
+            console.log('[Quo] Creating new webhooks...');
+
+            const messageWebhookResponse =
+                await this.quo.api.createMessageWebhook({
+                    ...webhookData,
+                    events: WEBHOOK_EVENTS.QUO_MESSAGES,
+                    label: WEBHOOK_LABELS.QUO_MESSAGES,
+                });
+
+            if (
+                !messageWebhookResponse?.data?.id ||
+                !messageWebhookResponse.data.key
+            ) {
+                throw new Error(
+                    'Invalid Quo message webhook response: missing id or key',
+                );
+            }
+            createdWebhooks.push({
+                type: 'message',
+                id: messageWebhookResponse.data.id,
+            });
+
+            const callWebhookResponse = await this.quo.api.createCallWebhook({
+                ...webhookData,
+                events: WEBHOOK_EVENTS.QUO_CALLS,
+                label: WEBHOOK_LABELS.QUO_CALLS,
+            });
+
+            if (!callWebhookResponse?.data?.id || !callWebhookResponse.data.key) {
+                throw new Error(
+                    'Invalid Quo call webhook response: missing id or key',
+                );
+            }
+            createdWebhooks.push({
+                type: 'call',
+                id: callWebhookResponse.data.id,
+            });
+
+            const callSummaryWebhookResponse =
+                await this.quo.api.createCallSummaryWebhook({
+                    ...webhookData,
+                    events: WEBHOOK_EVENTS.QUO_CALL_SUMMARIES,
+                    label: WEBHOOK_LABELS.QUO_CALL_SUMMARIES,
+                });
+
+            if (
+                !callSummaryWebhookResponse?.data?.id ||
+                !callSummaryWebhookResponse.data.key
+            ) {
+                throw new Error(
+                    'Invalid Quo call-summary webhook response: missing id or key',
+                );
+            }
+            createdWebhooks.push({
+                type: 'callSummary',
+                id: callSummaryWebhookResponse.data.id,
+            });
+
+            console.log('[Quo] ✓ New webhooks created successfully');
+
+            // Delete old webhooks (best effort)
+            console.log('[Quo] Deleting old webhooks...');
+
+            const deletionResults = await Promise.allSettled([
+                this.quo.api.deleteWebhook(oldWebhookIds.message),
+                this.quo.api.deleteWebhook(oldWebhookIds.call),
+                this.quo.api.deleteWebhook(oldWebhookIds.callSummary),
+            ]);
+
+            deletionResults.forEach((result, index) => {
+                const webhookTypes = ['message', 'call', 'callSummary'];
+                if (result.status === 'rejected') {
+                    console.warn(
+                        `[Quo] Could not delete old ${webhookTypes[index]} webhook (may already be deleted): ${result.reason?.message}`,
+                    );
+                }
+            });
+
+            console.log('[Quo] ✓ Old webhooks cleanup complete');
+
+            return {
+                messageWebhookId: messageWebhookResponse.data.id,
+                messageWebhookKey: messageWebhookResponse.data.key,
+                callWebhookId: callWebhookResponse.data.id,
+                callWebhookKey: callWebhookResponse.data.key,
+                callSummaryWebhookId: callSummaryWebhookResponse.data.id,
+                callSummaryWebhookKey: callSummaryWebhookResponse.data.key,
+            };
+        } catch (error) {
+            // Rollback created webhooks
+            console.error(
+                `[Quo] Webhook recreation failed, rolling back: ${error.message}`,
+            );
+
+            for (const webhook of createdWebhooks) {
+                try {
+                    await this.quo.api.deleteWebhook(webhook.id);
+                    console.log(
+                        `[Quo] ✓ Rolled back ${webhook.type} webhook ${webhook.id}`,
+                    );
+                } catch (rollbackError) {
+                    console.error(
+                        `[Quo] Failed to rollback ${webhook.type} webhook ${webhook.id}: ${rollbackError.message}`,
+                    );
+                }
+            }
+
+            throw error;
+        }
     }
 
     /**
-     * Handle integration configuration updates
-     * This is called by Frigg framework's ON_UPDATE event
-     *
-     * Implements PATCH semantics:
-     * - Preserves fields not referenced in update
-     * - Updates fields that ARE referenced
-     * - Detects enabledPhoneIds changes and updates webhook subscriptions
-     *
-     * @param {Object} params - Update parameters
-     * @param {Object} params.config - New configuration (partial update)
-     * @returns {Promise<Object>} Validation result
+     * Handle integration configuration updates (PATCH semantics)
+     * When phone IDs change, fetches fresh metadata and recreates webhooks
+     * before persisting config.
      */
     async onUpdate(params) {
         const updateConfig = params?.config || {};
 
         console.log('[Config Update] Processing configuration update');
 
-        // Translate external field names to internal field names
-        // Quo backend sends `resourceIds` but we store as `enabledPhoneIds`
+        // Translate resourceIds → enabledPhoneIds
         const translatedConfig = this._translateConfigFields(updateConfig);
-
-        // PATCH semantics: Merge update into existing config (deep merge for nested objects)
         const patchedConfig = this._deepMerge(this.config, translatedConfig);
 
-        // Check if enabledPhoneIds changed (before updating config)
         const oldPhoneIds = this.config?.enabledPhoneIds || [];
         const newPhoneIds = patchedConfig?.enabledPhoneIds || [];
         const phoneIdsChanged =
             JSON.stringify([...oldPhoneIds].sort()) !==
             JSON.stringify([...newPhoneIds].sort());
 
-        // Update integration config in database
-        await this.commands.updateIntegrationConfig({
-            integrationId: this.id,
-            config: patchedConfig,
-        });
-
-        // Update local config
-        this.config = patchedConfig;
-
-        console.log('[Config Update] ✓ Configuration patched and persisted');
-
-        // If phone IDs changed, update webhook subscriptions
+        // Handle phone ID changes before persisting config
         if (phoneIdsChanged) {
             if (!this.quo?.api) {
                 console.warn(
-                    '[Config Update] Phone IDs changed but Quo API not configured, skipping webhook update',
+                    '[Config Update] Phone IDs changed but Quo API not configured, skipping phone update',
                 );
             } else {
                 console.log(
-                    '[Config Update] Phone IDs changed, updating webhooks',
+                    `[Config Update] Phone IDs changed: ${oldPhoneIds.length} → ${newPhoneIds.length}`,
                 );
+
                 try {
-                    // Pass old and new phone IDs directly to avoid re-reading config
-                    const messageWebhookId = this.config?.quoMessageWebhookId;
-                    const callWebhookId = this.config?.quoCallWebhookId;
-                    const callSummaryWebhookId =
-                        this.config?.quoCallSummaryWebhookId;
+                    console.log('[Config Update] Fetching fresh phone metadata...');
+                    const freshMetadata =
+                        await this._fetchPhoneMetadataForIds(newPhoneIds);
 
-                    if (
-                        !messageWebhookId ||
-                        !callWebhookId ||
-                        !callSummaryWebhookId
-                    ) {
-                        throw new Error(
-                            'Webhooks not configured - cannot update phone number subscriptions',
-                        );
-                    }
-
-                    const updateData = {
-                        resourceIds: newPhoneIds,
-                    };
-
-                    await Promise.all([
-                        this.quo.api.updateWebhook(
-                            messageWebhookId,
-                            updateData,
-                        ),
-                        this.quo.api.updateWebhook(callWebhookId, updateData),
-                        this.quo.api.updateWebhook(
-                            callSummaryWebhookId,
-                            updateData,
-                        ),
-                    ]);
+                    patchedConfig.phoneNumbersMetadata = freshMetadata;
+                    patchedConfig.phoneNumbersFetchedAt =
+                        new Date().toISOString();
 
                     console.log(
-                        '[Config Update] ✓ Webhooks updated successfully',
+                        `[Config Update] ✓ Phone metadata updated (${freshMetadata.length} phones)`,
+                    );
+
+                    // Recreate webhooks (Quo API doesn't support PATCH)
+                    console.log('[Config Update] Recreating webhooks...');
+                    const newWebhooks =
+                        await this._recreateQuoWebhooks(newPhoneIds);
+
+                    patchedConfig.quoMessageWebhookId =
+                        newWebhooks.messageWebhookId;
+                    patchedConfig.quoMessageWebhookKey =
+                        newWebhooks.messageWebhookKey;
+                    patchedConfig.quoCallWebhookId = newWebhooks.callWebhookId;
+                    patchedConfig.quoCallWebhookKey = newWebhooks.callWebhookKey;
+                    patchedConfig.quoCallSummaryWebhookId =
+                        newWebhooks.callSummaryWebhookId;
+                    patchedConfig.quoCallSummaryWebhookKey =
+                        newWebhooks.callSummaryWebhookKey;
+                    patchedConfig.quoWebhooksCreatedAt =
+                        new Date().toISOString();
+
+                    console.log(
+                        '[Config Update] ✓ Webhooks recreated successfully',
                     );
                 } catch (error) {
                     console.error(
-                        '[Config Update] Failed to update webhooks:',
+                        '[Config Update] Failed to update phone configuration:',
                         error,
                     );
                     throw error;
@@ -1682,26 +1803,23 @@ class BaseCRMIntegration extends IntegrationBase {
             }
         }
 
-        // Validate the patched config
-        const validationResult = await this.validateConfig();
+        // Persist config only after all operations succeed
+        await this.commands.updateIntegrationConfig({
+            integrationId: this.id,
+            config: patchedConfig,
+        });
+        this.config = patchedConfig;
 
+        console.log('[Config Update] ✓ Configuration patched and persisted');
         console.log('[Config Update] ✓ Update complete');
 
-        return validationResult;
+        return { success: true, config: patchedConfig };
     }
 
     /**
      * Translate external config field names to internal field names
-     *
-     * The Quo backend sends config updates using their external API field names,
-     * which need to be translated to our internal field names for storage.
-     *
-     * Translations:
-     * - `resourceIds` → `enabledPhoneIds` (phone numbers to filter webhooks)
-     *
+     * (e.g., resourceIds → enabledPhoneIds)
      * @private
-     * @param {Object} config - Config object with external field names
-     * @returns {Object} Config object with internal field names
      */
     _translateConfigFields(config) {
         if (!config) {

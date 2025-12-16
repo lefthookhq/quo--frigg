@@ -78,6 +78,7 @@ Use x-frigg headers for backend-to-backend communication, automated scripts, and
 ```bash
 x-frigg-api-key: ${FRIGG_API_KEY}
 x-frigg-appuserid: ${FRIGG_APP_USER_ID}
+x-frigg-apporgid: ${FRIGG_APP_ORG_ID}  # Only required if organizationUserRequired: true in app config
 ```
 
 **Use Case:** Backend services, automated scripts, CI/CD pipelines, OAuth redirect handlers
@@ -87,6 +88,7 @@ x-frigg-appuserid: ${FRIGG_APP_USER_ID}
 ```bash
 export FRIGG_API_KEY="your-shared-secret-key"
 export FRIGG_APP_USER_ID="your-user-identifier"
+export FRIGG_APP_ORG_ID="your-organization-identifier"
 ```
 
 **Example Request:**
@@ -95,7 +97,8 @@ export FRIGG_APP_USER_ID="your-user-identifier"
 curl -X GET "${FRIGG_URL}/api/integrations" \
   -H "Content-Type: application/json" \
   -H 'x-frigg-api-key: '"${FRIGG_API_KEY}" \
-  -H "x-frigg-appuserid: ${FRIGG_APP_USER_ID}"
+  -H "x-frigg-appuserid: ${FRIGG_APP_USER_ID}" \
+  -H "x-frigg-apporgid: ${FRIGG_APP_ORG_ID}"
 ```
 
 **Note:** The shared secret credentials (`FRIGG_API_KEY` and `FRIGG_APP_USER_ID`) should be provided by the system administrator who deployed the Frigg instance.
@@ -170,7 +173,8 @@ curl -X GET "${FRIGG_URL}/api/authorize?entityType=quo" \
 ```bash
 curl -X GET "${FRIGG_URL}/api/authorize?entityType=quo" \
   -H 'x-frigg-api-key: '"${FRIGG_API_KEY}" \
-  -H "x-frigg-appuserid: ${FRIGG_APP_USER_ID}"
+  -H "x-frigg-appuserid: ${FRIGG_APP_USER_ID}" \
+  -H "x-frigg-apporgid: ${FRIGG_APP_ORG_ID}"
 ```
 
 **Response:**
@@ -212,6 +216,7 @@ curl -X POST "${FRIGG_URL}/api/authorize" \
 ```bash
 curl -X POST "${FRIGG_URL}/api/authorize" \
   -H 'x-frigg-api-key: '"${FRIGG_API_KEY}" \
+  -H "x-frigg-apporgid: ${FRIGG_APP_ORG_ID}" \
   -H "x-frigg-appuserid: ${FRIGG_APP_USER_ID}" \
   -H "Content-Type: application/json" \
   -d '{
@@ -249,7 +254,8 @@ curl -X GET "${FRIGG_URL}/api/authorize?entityType=attio" \
 
 ```bash
 curl -X GET "${FRIGG_URL}/api/authorize?entityType=attio" \
-  -H 'x-frigg-api-key: '"${FRIGG_API_KEY}" \
+  -H 'x-frigg-api-key: '"${FRIGG_API_KEY}" \ \
+  -H "x-frigg-apporgid: ${FRIGG_APP_ORG_ID}"
   -H "x-frigg-appuserid: ${FRIGG_APP_USER_ID}"
 ```
 
@@ -297,7 +303,8 @@ curl -X POST "${FRIGG_URL}/api/integrations" \
 
 ```bash
 curl -X POST "${FRIGG_URL}/api/integrations" \
-  -H 'x-frigg-api-key: '"${FRIGG_API_KEY}" \
+  -H 'x-frigg-apporgid: ${FRIGG_APP_ORG_ID}" \
+  -H "x-frigg-api-key: '"${FRIGG_API_KEY}" \
   -H "x-frigg-appuserid: ${FRIGG_APP_USER_ID}" \
   -H "Content-Type: application/json" \
   -d '{
