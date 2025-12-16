@@ -51,6 +51,16 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 method: 'GET',
                 event: 'LIST_AXISCARE_CLIENTS',
             },
+            {
+                path: '/axisCare/phone-mapping',
+                method: 'POST',
+                event: 'UPDATE_PHONE_MAPPING',
+            },
+            {
+                path: '/axisCare/phone-mapping/sync-webhooks',
+                method: 'POST',
+                event: 'SYNC_PHONE_WEBHOOKS',
+            },
         ],
     };
 
@@ -100,6 +110,12 @@ class AxisCareIntegration extends BaseCRMIntegration {
         QUO_CALL_SUMMARIES: [QuoWebhookEvents.CALL_SUMMARY_COMPLETED],
     };
 
+    /**
+     * Maximum number of resourceIds allowed per Quo webhook
+     * Phone numbers must be chunked into groups of this size
+     */
+    static MAX_RESOURCE_IDS_PER_WEBHOOK = 10;
+
     constructor(params) {
         super(params);
 
@@ -113,6 +129,12 @@ class AxisCareIntegration extends BaseCRMIntegration {
 
             LIST_AXISCARE_CLIENTS: {
                 handler: this.listClients,
+            },
+            UPDATE_PHONE_MAPPING: {
+                handler: this.updatePhoneMapping,
+            },
+            SYNC_PHONE_WEBHOOKS: {
+                handler: this.syncPhoneWebhooks,
             },
             SYNC_CLIENTS_TO_QUO: {
                 type: 'USER_ACTION',
@@ -412,6 +434,368 @@ class AxisCareIntegration extends BaseCRMIntegration {
         }
 
         return normalized;
+    }
+
+    /**
+     * Split an array into chunks of specified size
+     * @private
+     * @param {Array} array - Array to chunk
+     * @param {number} chunkSize - Maximum size of each chunk
+     * @returns {Array<Array>} Array of chunks
+     */
+    _chunkArray(array, chunkSize) {
+        const chunks = [];
+        for (let i = 0; i < array.length; i += chunkSize) {
+            chunks.push(array.slice(i, i + chunkSize));
+        }
+        return chunks;
+    }
+
+    /**
+     * Resolve phone number to Quo phone ID using stored metadata
+     * @private
+     * @param {string} phoneNumber - Phone number to resolve
+     * @returns {string|null} Quo phone ID or null if not found
+     */
+    _resolvePhoneToQuoId(phoneNumber) {
+        const normalized = this._normalizePhoneNumber(phoneNumber);
+        const metadata = this.config?.phoneNumbersMetadata || [];
+        const found = metadata.find(
+            (p) =>
+                this._normalizePhoneNumber(p.phoneNumber || p.number) ===
+                normalized,
+        );
+        return found?.id || null;
+    }
+
+    /**
+     * Resolve all phone mappings to Quo phone IDs
+     * @private
+     * @returns {Promise<string[]>} Array of resolved Quo phone IDs
+     */
+    async _resolvePhoneMappingsToQuoIds() {
+        const mappings = this.config?.phoneNumberSiteMappings || {};
+        const phoneNumbers = Object.keys(mappings);
+
+        if (phoneNumbers.length === 0) {
+            return [];
+        }
+
+        // Ensure metadata is available (lazy fetch if not populated during setup)
+        if (
+            !this.config?.phoneNumbersMetadata ||
+            this.config.phoneNumbersMetadata.length === 0
+        ) {
+            if (this.quo?.api) {
+                try {
+                    console.log(
+                        '[AxisCare] Phone metadata not found, fetching from Quo API',
+                    );
+                    await this._fetchAndStoreEnabledPhoneIds();
+                } catch (error) {
+                    console.warn(
+                        '[AxisCare] Failed to fetch phone numbers:',
+                        error.message,
+                    );
+                }
+            }
+        }
+
+        // Resolve each phone number to Quo ID
+        const resolvedIds = [];
+        const unresolvedPhones = [];
+
+        for (const phone of phoneNumbers) {
+            const quoPhoneId = this._resolvePhoneToQuoId(phone);
+            if (quoPhoneId) {
+                resolvedIds.push(quoPhoneId);
+            } else {
+                unresolvedPhones.push(phone);
+            }
+        }
+
+        if (unresolvedPhones.length > 0) {
+            console.warn(
+                `[AxisCare] Unresolved phone numbers (not found in Quo): ${unresolvedPhones.join(', ')}`,
+            );
+        }
+
+        return resolvedIds;
+    }
+
+    /**
+     * Plan webhook subscription operations by comparing required vs existing
+     * @private
+     * @param {Array<Array<string>>} requiredChunks - Required phone ID chunks
+     * @param {Array<Object>} existingSubscriptions - Existing webhook subscriptions
+     * @returns {Object} Operations to perform (create, update, delete, keep)
+     */
+    _planSubscriptionOperations(requiredChunks, existingSubscriptions) {
+        const operations = {
+            create: [],
+            update: [],
+            delete: [],
+            keep: [],
+        };
+
+        const existingByIndex = new Map(
+            existingSubscriptions.map((sub, idx) => [idx, sub]),
+        );
+
+        // Match required chunks to existing subscriptions
+        requiredChunks.forEach((chunk, index) => {
+            const existing = existingByIndex.get(index);
+
+            if (!existing) {
+                // New chunk needs new webhook
+                operations.create.push({ phoneIds: chunk, chunkIndex: index });
+            } else {
+                // Check if update needed
+                const existingIds = new Set(existing.phoneIds || []);
+                const requiredIds = new Set(chunk);
+
+                const needsUpdate =
+                    existingIds.size !== requiredIds.size ||
+                    ![...requiredIds].every((id) => existingIds.has(id));
+
+                if (needsUpdate) {
+                    operations.update.push({
+                        webhookId: existing.webhookId,
+                        webhookKey: existing.webhookKey,
+                        phoneIds: chunk,
+                        chunkIndex: index,
+                    });
+                } else {
+                    operations.keep.push(existing);
+                }
+                existingByIndex.delete(index);
+            }
+        });
+
+        // Remaining existing subscriptions are orphaned
+        for (const [, sub] of existingByIndex) {
+            operations.delete.push({
+                webhookId: sub.webhookId,
+                reason: 'chunk_no_longer_needed',
+            });
+        }
+
+        return operations;
+    }
+
+    /**
+     * Create a chunked webhook for phone number filtering
+     * @private
+     * @param {string} webhookType - 'call' or 'callSummary'
+     * @param {string[]} phoneIds - Phone IDs for this chunk
+     * @param {string} webhookUrl - Webhook endpoint URL
+     * @param {number} chunkIndex - Index of this chunk
+     * @returns {Promise<Object>} Created webhook subscription info
+     */
+    async _createChunkedWebhook(webhookType, phoneIds, webhookUrl, chunkIndex) {
+        const WEBHOOK_EVENTS = this.constructor.WEBHOOK_EVENTS;
+        const WEBHOOK_LABELS = this.constructor.WEBHOOK_LABELS;
+
+        const webhookData = {
+            url: webhookUrl,
+            status: 'enabled',
+            resourceIds: phoneIds,
+            events:
+                webhookType === 'call'
+                    ? WEBHOOK_EVENTS.QUO_CALLS
+                    : WEBHOOK_EVENTS.QUO_CALL_SUMMARIES,
+            label: `${webhookType === 'call' ? WEBHOOK_LABELS.QUO_CALLS : WEBHOOK_LABELS.QUO_CALL_SUMMARIES} (Chunk ${chunkIndex})`,
+        };
+
+        const createMethod =
+            webhookType === 'call'
+                ? this.quo.api.createCallWebhook.bind(this.quo.api)
+                : this.quo.api.createCallSummaryWebhook.bind(this.quo.api);
+
+        const response = await createMethod(webhookData);
+
+        if (!response?.data?.id || !response?.data?.key) {
+            throw new Error(`Invalid ${webhookType} webhook response`);
+        }
+
+        console.log(
+            `[AxisCare] ✓ Created ${webhookType} webhook chunk ${chunkIndex}: ${response.data.id}`,
+        );
+
+        return {
+            webhookId: response.data.id,
+            webhookKey: response.data.key,
+            phoneIds: phoneIds,
+            chunkIndex: chunkIndex,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+        };
+    }
+
+    /**
+     * Update a chunked webhook with new phone IDs
+     * @private
+     * @param {string} webhookId - Webhook ID to update
+     * @param {string[]} phoneIds - New phone IDs
+     * @returns {Promise<Object>} Update result
+     */
+    async _updateChunkedWebhook(webhookId, phoneIds) {
+        await this.quo.api.updateWebhook(webhookId, { resourceIds: phoneIds });
+        console.log(
+            `[AxisCare] ✓ Updated webhook ${webhookId} with ${phoneIds.length} phone(s)`,
+        );
+
+        return {
+            updatedAt: new Date().toISOString(),
+            phoneIds: phoneIds,
+        };
+    }
+
+    /**
+     * Manage webhook subscriptions based on phone mappings
+     * Creates, updates, and deletes webhooks as needed
+     * @private
+     * @returns {Promise<Object>} Result with status and subscriptions
+     */
+    async _managePhoneWebhookSubscriptions() {
+        const createdWebhooks = [];
+
+        try {
+            // 1. Resolve phone mappings to Quo phone IDs
+            const phoneIds = await this._resolvePhoneMappingsToQuoIds();
+
+            if (phoneIds.length === 0) {
+                console.log(
+                    '[AxisCare] No phone IDs to manage webhooks for',
+                );
+                return {
+                    status: 'no_phones',
+                    subscriptions: { call: [], callSummary: [] },
+                };
+            }
+
+            // 2. Chunk into groups of MAX_RESOURCE_IDS_PER_WEBHOOK
+            const chunks = this._chunkArray(
+                phoneIds,
+                this.constructor.MAX_RESOURCE_IDS_PER_WEBHOOK,
+            );
+            console.log(
+                `[AxisCare] Managing webhooks for ${phoneIds.length} phone(s) in ${chunks.length} chunk(s)`,
+            );
+
+            // 3. Get existing subscriptions
+            const existingSubs = this.config?.phoneNumberWebhookSubscriptions || {
+                call: [],
+                callSummary: [],
+            };
+
+            // 4. Process each webhook type
+            const webhookUrl = this._generateWebhookUrl(`/webhooks/${this.id}`);
+            const results = { call: [], callSummary: [] };
+
+            for (const webhookType of ['call', 'callSummary']) {
+                const existing = existingSubs[webhookType] || [];
+                const operations = this._planSubscriptionOperations(
+                    chunks,
+                    existing,
+                );
+
+                console.log(
+                    `[AxisCare] ${webhookType} operations: ${operations.create.length} create, ${operations.update.length} update, ${operations.delete.length} delete, ${operations.keep.length} keep`,
+                );
+
+                // Execute creates
+                for (const op of operations.create) {
+                    const webhook = await this._createChunkedWebhook(
+                        webhookType,
+                        op.phoneIds,
+                        webhookUrl,
+                        op.chunkIndex,
+                    );
+                    createdWebhooks.push({
+                        type: webhookType,
+                        id: webhook.webhookId,
+                    });
+                    results[webhookType].push(webhook);
+                }
+
+                // Execute updates
+                for (const op of operations.update) {
+                    const updated = await this._updateChunkedWebhook(
+                        op.webhookId,
+                        op.phoneIds,
+                    );
+                    results[webhookType].push({
+                        webhookId: op.webhookId,
+                        webhookKey: op.webhookKey,
+                        chunkIndex: op.chunkIndex,
+                        ...updated,
+                    });
+                }
+
+                // Keep unchanged
+                for (const sub of operations.keep) {
+                    results[webhookType].push(sub);
+                }
+
+                // Execute deletes
+                for (const op of operations.delete) {
+                    try {
+                        await this.quo.api.deleteWebhook(op.webhookId);
+                        console.log(
+                            `[AxisCare] ✓ Deleted orphaned ${webhookType} webhook: ${op.webhookId}`,
+                        );
+                    } catch (deleteError) {
+                        console.warn(
+                            `[AxisCare] Failed to delete ${webhookType} webhook ${op.webhookId}:`,
+                            deleteError.message,
+                        );
+                    }
+                }
+
+                // Sort results by chunkIndex for consistency
+                results[webhookType].sort(
+                    (a, b) => (a.chunkIndex || 0) - (b.chunkIndex || 0),
+                );
+            }
+
+            // 5. Update config with new subscription state
+            const updatedConfig = {
+                ...this.config,
+                phoneNumberWebhookSubscriptions: results,
+                lastPhoneMappingSyncAt: new Date().toISOString(),
+            };
+
+            await this.commands.updateIntegrationConfig({
+                integrationId: this.id,
+                config: updatedConfig,
+            });
+
+            this.config = updatedConfig;
+
+            return { status: 'success', subscriptions: results };
+        } catch (error) {
+            // Rollback created webhooks
+            if (createdWebhooks.length > 0) {
+                console.warn(
+                    `[AxisCare] Rolling back ${createdWebhooks.length} webhook(s)`,
+                );
+                for (const webhook of createdWebhooks) {
+                    try {
+                        await this.quo.api.deleteWebhook(webhook.id);
+                        console.log(
+                            `[AxisCare] ✓ Rolled back ${webhook.type} webhook ${webhook.id}`,
+                        );
+                    } catch (rollbackError) {
+                        console.error(
+                            `[AxisCare] Rollback failed for ${webhook.id}:`,
+                            rollbackError.message,
+                        );
+                    }
+                }
+            }
+            throw error;
+        }
     }
 
     /**
@@ -1395,6 +1779,17 @@ class AxisCareIntegration extends BaseCRMIntegration {
 
             console.log(`[Quo] Registering call webhooks at: ${webhookUrl}`);
 
+            // Fetch and store phone numbers metadata for webhook filtering and phone mapping
+            // Non-critical: if this fails, phone mapping can still fetch lazily later
+            try {
+                await this._fetchAndStoreEnabledPhoneIds();
+            } catch (error) {
+                console.warn(
+                    '[Quo] Failed to fetch phone numbers metadata (non-critical):',
+                    error.message,
+                );
+            }
+
             const callWebhookResponse = await this.quo.api.createCallWebhook({
                 url: webhookUrl,
                 events: this.constructor.WEBHOOK_EVENTS.QUO_CALLS,
@@ -1524,6 +1919,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
         const deletionResults = {
             quoCall: null,
             quoCallSummary: null,
+            phoneChunkedWebhooks: { call: [], callSummary: [] },
         };
 
         try {
@@ -1557,6 +1953,20 @@ class AxisCareIntegration extends BaseCRMIntegration {
                     console.warn(
                         `  - Quo call-summary webhook: ${this.config.quoCallSummaryWebhookId}`,
                     );
+                }
+
+                // Log chunked phone webhooks for manual cleanup
+                const phoneSubs =
+                    this.config?.phoneNumberWebhookSubscriptions || {};
+                for (const type of ['call', 'callSummary']) {
+                    const subs = phoneSubs[type] || [];
+                    for (const sub of subs) {
+                        if (sub.webhookId) {
+                            console.warn(
+                                `  - Phone ${type} webhook (chunk ${sub.chunkIndex}): ${sub.webhookId}`,
+                            );
+                        }
+                    }
                 }
 
                 console.warn(
@@ -1628,6 +2038,44 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 }
             } else {
                 console.log('[Quo] No call-summary webhook to delete');
+            }
+
+            // Delete chunked phone webhooks from phone number mappings
+            const phoneSubs =
+                this.config?.phoneNumberWebhookSubscriptions || {};
+            for (const type of ['call', 'callSummary']) {
+                const subs = phoneSubs[type] || [];
+                if (subs.length > 0) {
+                    console.log(
+                        `[Quo] Deleting ${subs.length} chunked ${type} webhook(s) for phone mappings`,
+                    );
+                }
+                for (const sub of subs) {
+                    if (sub.webhookId) {
+                        try {
+                            await this.quo.api.deleteWebhook(sub.webhookId);
+                            deletionResults.phoneChunkedWebhooks[type].push({
+                                webhookId: sub.webhookId,
+                                chunkIndex: sub.chunkIndex,
+                                status: 'success',
+                            });
+                            console.log(
+                                `[Quo] ✓ Phone ${type} webhook (chunk ${sub.chunkIndex}) ${sub.webhookId} deleted`,
+                            );
+                        } catch (error) {
+                            deletionResults.phoneChunkedWebhooks[type].push({
+                                webhookId: sub.webhookId,
+                                chunkIndex: sub.chunkIndex,
+                                status: 'failed',
+                                error: error.message,
+                            });
+                            console.error(
+                                `[Quo] Failed to delete phone ${type} webhook ${sub.webhookId}:`,
+                                error.message,
+                            );
+                        }
+                    }
+                }
             }
 
             console.log('[Webhook Cleanup] Summary:', deletionResults);
@@ -1864,6 +2312,201 @@ class AxisCareIntegration extends BaseCRMIntegration {
             }
         }
         return clients;
+    }
+
+    /**
+     * Update phone number to AxisCare site mappings
+     * Uses PATCH semantics - merges with existing mappings
+     * @param {Object} params
+     * @param {Object} params.req - Express request object
+     * @param {Object} params.res - Express response object
+     */
+    async updatePhoneMapping({ req, res }) {
+        try {
+            const { phoneNumberSiteMappings } = req.body;
+
+            // Validation: Required field
+            if (!phoneNumberSiteMappings) {
+                return res.status(400).json({
+                    error: 'phoneNumberSiteMappings is required',
+                });
+            }
+
+            // Validation: Must be object
+            if (
+                typeof phoneNumberSiteMappings !== 'object' ||
+                Array.isArray(phoneNumberSiteMappings)
+            ) {
+                return res.status(400).json({
+                    error: 'phoneNumberSiteMappings must be an object',
+                });
+            }
+
+            // Validation: Each mapping entry
+            for (const [phoneNumber, mapping] of Object.entries(
+                phoneNumberSiteMappings,
+            )) {
+                if (!phoneNumber || typeof phoneNumber !== 'string') {
+                    return res.status(400).json({
+                        error: 'Phone number keys must be non-empty strings',
+                    });
+                }
+
+                if (!mapping || typeof mapping !== 'object') {
+                    return res.status(400).json({
+                        error: `Mapping for phone number '${phoneNumber}' must be an object`,
+                    });
+                }
+
+                if (
+                    !mapping.axisCareSiteNumber ||
+                    typeof mapping.axisCareSiteNumber !== 'string'
+                ) {
+                    return res.status(400).json({
+                        error: `axisCareSiteNumber is required for phone number '${phoneNumber}'`,
+                    });
+                }
+
+                if (!mapping.label || typeof mapping.label !== 'string') {
+                    return res.status(400).json({
+                        error: `label is required for phone number '${phoneNumber}'`,
+                    });
+                }
+            }
+
+            // PATCH semantics: Merge new mappings with existing
+            const existingMappings =
+                this.config?.phoneNumberSiteMappings || {};
+            const mergedMappings = {
+                ...existingMappings,
+                ...phoneNumberSiteMappings,
+            };
+
+            const updatedConfig = {
+                ...this.config,
+                phoneNumberSiteMappings: mergedMappings,
+            };
+
+            await this.commands.updateIntegrationConfig({
+                integrationId: this.id,
+                config: updatedConfig,
+            });
+
+            this.config = updatedConfig;
+
+            console.log(
+                `[AxisCare] ✓ Phone mappings updated: ${Object.keys(phoneNumberSiteMappings).length} mapping(s) added/updated`,
+            );
+
+            // Sync webhook subscriptions with updated phone mappings
+            let webhookSyncResult = null;
+            if (this.quo?.api) {
+                try {
+                    webhookSyncResult =
+                        await this._managePhoneWebhookSubscriptions();
+                    console.log(
+                        `[AxisCare] ✓ Webhook subscriptions synced: ${webhookSyncResult.status}`,
+                    );
+                } catch (webhookError) {
+                    console.error(
+                        '[AxisCare] Webhook sync failed (mappings saved):',
+                        webhookError.message,
+                    );
+                    webhookSyncResult = {
+                        status: 'failed',
+                        error: webhookError.message,
+                    };
+                }
+            } else {
+                console.warn(
+                    '[AxisCare] Quo API not available - skipping webhook sync',
+                );
+                webhookSyncResult = {
+                    status: 'skipped',
+                    reason: 'quo_api_not_available',
+                };
+            }
+
+            res.json({
+                success: true,
+                message: 'Phone mappings updated successfully',
+                mappingsCount: Object.keys(mergedMappings).length,
+                updatedMappings: Object.keys(phoneNumberSiteMappings),
+                webhookSync: webhookSyncResult,
+            });
+        } catch (error) {
+            console.error('Failed to update phone mappings:', error);
+            res.status(500).json({
+                error: 'Failed to update phone mappings',
+                details: error.message,
+            });
+        }
+    }
+
+    /**
+     * Manually sync phone number webhook subscriptions
+     * Reconciles webhook state with current phone mappings
+     * @param {Object} params
+     * @param {Object} params.req - Express request object
+     * @param {Object} params.res - Express response object
+     */
+    async syncPhoneWebhooks({ req, res }) {
+        try {
+            if (!this.quo?.api) {
+                return res.status(503).json({
+                    error: 'Quo API not available',
+                    message:
+                        'Cannot sync webhooks without Quo API connection. Please ensure the Quo module is configured.',
+                });
+            }
+
+            const mappings = this.config?.phoneNumberSiteMappings || {};
+            const phoneCount = Object.keys(mappings).length;
+
+            if (phoneCount === 0) {
+                return res.json({
+                    success: true,
+                    message: 'No phone mappings configured - nothing to sync',
+                    subscriptions: { call: [], callSummary: [] },
+                });
+            }
+
+            console.log(
+                `[AxisCare] Starting manual webhook sync for ${phoneCount} phone mapping(s)`,
+            );
+
+            const result = await this._managePhoneWebhookSubscriptions();
+
+            const callSubs = result.subscriptions?.call || [];
+            const summarySubs = result.subscriptions?.callSummary || [];
+
+            res.json({
+                success: true,
+                message: 'Webhook subscriptions synced successfully',
+                status: result.status,
+                subscriptions: {
+                    call: callSubs.map((s) => ({
+                        webhookId: s.webhookId,
+                        chunkIndex: s.chunkIndex,
+                        phoneCount: s.phoneIds?.length || 0,
+                    })),
+                    callSummary: summarySubs.map((s) => ({
+                        webhookId: s.webhookId,
+                        chunkIndex: s.chunkIndex,
+                        phoneCount: s.phoneIds?.length || 0,
+                    })),
+                },
+                totalCallWebhooks: callSubs.length,
+                totalCallSummaryWebhooks: summarySubs.length,
+                syncedAt: new Date().toISOString(),
+            });
+        } catch (error) {
+            console.error('Failed to sync phone webhooks:', error);
+            res.status(500).json({
+                error: 'Failed to sync phone webhooks',
+                details: error.message,
+            });
+        }
     }
 
     async listClients({ req, res }) {
