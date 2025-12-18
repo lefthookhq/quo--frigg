@@ -501,7 +501,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
             }
         }
 
-        // Resolve each phone number to Quo ID
         const resolvedIds = [];
         const unresolvedPhones = [];
 
@@ -605,16 +604,12 @@ class AxisCareIntegration extends BaseCRMIntegration {
         const createdWebhooks = [];
 
         try {
-            // 1. Resolve phone mappings to Quo phone IDs
             const mappedPhoneIds = await this._resolvePhoneMappingsToQuoIds();
-
-            // 2. Get existing subscriptions (to delete after new ones are created)
             const existingSubs = this.config?.phoneNumberWebhookSubscriptions || {
                 call: [],
                 callSummary: [],
             };
 
-            // 3. Handle no phones case - delete all existing webhooks
             if (mappedPhoneIds.length === 0) {
                 console.log(
                     '[AxisCare] No phone IDs - cleaning up all existing webhooks',
@@ -638,7 +633,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 };
             }
 
-            // 4. Chunk phone IDs
             const chunks = this._chunkArray(
                 mappedPhoneIds,
                 this.constructor.MAX_RESOURCE_IDS_PER_WEBHOOK,
@@ -647,7 +641,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 `[AxisCare] Creating webhooks for ${mappedPhoneIds.length} phone(s) in ${chunks.length} chunk(s)`,
             );
 
-            // 5. CREATE all new webhooks first (minimizes downtime)
             const webhookUrl = this._generateWebhookUrl(`/webhooks/${this.id}`);
             const newSubscriptions = { call: [], callSummary: [] };
 
@@ -667,10 +660,8 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 }
             }
 
-            // 6. DELETE all old webhooks (new ones are now active)
             await this._deleteAllWebhooks(existingSubs);
 
-            // 7. Update config with new subscription state
             const updatedConfig = {
                 ...this.config,
                 phoneNumberWebhookSubscriptions: newSubscriptions,
@@ -2237,14 +2228,12 @@ class AxisCareIntegration extends BaseCRMIntegration {
             const { phoneNumberSiteMappings } = req.body;
             const { integrationId } = req.params;
 
-            // Validation: Required field
             if (!phoneNumberSiteMappings) {
                 return res.status(400).json({
                     error: 'phoneNumberSiteMappings is required',
                 });
             }
 
-            // Validation: Must be object
             if (
                 typeof phoneNumberSiteMappings !== 'object' ||
                 Array.isArray(phoneNumberSiteMappings)
@@ -2254,7 +2243,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 });
             }
 
-            // Validation: Each site mapping entry
             for (const [siteNumber, siteConfig] of Object.entries(
                 phoneNumberSiteMappings,
             )) {
@@ -2276,7 +2264,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
                     });
                 }
 
-                // Validate each phone number in the array
                 for (const phone of siteConfig.quoPhoneNumbers) {
                     if (typeof phone !== 'string' || !phone.trim()) {
                         return res.status(400).json({
@@ -2286,7 +2273,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 }
             }
 
-            // Load integration from database using commands (not repositories directly)
             const result =
                 await this.commands.loadIntegrationContextById(integrationId);
 
@@ -2299,13 +2285,10 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 });
             }
 
-            // Hydrate integration with record and modules (attaches this.quo, this.axisCare, etc.)
             const { record, modules } = result.context;
             this.setIntegrationRecord({ record, modules });
 
             const existingConfig = this.config || {};
-
-            // PATCH semantics: Merge new mappings with existing
             const existingMappings =
                 existingConfig.phoneNumberSiteMappings || {};
             const mergedMappings = {
@@ -2313,7 +2296,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 ...phoneNumberSiteMappings,
             };
 
-            // Check for duplicate phone numbers across all sites
             const allPhones = [];
             const duplicates = [];
             for (const [siteName, siteConfig] of Object.entries(
@@ -2346,7 +2328,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 config: updatedConfig,
             });
 
-            // Update local config after database save
             this.config = updatedConfig;
 
             const totalPhones = Object.values(mergedMappings).reduce(
@@ -2357,7 +2338,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 `[AxisCare] [OK] Phone mappings updated: ${Object.keys(phoneNumberSiteMappings).length} site(s), ${totalPhones} total phone(s)`,
             );
 
-            // Sync webhook subscriptions with updated phone mappings
             let webhookSyncResult = null;
             if (this.quo?.api) {
                 try {
@@ -2414,7 +2394,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
         try {
             const { integrationId } = req.params;
 
-            // Load integration from database using commands (not repositories directly)
             const result =
                 await this.commands.loadIntegrationContextById(integrationId);
 
@@ -2427,11 +2406,9 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 });
             }
 
-            // Hydrate integration with record and modules (attaches this.quo, this.axisCare, etc.)
             const { record, modules } = result.context;
             this.setIntegrationRecord({ record, modules });
 
-            // Quo API should now be available after hydration
             if (!this.quo?.api) {
                 return res.status(503).json({
                     error: 'Quo API not available',
