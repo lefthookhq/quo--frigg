@@ -269,6 +269,14 @@ describe('AxisCareIntegration', () => {
             };
             integration.commands = {
                 updateIntegrationConfig: jest.fn().mockResolvedValue({}),
+                loadIntegrationContextById: jest.fn().mockResolvedValue({
+                    context: {
+                        record: {
+                            id: 'test-integration-id',
+                            config: {},
+                        },
+                    },
+                }),
             };
             integration.config = {};
         });
@@ -280,8 +288,36 @@ describe('AxisCareIntegration', () => {
             );
         });
 
+        it('should return 404 when integration is not found', async () => {
+            integration.commands.loadIntegrationContextById = jest
+                .fn()
+                .mockResolvedValue({
+                    error: 404,
+                    reason: 'Integration not found',
+                });
+
+            mockReq = {
+                body: {
+                    phoneNumberSiteMappings: {
+                        '256787567092': {
+                            axisCareSiteNumber: 'demomark',
+                            label: 'Demo Mark Site',
+                        },
+                    },
+                },
+                params: { integrationId: 'non-existent-id' },
+            };
+
+            await integration.updatePhoneMapping({ req: mockReq, res: mockRes });
+
+            expect(mockRes.status).toHaveBeenCalledWith(404);
+            expect(mockRes.json).toHaveBeenCalledWith({
+                error: 'Integration not found',
+            });
+        });
+
         it('should return 400 when phoneNumberSiteMappings is missing', async () => {
-            mockReq = { body: {} };
+            mockReq = { body: {}, params: { integrationId: 'test-integration-id' } };
 
             await integration.updatePhoneMapping({ req: mockReq, res: mockRes });
 
@@ -292,7 +328,7 @@ describe('AxisCareIntegration', () => {
         });
 
         it('should return 400 when phoneNumberSiteMappings is an array', async () => {
-            mockReq = { body: { phoneNumberSiteMappings: [] } };
+            mockReq = { body: { phoneNumberSiteMappings: [] }, params: { integrationId: 'test-integration-id' } };
 
             await integration.updatePhoneMapping({ req: mockReq, res: mockRes });
 
@@ -309,6 +345,7 @@ describe('AxisCareIntegration', () => {
                         '256787567092': { label: 'Test Site' },
                     },
                 },
+                params: { integrationId: 'test-integration-id' },
             };
 
             await integration.updatePhoneMapping({ req: mockReq, res: mockRes });
@@ -326,6 +363,7 @@ describe('AxisCareIntegration', () => {
                         '256787567092': { axisCareSiteNumber: 'demomark' },
                     },
                 },
+                params: { integrationId: 'test-integration-id' },
             };
 
             await integration.updatePhoneMapping({ req: mockReq, res: mockRes });
@@ -349,6 +387,7 @@ describe('AxisCareIntegration', () => {
                         },
                     },
                 },
+                params: { integrationId: 'test-integration-id' },
             };
 
             await integration.updatePhoneMapping({ req: mockReq, res: mockRes });
@@ -403,6 +442,7 @@ describe('AxisCareIntegration', () => {
                         },
                     },
                 },
+                params: { integrationId: 'test-integration-id' },
             };
 
             await integration.updatePhoneMapping({ req: mockReq, res: mockRes });
@@ -441,6 +481,7 @@ describe('AxisCareIntegration', () => {
                         },
                     },
                 },
+                params: { integrationId: 'test-integration-id' },
             };
 
             const consoleErrorSpy = jest
@@ -470,15 +511,25 @@ describe('AxisCareIntegration', () => {
 
         it('should merge new mappings with existing mappings (PATCH semantics)', async () => {
             integration.quo = null; // Skip webhook sync for this test
-            integration.config = {
-                existingField: 'preserved',
-                phoneNumberSiteMappings: {
-                    '111111111': {
-                        axisCareSiteNumber: 'existing',
-                        label: 'Existing Site',
+            // Mock loadIntegrationContextById to return existing config
+            integration.commands.loadIntegrationContextById = jest
+                .fn()
+                .mockResolvedValue({
+                    context: {
+                        record: {
+                            id: 'test-integration-id',
+                            config: {
+                                existingField: 'preserved',
+                                phoneNumberSiteMappings: {
+                                    '111111111': {
+                                        axisCareSiteNumber: 'existing',
+                                        label: 'Existing Site',
+                                    },
+                                },
+                            },
+                        },
                     },
-                },
-            };
+                });
 
             mockReq = {
                 body: {
@@ -489,6 +540,7 @@ describe('AxisCareIntegration', () => {
                         },
                     },
                 },
+                params: { integrationId: 'test-integration-id' },
             };
 
             await integration.updatePhoneMapping({ req: mockReq, res: mockRes });
@@ -533,6 +585,7 @@ describe('AxisCareIntegration', () => {
                         },
                     },
                 },
+                params: { integrationId: 'test-integration-id' },
             };
 
             await integration.updatePhoneMapping({ req: mockReq, res: mockRes });
@@ -940,7 +993,20 @@ describe('AxisCareIntegration', () => {
                 status: jest.fn().mockReturnThis(),
                 json: jest.fn(),
             };
-            mockReq = { body: {} };
+            mockReq = {
+                body: {},
+                params: { integrationId: 'test-integration-id' },
+            };
+            integration.commands = {
+                loadIntegrationContextById: jest.fn().mockResolvedValue({
+                    context: {
+                        record: {
+                            id: 'test-integration-id',
+                            config: {},
+                        },
+                    },
+                }),
+            };
         });
 
         it('should have SYNC_PHONE_WEBHOOKS event registered', () => {
@@ -948,6 +1014,22 @@ describe('AxisCareIntegration', () => {
             expect(integration.events.SYNC_PHONE_WEBHOOKS.handler).toBe(
                 integration.syncPhoneWebhooks,
             );
+        });
+
+        it('should return 404 when integration is not found', async () => {
+            integration.commands.loadIntegrationContextById = jest
+                .fn()
+                .mockResolvedValue({
+                    error: 404,
+                    reason: 'Integration not found',
+                });
+
+            await integration.syncPhoneWebhooks({ req: mockReq, res: mockRes });
+
+            expect(mockRes.status).toHaveBeenCalledWith(404);
+            expect(mockRes.json).toHaveBeenCalledWith({
+                error: 'Integration not found',
+            });
         });
 
         it('should return 503 when Quo API is not available', async () => {
@@ -958,13 +1040,13 @@ describe('AxisCareIntegration', () => {
             expect(mockRes.status).toHaveBeenCalledWith(503);
             expect(mockRes.json).toHaveBeenCalledWith({
                 error: 'Quo API not available',
-                message: expect.stringContaining('Quo module'),
+                details: expect.stringContaining('Quo API connection'),
             });
         });
 
         it('should return success with empty subscriptions when no mappings', async () => {
             integration.quo = { api: {} };
-            integration.config = {};
+            // Config is loaded from loadIntegrationContextById (default mock has empty config)
 
             await integration.syncPhoneWebhooks({ req: mockReq, res: mockRes });
 
@@ -977,14 +1059,23 @@ describe('AxisCareIntegration', () => {
 
         it('should call _managePhoneWebhookSubscriptions and return results', async () => {
             integration.quo = { api: {} };
-            integration.config = {
-                phoneNumberSiteMappings: {
-                    '5551234567': {
-                        axisCareSiteNumber: 'demo',
-                        label: 'Demo',
+            integration.commands.loadIntegrationContextById = jest
+                .fn()
+                .mockResolvedValue({
+                    context: {
+                        record: {
+                            id: 'test-integration-id',
+                            config: {
+                                phoneNumberSiteMappings: {
+                                    '5551234567': {
+                                        axisCareSiteNumber: 'demo',
+                                        label: 'Demo',
+                                    },
+                                },
+                            },
+                        },
                     },
-                },
-            };
+                });
 
             integration._managePhoneWebhookSubscriptions = jest
                 .fn()
@@ -1031,14 +1122,23 @@ describe('AxisCareIntegration', () => {
 
         it('should return 500 when webhook sync fails', async () => {
             integration.quo = { api: {} };
-            integration.config = {
-                phoneNumberSiteMappings: {
-                    '5551234567': {
-                        axisCareSiteNumber: 'demo',
-                        label: 'Demo',
+            integration.commands.loadIntegrationContextById = jest
+                .fn()
+                .mockResolvedValue({
+                    context: {
+                        record: {
+                            id: 'test-integration-id',
+                            config: {
+                                phoneNumberSiteMappings: {
+                                    '5551234567': {
+                                        axisCareSiteNumber: 'demo',
+                                        label: 'Demo',
+                                    },
+                                },
+                            },
+                        },
                     },
-                },
-            };
+                });
 
             integration._managePhoneWebhookSubscriptions = jest
                 .fn()

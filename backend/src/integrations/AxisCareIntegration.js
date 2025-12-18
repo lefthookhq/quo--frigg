@@ -52,12 +52,12 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 event: 'LIST_AXISCARE_CLIENTS',
             },
             {
-                path: '/axisCare/phone-mapping',
+                path: '/:integrationId/phone-mapping',
                 method: 'POST',
                 event: 'UPDATE_PHONE_MAPPING',
             },
             {
-                path: '/axisCare/phone-mapping/sync-webhooks',
+                path: '/:integrationId/phone-mapping/sync-webhooks',
                 method: 'POST',
                 event: 'SYNC_PHONE_WEBHOOKS',
             },
@@ -461,9 +461,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
         const normalized = this._normalizePhoneNumber(phoneNumber);
         const metadata = this.config?.phoneNumbersMetadata || [];
         const found = metadata.find(
-            (p) =>
-                this._normalizePhoneNumber(p.phoneNumber || p.number) ===
-                normalized,
+            (p) => this._normalizePhoneNumber(p.number) === normalized,
         );
         return found?.id || null;
     }
@@ -475,9 +473,9 @@ class AxisCareIntegration extends BaseCRMIntegration {
      */
     async _resolvePhoneMappingsToQuoIds() {
         const mappings = this.config?.phoneNumberSiteMappings || {};
-        const phoneNumbers = Object.keys(mappings);
+        const mappedPhoneNumbers = Object.keys(mappings);
 
-        if (phoneNumbers.length === 0) {
+        if (mappedPhoneNumbers.length === 0) {
             return [];
         }
 
@@ -505,7 +503,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
         const resolvedIds = [];
         const unresolvedPhones = [];
 
-        for (const phone of phoneNumbers) {
+        for (const phone of mappedPhoneNumbers) {
             const quoPhoneId = this._resolvePhoneToQuoId(phone);
             if (quoPhoneId) {
                 resolvedIds.push(quoPhoneId);
@@ -538,13 +536,13 @@ class AxisCareIntegration extends BaseCRMIntegration {
             keep: [],
         };
 
-        const existingByIndex = new Map(
+        const existingSubscriptionByIndex = new Map(
             existingSubscriptions.map((sub, idx) => [idx, sub]),
         );
 
         // Match required chunks to existing subscriptions
         requiredChunks.forEach((chunk, index) => {
-            const existing = existingByIndex.get(index);
+            const existing = existingSubscriptionByIndex.get(index);
 
             if (!existing) {
                 // New chunk needs new webhook
@@ -568,12 +566,12 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 } else {
                     operations.keep.push(existing);
                 }
-                existingByIndex.delete(index);
+                existingSubscriptionByIndex.delete(index);
             }
         });
 
         // Remaining existing subscriptions are orphaned
-        for (const [, sub] of existingByIndex) {
+        for (const [, sub] of existingSubscriptionByIndex) {
             operations.delete.push({
                 webhookId: sub.webhookId,
                 reason: 'chunk_no_longer_needed',
@@ -662,12 +660,10 @@ class AxisCareIntegration extends BaseCRMIntegration {
 
         try {
             // 1. Resolve phone mappings to Quo phone IDs
-            const phoneIds = await this._resolvePhoneMappingsToQuoIds();
+            const mappedPhoneIds = await this._resolvePhoneMappingsToQuoIds();
 
-            if (phoneIds.length === 0) {
-                console.log(
-                    '[AxisCare] No phone IDs to manage webhooks for',
-                );
+            if (mappedPhoneIds.length === 0) {
+                console.log('[AxisCare] No phone IDs to manage webhooks for');
                 return {
                     status: 'no_phones',
                     subscriptions: { call: [], callSummary: [] },
@@ -675,16 +671,17 @@ class AxisCareIntegration extends BaseCRMIntegration {
             }
 
             // 2. Chunk into groups of MAX_RESOURCE_IDS_PER_WEBHOOK
-            const chunks = this._chunkArray(
-                phoneIds,
+            const ChunksOfPhoneIds = this._chunkArray(
+                mappedPhoneIds,
                 this.constructor.MAX_RESOURCE_IDS_PER_WEBHOOK,
             );
             console.log(
-                `[AxisCare] Managing webhooks for ${phoneIds.length} phone(s) in ${chunks.length} chunk(s)`,
+                `[AxisCare] Managing webhooks for ${mappedPhoneIds.length} phone(s) in ${ChunksOfPhoneIds.length} chunk(s)`,
             );
 
             // 3. Get existing subscriptions
-            const existingSubs = this.config?.phoneNumberWebhookSubscriptions || {
+            const existingSubs = this.config
+                ?.phoneNumberWebhookSubscriptions || {
                 call: [],
                 callSummary: [],
             };
@@ -696,7 +693,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
             for (const webhookType of ['call', 'callSummary']) {
                 const existing = existingSubs[webhookType] || [];
                 const operations = this._planSubscriptionOperations(
-                    chunks,
+                    ChunksOfPhoneIds,
                     existing,
                 );
 
@@ -2324,6 +2321,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
     async updatePhoneMapping({ req, res }) {
         try {
             const { phoneNumberSiteMappings } = req.body;
+            const { integrationId } = req.params;
 
             // Validation: Required field
             if (!phoneNumberSiteMappings) {
@@ -2374,28 +2372,45 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 }
             }
 
+            // Load integration from database using commands (not repositories directly)
+            const result =
+                await this.commands.loadIntegrationContextById(integrationId);
+
+            if (result.error) {
+                const status = result.error === 404 ? 404 : 500;
+                return res.status(status).json({
+                    error:
+                        result.reason ||
+                        `Integration not found: ${integrationId}`,
+                });
+            }
+
+            const integrationRecord = result.context.record;
+            const existingConfig = integrationRecord.config || {};
+
             // PATCH semantics: Merge new mappings with existing
             const existingMappings =
-                this.config?.phoneNumberSiteMappings || {};
+                existingConfig.phoneNumberSiteMappings || {};
             const mergedMappings = {
                 ...existingMappings,
                 ...phoneNumberSiteMappings,
             };
 
             const updatedConfig = {
-                ...this.config,
+                ...existingConfig,
                 phoneNumberSiteMappings: mergedMappings,
             };
 
             await this.commands.updateIntegrationConfig({
-                integrationId: this.id,
+                integrationId,
                 config: updatedConfig,
             });
 
             this.config = updatedConfig;
+            this.id = integrationId;
 
             console.log(
-                `[AxisCare] ✓ Phone mappings updated: ${Object.keys(phoneNumberSiteMappings).length} mapping(s) added/updated`,
+                `[AxisCare] [OK] Phone mappings updated: ${Object.keys(phoneNumberSiteMappings).length} mapping(s) added/updated`,
             );
 
             // Sync webhook subscriptions with updated phone mappings
@@ -2405,7 +2420,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
                     webhookSyncResult =
                         await this._managePhoneWebhookSubscriptions();
                     console.log(
-                        `[AxisCare] ✓ Webhook subscriptions synced: ${webhookSyncResult.status}`,
+                        `[AxisCare] [OK] Webhook subscriptions synced: ${webhookSyncResult.status}`,
                     );
                 } catch (webhookError) {
                     console.error(
@@ -2446,17 +2461,40 @@ class AxisCareIntegration extends BaseCRMIntegration {
     /**
      * Manually sync phone number webhook subscriptions
      * Reconciles webhook state with current phone mappings
+     * NOTE: This endpoint requires the full integration context with Quo API.
+     * Use via webhook handlers or queue workers that properly hydrate the integration.
      * @param {Object} params
      * @param {Object} params.req - Express request object
      * @param {Object} params.res - Express response object
      */
     async syncPhoneWebhooks({ req, res }) {
         try {
+            const { integrationId } = req.params;
+
+            // Load integration from database using commands (not repositories directly)
+            const result =
+                await this.commands.loadIntegrationContextById(integrationId);
+
+            if (result.error) {
+                const status = result.error === 404 ? 404 : 500;
+                return res.status(status).json({
+                    error:
+                        result.reason ||
+                        `Integration not found: ${integrationId}`,
+                });
+            }
+
+            const integrationRecord = result.context.record;
+            this.config = integrationRecord.config || {};
+            this.id = integrationId;
+
+            // Note: Quo API won't be available without full integration hydration
+            // This endpoint is primarily for manual reconciliation via queue workers
             if (!this.quo?.api) {
                 return res.status(503).json({
                     error: 'Quo API not available',
-                    message:
-                        'Cannot sync webhooks without Quo API connection. Please ensure the Quo module is configured.',
+                    details:
+                        'Cannot sync webhooks without Quo API connection. The sync-webhooks endpoint requires full integration hydration. Use the phone-mapping POST endpoint which triggers sync automatically, or invoke via queue worker.',
                 });
             }
 
@@ -2475,15 +2513,15 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 `[AxisCare] Starting manual webhook sync for ${phoneCount} phone mapping(s)`,
             );
 
-            const result = await this._managePhoneWebhookSubscriptions();
+            const syncResult = await this._managePhoneWebhookSubscriptions();
 
-            const callSubs = result.subscriptions?.call || [];
-            const summarySubs = result.subscriptions?.callSummary || [];
+            const callSubs = syncResult.subscriptions?.call || [];
+            const summarySubs = syncResult.subscriptions?.callSummary || [];
 
             res.json({
                 success: true,
                 message: 'Webhook subscriptions synced successfully',
-                status: result.status,
+                status: syncResult.status,
                 subscriptions: {
                     call: callSubs.map((s) => ({
                         webhookId: s.webhookId,
