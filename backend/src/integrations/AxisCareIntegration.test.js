@@ -18,6 +18,29 @@ jest.mock('../base/BaseCRMIntegration', () => {
                     LOG_CALL: { handler: jest.fn() },
                 };
             }
+
+            // Mock setIntegrationRecord from IntegrationBase
+            setIntegrationRecord({ record, modules = [] }) {
+                this.id = record.id;
+                this.userId = record.userId;
+                this.entities = record.entities;
+                this.config = record.config || {};
+                this.status = record.status;
+                this.version = record.version;
+                this.messages = record.messages || { errors: [], warnings: [] };
+                this.record = record;
+
+                // Attach modules to this instance (e.g., this.quo, this.axisCare)
+                for (const module of modules) {
+                    const moduleName =
+                        typeof module.getName === 'function'
+                            ? module.getName()
+                            : module.name;
+                    if (moduleName) {
+                        this[moduleName] = module;
+                    }
+                }
+            }
         },
     };
 });
@@ -275,6 +298,7 @@ describe('AxisCareIntegration', () => {
                             id: 'test-integration-id',
                             config: {},
                         },
+                        modules: [], // No modules - this.quo won't be set
                     },
                 }),
             };
@@ -299,9 +323,8 @@ describe('AxisCareIntegration', () => {
             mockReq = {
                 body: {
                     phoneNumberSiteMappings: {
-                        '256787567092': {
-                            axisCareSiteNumber: 'demomark',
-                            label: 'Demo Mark Site',
+                        demomark: {
+                            quoPhoneNumbers: ['256787567092'],
                         },
                     },
                 },
@@ -338,11 +361,11 @@ describe('AxisCareIntegration', () => {
             });
         });
 
-        it('should return 400 when mapping is missing axisCareSiteNumber', async () => {
+        it('should return 400 when site config is missing quoPhoneNumbers', async () => {
             mockReq = {
                 body: {
                     phoneNumberSiteMappings: {
-                        '256787567092': { label: 'Test Site' },
+                        demomark: { someOtherField: 'value' },
                     },
                 },
                 params: { integrationId: 'test-integration-id' },
@@ -352,15 +375,15 @@ describe('AxisCareIntegration', () => {
 
             expect(mockRes.status).toHaveBeenCalledWith(400);
             expect(mockRes.json).toHaveBeenCalledWith({
-                error: "axisCareSiteNumber is required for phone number '256787567092'",
+                error: "quoPhoneNumbers must be an array for site 'demomark'",
             });
         });
 
-        it('should return 400 when mapping is missing label', async () => {
+        it('should return 400 when quoPhoneNumbers contains invalid phone', async () => {
             mockReq = {
                 body: {
                     phoneNumberSiteMappings: {
-                        '256787567092': { axisCareSiteNumber: 'demomark' },
+                        demomark: { quoPhoneNumbers: ['256787567092', '', '123456'] },
                     },
                 },
                 params: { integrationId: 'test-integration-id' },
@@ -370,7 +393,7 @@ describe('AxisCareIntegration', () => {
 
             expect(mockRes.status).toHaveBeenCalledWith(400);
             expect(mockRes.json).toHaveBeenCalledWith({
-                error: "label is required for phone number '256787567092'",
+                error: "Invalid phone number in site 'demomark': phone numbers must be non-empty strings",
             });
         });
 
@@ -381,9 +404,8 @@ describe('AxisCareIntegration', () => {
             mockReq = {
                 body: {
                     phoneNumberSiteMappings: {
-                        '256787567092': {
-                            axisCareSiteNumber: 'demomark',
-                            label: 'Demo Mark Site',
+                        demomark: {
+                            quoPhoneNumbers: ['256787567092'],
                         },
                     },
                 },
@@ -398,9 +420,8 @@ describe('AxisCareIntegration', () => {
                 integrationId: 'test-integration-id',
                 config: expect.objectContaining({
                     phoneNumberSiteMappings: {
-                        '256787567092': {
-                            axisCareSiteNumber: 'demomark',
-                            label: 'Demo Mark Site',
+                        demomark: {
+                            quoPhoneNumbers: ['256787567092'],
                         },
                     },
                 }),
@@ -408,8 +429,9 @@ describe('AxisCareIntegration', () => {
             expect(mockRes.json).toHaveBeenCalledWith({
                 success: true,
                 message: 'Phone mappings updated successfully',
-                mappingsCount: 1,
-                updatedMappings: ['256787567092'],
+                sitesCount: 1,
+                totalPhoneCount: 1,
+                updatedSites: ['demomark'],
                 webhookSync: {
                     status: 'skipped',
                     reason: 'quo_api_not_available',
@@ -436,9 +458,8 @@ describe('AxisCareIntegration', () => {
             mockReq = {
                 body: {
                     phoneNumberSiteMappings: {
-                        '256787567092': {
-                            axisCareSiteNumber: 'demomark',
-                            label: 'Demo Mark Site',
+                        demomark: {
+                            quoPhoneNumbers: ['256787567092'],
                         },
                     },
                 },
@@ -475,9 +496,8 @@ describe('AxisCareIntegration', () => {
             mockReq = {
                 body: {
                     phoneNumberSiteMappings: {
-                        '256787567092': {
-                            axisCareSiteNumber: 'demomark',
-                            label: 'Demo Mark Site',
+                        demomark: {
+                            quoPhoneNumbers: ['256787567092'],
                         },
                     },
                 },
@@ -521,9 +541,8 @@ describe('AxisCareIntegration', () => {
                             config: {
                                 existingField: 'preserved',
                                 phoneNumberSiteMappings: {
-                                    '111111111': {
-                                        axisCareSiteNumber: 'existing',
-                                        label: 'Existing Site',
+                                    existingSite: {
+                                        quoPhoneNumbers: ['111111111', '222222222'],
                                     },
                                 },
                             },
@@ -534,9 +553,8 @@ describe('AxisCareIntegration', () => {
             mockReq = {
                 body: {
                     phoneNumberSiteMappings: {
-                        '256787567092': {
-                            axisCareSiteNumber: 'demomark',
-                            label: 'Demo Mark Site',
+                        demomark: {
+                            quoPhoneNumbers: ['256787567092'],
                         },
                     },
                 },
@@ -552,21 +570,20 @@ describe('AxisCareIntegration', () => {
                 config: {
                     existingField: 'preserved',
                     phoneNumberSiteMappings: {
-                        '111111111': {
-                            axisCareSiteNumber: 'existing',
-                            label: 'Existing Site',
+                        existingSite: {
+                            quoPhoneNumbers: ['111111111', '222222222'],
                         },
-                        '256787567092': {
-                            axisCareSiteNumber: 'demomark',
-                            label: 'Demo Mark Site',
+                        demomark: {
+                            quoPhoneNumbers: ['256787567092'],
                         },
                     },
                 },
             });
             expect(mockRes.json).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    mappingsCount: 2,
-                    updatedMappings: ['256787567092'],
+                    sitesCount: 2,
+                    totalPhoneCount: 3,
+                    updatedSites: ['demomark'],
                 }),
             );
         });
@@ -579,9 +596,8 @@ describe('AxisCareIntegration', () => {
             mockReq = {
                 body: {
                     phoneNumberSiteMappings: {
-                        '256787567092': {
-                            axisCareSiteNumber: 'demomark',
-                            label: 'Demo Mark Site',
+                        demomark: {
+                            quoPhoneNumbers: ['256787567092'],
                         },
                     },
                 },
@@ -884,103 +900,209 @@ describe('AxisCareIntegration', () => {
         });
     });
 
-    describe('_planSubscriptionOperations', () => {
-        it('should plan creates for new chunks', () => {
-            const requiredChunks = [['phone-1', 'phone-2'], ['phone-3']];
-            const existingSubs = [];
-
-            const result = integration._planSubscriptionOperations(
-                requiredChunks,
-                existingSubs,
-            );
-
-            expect(result.create).toHaveLength(2);
-            expect(result.create[0]).toEqual({
-                phoneIds: ['phone-1', 'phone-2'],
-                chunkIndex: 0,
-            });
-            expect(result.create[1]).toEqual({
-                phoneIds: ['phone-3'],
-                chunkIndex: 1,
-            });
-            expect(result.update).toHaveLength(0);
-            expect(result.delete).toHaveLength(0);
+    describe('_deleteAllWebhooks', () => {
+        beforeEach(() => {
+            integration.quo = {
+                api: {
+                    deleteWebhook: jest.fn().mockResolvedValue({}),
+                },
+            };
         });
 
-        it('should plan updates for changed chunks', () => {
-            const requiredChunks = [['phone-1', 'phone-2', 'phone-3']];
-            const existingSubs = [
-                {
-                    webhookId: 'wh-1',
-                    webhookKey: 'key-1',
-                    phoneIds: ['phone-1', 'phone-2'],
-                    chunkIndex: 0,
-                },
-            ];
+        it('should delete all webhooks for both types', async () => {
+            const subscriptions = {
+                call: [
+                    { webhookId: 'call-wh-1' },
+                    { webhookId: 'call-wh-2' },
+                ],
+                callSummary: [{ webhookId: 'summary-wh-1' }],
+            };
 
-            const result = integration._planSubscriptionOperations(
-                requiredChunks,
-                existingSubs,
+            await integration._deleteAllWebhooks(subscriptions);
+
+            expect(integration.quo.api.deleteWebhook).toHaveBeenCalledTimes(3);
+            expect(integration.quo.api.deleteWebhook).toHaveBeenCalledWith(
+                'call-wh-1',
             );
-
-            expect(result.update).toHaveLength(1);
-            expect(result.update[0]).toEqual({
-                webhookId: 'wh-1',
-                webhookKey: 'key-1',
-                phoneIds: ['phone-1', 'phone-2', 'phone-3'],
-                chunkIndex: 0,
-            });
-            expect(result.create).toHaveLength(0);
-            expect(result.delete).toHaveLength(0);
+            expect(integration.quo.api.deleteWebhook).toHaveBeenCalledWith(
+                'call-wh-2',
+            );
+            expect(integration.quo.api.deleteWebhook).toHaveBeenCalledWith(
+                'summary-wh-1',
+            );
         });
 
-        it('should plan deletes for orphaned subscriptions', () => {
-            const requiredChunks = [['phone-1']];
-            const existingSubs = [
-                {
-                    webhookId: 'wh-1',
-                    phoneIds: ['phone-1'],
-                    chunkIndex: 0,
-                },
-                {
-                    webhookId: 'wh-2',
-                    phoneIds: ['phone-2'],
-                    chunkIndex: 1,
-                },
-            ];
+        it('should handle empty subscriptions', async () => {
+            const subscriptions = { call: [], callSummary: [] };
 
-            const result = integration._planSubscriptionOperations(
-                requiredChunks,
-                existingSubs,
+            await integration._deleteAllWebhooks(subscriptions);
+
+            expect(integration.quo.api.deleteWebhook).not.toHaveBeenCalled();
+        });
+
+        it('should continue on delete errors', async () => {
+            const subscriptions = {
+                call: [{ webhookId: 'wh-1' }, { webhookId: 'wh-2' }],
+                callSummary: [],
+            };
+
+            integration.quo.api.deleteWebhook
+                .mockRejectedValueOnce(new Error('Delete failed'))
+                .mockResolvedValueOnce({});
+
+            await integration._deleteAllWebhooks(subscriptions);
+
+            expect(integration.quo.api.deleteWebhook).toHaveBeenCalledTimes(2);
+        });
+
+        it('should handle missing arrays gracefully', async () => {
+            const subscriptions = {};
+
+            await integration._deleteAllWebhooks(subscriptions);
+
+            expect(integration.quo.api.deleteWebhook).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('_managePhoneWebhookSubscriptions', () => {
+        beforeEach(() => {
+            integration.id = 'test-integration-id';
+            integration.config = {};
+            integration.commands = {
+                updateIntegrationConfig: jest.fn().mockResolvedValue({}),
+            };
+            integration.quo = {
+                api: {
+                    deleteWebhook: jest.fn().mockResolvedValue({}),
+                    createCallWebhook: jest.fn().mockResolvedValue({
+                        data: { id: 'test-call-wh', key: 'test-key' },
+                    }),
+                    createCallSummaryWebhook: jest.fn().mockResolvedValue({
+                        data: { id: 'test-summary-wh', key: 'test-key' },
+                    }),
+                },
+            };
+            integration._generateWebhookUrl = jest
+                .fn()
+                .mockReturnValue('https://example.com/webhooks/test-integration-id');
+        });
+
+        it('should delete existing webhooks when no phone mappings', async () => {
+            integration.config = {
+                phoneNumberWebhookSubscriptions: {
+                    call: [{ webhookId: 'old-call-wh' }],
+                    callSummary: [{ webhookId: 'old-summary-wh' }],
+                },
+            };
+            integration._resolvePhoneMappingsToQuoIds = jest
+                .fn()
+                .mockResolvedValue([]);
+
+            const result = await integration._managePhoneWebhookSubscriptions();
+
+            expect(result.status).toBe('no_phones');
+            expect(integration.quo.api.deleteWebhook).toHaveBeenCalledWith(
+                'old-call-wh',
             );
-
-            expect(result.keep).toHaveLength(1);
-            expect(result.delete).toHaveLength(1);
-            expect(result.delete[0]).toEqual({
-                webhookId: 'wh-2',
-                reason: 'chunk_no_longer_needed',
+            expect(integration.quo.api.deleteWebhook).toHaveBeenCalledWith(
+                'old-summary-wh',
+            );
+            expect(
+                integration.commands.updateIntegrationConfig,
+            ).toHaveBeenCalledWith({
+                integrationId: 'test-integration-id',
+                config: expect.objectContaining({
+                    phoneNumberWebhookSubscriptions: { call: [], callSummary: [] },
+                }),
             });
         });
 
-        it('should keep unchanged subscriptions', () => {
-            const requiredChunks = [['phone-1', 'phone-2']];
-            const existingSubs = [
-                {
-                    webhookId: 'wh-1',
-                    phoneIds: ['phone-1', 'phone-2'],
-                    chunkIndex: 0,
+        it('should create new webhooks first, then delete old ones', async () => {
+            const callOrder = [];
+            integration.config = {
+                phoneNumberWebhookSubscriptions: {
+                    call: [{ webhookId: 'old-call-wh' }],
+                    callSummary: [{ webhookId: 'old-summary-wh' }],
                 },
-            ];
+            };
+            integration._resolvePhoneMappingsToQuoIds = jest
+                .fn()
+                .mockResolvedValue(['phone-1']);
+            integration.quo.api.createCallWebhook = jest.fn().mockImplementation(() => {
+                callOrder.push('create-call');
+                return { data: { id: 'new-call-wh', key: 'new-key' } };
+            });
+            integration.quo.api.createCallSummaryWebhook = jest
+                .fn()
+                .mockImplementation(() => {
+                    callOrder.push('create-summary');
+                    return { data: { id: 'new-summary-wh', key: 'new-key' } };
+                });
+            integration.quo.api.deleteWebhook = jest.fn().mockImplementation((id) => {
+                callOrder.push(`delete-${id}`);
+                return {};
+            });
 
-            const result = integration._planSubscriptionOperations(
-                requiredChunks,
-                existingSubs,
+            await integration._managePhoneWebhookSubscriptions();
+
+            expect(callOrder).toEqual([
+                'create-call',
+                'create-summary',
+                'delete-old-call-wh',
+                'delete-old-summary-wh',
+            ]);
+        });
+
+        it('should rollback new webhooks on creation failure', async () => {
+            integration.config = { phoneNumberWebhookSubscriptions: { call: [], callSummary: [] } };
+            integration._resolvePhoneMappingsToQuoIds = jest
+                .fn()
+                .mockResolvedValue(['phone-1']);
+            integration.quo.api.createCallWebhook = jest.fn().mockResolvedValue({
+                data: { id: 'new-call-wh', key: 'key' },
+            });
+            integration.quo.api.createCallSummaryWebhook = jest
+                .fn()
+                .mockRejectedValue(new Error('API Error'));
+
+            await expect(
+                integration._managePhoneWebhookSubscriptions(),
+            ).rejects.toThrow('API Error');
+
+            expect(integration.quo.api.deleteWebhook).toHaveBeenCalledWith(
+                'new-call-wh',
             );
+        });
 
-            expect(result.keep).toHaveLength(1);
-            expect(result.create).toHaveLength(0);
-            expect(result.update).toHaveLength(0);
-            expect(result.delete).toHaveLength(0);
+        it('should create webhooks for all chunks', async () => {
+            integration.config = { phoneNumberWebhookSubscriptions: { call: [], callSummary: [] } };
+            const phoneIds = Array.from({ length: 25 }, (_, i) => `phone-${i}`);
+            integration._resolvePhoneMappingsToQuoIds = jest
+                .fn()
+                .mockResolvedValue(phoneIds);
+            let callCount = 0;
+            integration.quo.api.createCallWebhook = jest.fn().mockImplementation(() => {
+                callCount++;
+                return { data: { id: `call-wh-${callCount}`, key: `key-${callCount}` } };
+            });
+            let summaryCount = 0;
+            integration.quo.api.createCallSummaryWebhook = jest
+                .fn()
+                .mockImplementation(() => {
+                    summaryCount++;
+                    return {
+                        data: { id: `summary-wh-${summaryCount}`, key: `key-${summaryCount}` },
+                    };
+                });
+
+            const result = await integration._managePhoneWebhookSubscriptions();
+
+            expect(integration.quo.api.createCallWebhook).toHaveBeenCalledTimes(3);
+            expect(integration.quo.api.createCallSummaryWebhook).toHaveBeenCalledTimes(
+                3,
+            );
+            expect(result.subscriptions.call).toHaveLength(3);
+            expect(result.subscriptions.callSummary).toHaveLength(3);
         });
     });
 
@@ -1067,9 +1189,8 @@ describe('AxisCareIntegration', () => {
                             id: 'test-integration-id',
                             config: {
                                 phoneNumberSiteMappings: {
-                                    '5551234567': {
-                                        axisCareSiteNumber: 'demo',
-                                        label: 'Demo',
+                                    demo: {
+                                        quoPhoneNumbers: ['5551234567'],
                                     },
                                 },
                             },
@@ -1130,9 +1251,8 @@ describe('AxisCareIntegration', () => {
                             id: 'test-integration-id',
                             config: {
                                 phoneNumberSiteMappings: {
-                                    '5551234567': {
-                                        axisCareSiteNumber: 'demo',
-                                        label: 'Demo',
+                                    demo: {
+                                        quoPhoneNumbers: ['5551234567'],
                                     },
                                 },
                             },
