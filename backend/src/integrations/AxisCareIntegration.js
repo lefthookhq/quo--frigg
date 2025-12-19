@@ -61,6 +61,11 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 method: 'POST',
                 event: 'SYNC_PHONE_WEBHOOKS',
             },
+            {
+                path: '/:integrationId/initial-sync',
+                method: 'POST',
+                event: 'RUN_INITIAL_SYNC',
+            },
         ],
     };
 
@@ -143,6 +148,9 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 description: 'Synchronize AxisCare clients with Quo CRM',
                 userActionType: 'DATA',
             },
+            RUN_INITIAL_SYNC: {
+                handler: this.runInitialSync,
+            },
         };
     }
 
@@ -154,6 +162,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
      * @param {number} params.limit - Records per page
      * @param {Date} [params.modifiedSince] - Filter by modification date
      * @param {boolean} [params.sortDesc=true] - Sort descending (ignored by AxisCare)
+     * @param {string} [params.siteNumber] - Optional siteNumber for multi-site support
      * @returns {Promise<{data: Array, cursor: string|null, hasMore: boolean}>}
      */
     async fetchPersonPage({
@@ -162,8 +171,11 @@ class AxisCareIntegration extends BaseCRMIntegration {
         limit,
         modifiedSince,
         sortDesc = true,
+        siteNumber,
     }) {
         try {
+            const api = this._getAxisCareApiForSite(siteNumber);
+
             const params = {
                 limit: limit || 50,
             };
@@ -179,29 +191,27 @@ class AxisCareIntegration extends BaseCRMIntegration {
             let response, persons;
 
             console.log(
-                `[AxisCare] Fetching ${objectType} page with cursor=${cursor}`,
+                `[AxisCare] Fetching ${objectType} page with cursor=${cursor}${siteNumber ? `, siteNumber=${siteNumber}` : ''}`,
             );
 
             switch (objectType) {
                 case 'Client':
-                    response = await this.axisCare.api.listClients(params);
+                    response = await api.listClients(params);
                     persons = response.results?.clients || [];
                     break;
 
                 case 'Lead':
-                    response = await this.axisCare.api.listLeads(params);
+                    response = await api.listLeads(params);
                     persons = response.results?.leads || [];
                     break;
 
                 case 'Caregiver':
-                    response = await this.axisCare.api.listCaregivers(params);
-                    // ⚠️ Caregivers use different structure (no results wrapper)
+                    response = await api.listCaregivers(params);
                     persons = response.caregivers || [];
                     break;
 
                 case 'Applicant':
-                    response = await this.axisCare.api.listApplicants(params);
-                    // ⚠️ Applicants use same structure as Caregivers (no results wrapper)
+                    response = await api.listApplicants(params);
                     persons = response.applicants || [];
                     break;
 
@@ -240,18 +250,36 @@ class AxisCareIntegration extends BaseCRMIntegration {
             const taggedPersons = persons.map((person) => ({
                 ...person,
                 objectType: objectType,
+                siteNumber: siteNumber,
             }));
 
+            // Stop pagination if no results returned, regardless of nextPage URL
+            // AxisCare uses a shared ID space, so nextPage may point to IDs that exist but aren't this entity type
+            const hasMoreResults = taggedPersons.length > 0 && !!nextPageUrl;
+
             console.log(
-                `[AxisCare] Fetched ${taggedPersons.length} ${objectType}(s), hasMore=${!!nextPageUrl}`,
+                `[AxisCare] Fetched ${taggedPersons.length} ${objectType}(s), hasMore=${hasMoreResults}`,
             );
 
             return {
                 data: taggedPersons,
-                cursor: nextCursor,
-                hasMore: !!nextPageUrl,
+                cursor: hasMoreResults ? nextCursor : null,
+                hasMore: hasMoreResults,
             };
         } catch (error) {
+            // Handle 404 errors gracefully - AxisCare returns 404 when cursor doesn't exist
+            // This can happen if data was deleted between pagination requests
+            if (error.statusCode === 404) {
+                console.warn(
+                    `[AxisCare] Cursor ${cursor} not found for ${objectType}, treating as end of results`,
+                );
+                return {
+                    data: [],
+                    cursor: null,
+                    hasMore: false,
+                };
+            }
+
             console.error(
                 `Error fetching ${objectType} with cursor ${cursor}:`,
                 error,
@@ -467,6 +495,51 @@ class AxisCareIntegration extends BaseCRMIntegration {
     }
 
     /**
+     * Resolve siteNumber from a Quo phone number using phone mappings
+     * Used to determine which AxisCare site a call should be logged to
+     *
+     * @private
+     * @param {string} phoneNumber - Quo phone number to look up
+     * @returns {string|null} AxisCare siteNumber or null if not found
+     */
+    _resolveSiteNumberFromPhone(phoneNumber) {
+        const normalized = this._normalizePhoneNumber(phoneNumber);
+        const mappings = this.config?.phoneNumberSiteMappings || {};
+
+        for (const [siteNumber, siteConfig] of Object.entries(mappings)) {
+            const phones = (siteConfig.quoPhoneNumbers || []).map((p) =>
+                this._normalizePhoneNumber(p),
+            );
+            if (phones.includes(normalized)) {
+                return siteNumber;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Get an AxisCare API instance scoped to a specific siteNumber
+     * Thread-safe: creates a new object with overridden baseUrl without mutating shared state
+     * Uses prototypal inheritance so methods see the scoped baseUrl via `this`
+     *
+     * @private
+     * @param {string|null} siteNumber - SiteNumber to scope to, or null to use default
+     * @returns {Object} API instance (original or scoped)
+     */
+    _getAxisCareApiForSite(siteNumber) {
+        if (!siteNumber) {
+            return this.axisCare.api;
+        }
+
+        // Create object that inherits from original API but shadows baseUrl/siteNumber
+        // Methods accessing `this.baseUrl` will get the scoped value
+        const scopedApi = Object.create(this.axisCare.api);
+        scopedApi.siteNumber = siteNumber;
+        scopedApi.baseUrl = `https://${siteNumber}.axiscare.com`;
+        return scopedApi;
+    }
+
+    /**
      * Resolve all phone mappings to Quo phone IDs
      * @private
      * @returns {Promise<string[]>} Array of resolved Quo phone IDs
@@ -605,7 +678,8 @@ class AxisCareIntegration extends BaseCRMIntegration {
 
         try {
             const mappedPhoneIds = await this._resolvePhoneMappingsToQuoIds();
-            const existingSubs = this.config?.phoneNumberWebhookSubscriptions || {
+            const existingSubs = this.config
+                ?.phoneNumberWebhookSubscriptions || {
                 call: [],
                 callSummary: [],
             };
@@ -618,7 +692,10 @@ class AxisCareIntegration extends BaseCRMIntegration {
 
                 const updatedConfig = {
                     ...this.config,
-                    phoneNumberWebhookSubscriptions: { call: [], callSummary: [] },
+                    phoneNumberWebhookSubscriptions: {
+                        call: [],
+                        callSummary: [],
+                    },
                     lastPhoneMappingSyncAt: new Date().toISOString(),
                 };
                 await this.commands.updateIntegrationConfig({
@@ -1093,9 +1170,39 @@ class AxisCareIntegration extends BaseCRMIntegration {
     async _handleQuoCallEvent(webhookData) {
         let axiscareContactDetails = null;
         let currentContactPhone = null;
+        let resolvedSiteNumber = null;
+
+        // Resolve siteNumber from the Quo inbox phone that handled this call
+        const callObject = webhookData?.data?.object;
+        if (callObject?.phoneNumberId) {
+            try {
+                const phoneDetails = await this.quo.api.getPhoneNumber(
+                    callObject.phoneNumberId,
+                );
+                const inboxNumber = phoneDetails?.data?.number;
+                if (inboxNumber) {
+                    resolvedSiteNumber =
+                        this._resolveSiteNumberFromPhone(inboxNumber);
+                    if (resolvedSiteNumber) {
+                        console.log(
+                            `[Quo Webhook] Resolved siteNumber ${resolvedSiteNumber} from inbox ${inboxNumber}`,
+                        );
+                    } else {
+                        console.warn(
+                            `[Quo Webhook] Could not resolve siteNumber for inbox ${inboxNumber} - phone not found in phoneNumberSiteMappings`,
+                        );
+                    }
+                }
+            } catch (error) {
+                console.warn(
+                    `[Quo Webhook] Could not resolve siteNumber from phone:`,
+                    error.message,
+                );
+            }
+        }
 
         let callerName = null;
-        const initiatedBy = webhookData?.data?.object?.initiatedBy;
+        const initiatedBy = callObject?.initiatedBy;
         if (initiatedBy) {
             try {
                 const userResponse = await this.quo.api.getUser(initiatedBy);
@@ -1148,13 +1255,13 @@ class AxisCareIntegration extends BaseCRMIntegration {
                         contactType: axiscareContactDetails?.type,
                         direction:
                             direction === 'outgoing' ? 'outbound' : 'inbound',
-                        timestamp:
-                            webhookData?.data?.object?.completedAt || timestamp,
+                        timestamp: callObject?.completedAt || timestamp,
                         duration,
                         subject: title,
                         summary: content,
                         callerPhone: currentContactPhone,
                         callerName,
+                        siteNumber: resolvedSiteNumber,
                     });
                 },
             },
@@ -1258,9 +1365,25 @@ class AxisCareIntegration extends BaseCRMIntegration {
         );
         const inboxName =
             QuoCallContentBuilder.buildInboxName(phoneNumberDetails);
+        const participantIndex = callObject.direction === 'outgoing' ? 0 : 1;
         const inboxNumber =
             phoneNumberDetails.data?.number ||
-            participants[callObject.direction === 'outgoing' ? 0 : 1];
+            participants?.[participantIndex] ||
+            null;
+
+        // Resolve siteNumber from the Quo inbox phone for multi-site support
+        const resolvedSiteNumber = inboxNumber
+            ? this._resolveSiteNumberFromPhone(inboxNumber)
+            : null;
+        if (resolvedSiteNumber) {
+            console.log(
+                `[Quo Webhook] Resolved siteNumber ${resolvedSiteNumber} from inbox ${inboxNumber}`,
+            );
+        } else if (inboxNumber) {
+            console.warn(
+                `[Quo Webhook] Could not resolve siteNumber for inbox ${inboxNumber} - phone not found in phoneNumberSiteMappings`,
+            );
+        }
 
         const userDetails = await this.quo.api.getUser(callObject.userId);
         const userName = QuoCallContentBuilder.buildUserName(userDetails);
@@ -1293,17 +1416,17 @@ class AxisCareIntegration extends BaseCRMIntegration {
                             summary: content,
                             callerPhone: contactPhone,
                             callerName: userName,
+                            siteNumber: resolvedSiteNumber,
                         };
                         return await this.logCallToActivity(activityData);
                     },
                     updateNote: async (callLogId, { content, title }) => {
-                        return await this.axisCare.api.updateCallLog(
-                            callLogId,
-                            {
-                                subject: title,
-                                notes: content,
-                            },
-                        );
+                        const api =
+                            this._getAxisCareApiForSite(resolvedSiteNumber);
+                        return await api.updateCallLog(callLogId, {
+                            subject: title,
+                            notes: content,
+                        });
                     },
                 },
                 mappingRepo: {
@@ -1428,10 +1551,20 @@ class AxisCareIntegration extends BaseCRMIntegration {
 
     /**
      * Log phone call to AxisCare as a call log
+     * Supports multi-siteNumber: uses thread-safe scoped API for the target site
+     *
      * @param {Object} activity - Call activity data
-     * @returns {Promise<void>}
+     * @param {string} [activity.siteNumber] - Optional siteNumber to target specific site
+     * @returns {Promise<string|null>} Created call log ID or null
      */
     async logCallToActivity(activity) {
+        const targetSiteNumber = activity.siteNumber;
+        const api = this._getAxisCareApiForSite(targetSiteNumber);
+
+        if (targetSiteNumber) {
+            console.log(`[Quo Webhook] Using siteNumber: ${targetSiteNumber}`);
+        }
+
         try {
             // Format dateTime for AxisCare: remove milliseconds, replace Z with +00:00
             // AxisCare expects format like "2025-07-01T15:23:45-05:00"
@@ -1459,10 +1592,11 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 ],
             };
 
-            const response = await this.axisCare.api.createCallLog(callLogData);
+            const response = await api.createCallLog(callLogData);
 
             console.log(
-                `[Quo Webhook] ✓ Call logged to AxisCare ${activity.contactType} ${activity.contactId}`,
+                `[Quo Webhook] ✓ Call logged to AxisCare ${activity.contactType} ${activity.contactId}` +
+                    (targetSiteNumber ? ` (site: ${targetSiteNumber})` : ''),
             );
 
             // Return the created call log ID
@@ -1811,6 +1945,33 @@ class AxisCareIntegration extends BaseCRMIntegration {
     }
 
     /**
+     * Override handlePostCreateSetup to skip automatic sync for AxisCare
+     * AxisCare requires manual sync per siteNumber via syncClientsToQuo action
+     * Webhooks are still set up for call logging
+     *
+     * @param {Object} params
+     * @param {Object} params.data - Event data containing integrationId
+     * @returns {Promise<Object>} Setup result
+     */
+    async handlePostCreateSetup({ data }) {
+        const { integrationId } = data;
+
+        console.log(
+            `[AxisCare] Running post-create setup for integration ${integrationId}`,
+        );
+
+        // Set up Quo webhooks (still needed for call logging)
+        await this.setupWebhooks();
+
+        // Skip automatic initial sync - AxisCare requires manual sync per siteNumber
+        console.log(
+            '[AxisCare] Skipping automatic initial sync - use manual sync per siteNumber',
+        );
+
+        return { status: 'configured', syncSkipped: true };
+    }
+
+    /**
      * Called when integration is deleted
      * Clean up webhook registration with AxisCare
      *
@@ -2035,11 +2196,51 @@ class AxisCareIntegration extends BaseCRMIntegration {
 
     async getActionOptions({ actionId, data }) {
         switch (actionId) {
-            case 'SYNC_CLIENTS_TO_QUO':
+            case 'SYNC_CLIENTS_TO_QUO': {
+                // Build list from phone mappings (strict validation)
+                const availableSites = Object.keys(
+                    this.config?.phoneNumberSiteMappings || {},
+                );
+
+                if (availableSites.length === 0) {
+                    // No sites configured yet - show informative message
+                    return {
+                        jsonSchema: {
+                            type: 'object',
+                            properties: {
+                                message: {
+                                    type: 'string',
+                                    title: 'Configuration Required',
+                                    default:
+                                        'No site mappings configured. Use the phone mapping endpoint to configure siteNumbers before syncing.',
+                                    readOnly: true,
+                                },
+                            },
+                        },
+                        uiSchema: {
+                            type: 'VerticalLayout',
+                            elements: [
+                                {
+                                    type: 'Control',
+                                    scope: '#/properties/message',
+                                },
+                            ],
+                        },
+                    };
+                }
+
                 return {
                     jsonSchema: {
                         type: 'object',
+                        required: ['siteNumber'],
                         properties: {
+                            siteNumber: {
+                                type: 'string',
+                                title: 'Site Number',
+                                description:
+                                    'AxisCare site to sync clients from',
+                                enum: availableSites,
+                            },
                             limit: {
                                 type: 'number',
                                 title: 'Client Limit',
@@ -2070,11 +2271,14 @@ class AxisCareIntegration extends BaseCRMIntegration {
                                 ],
                             },
                         },
-                        required: [],
                     },
                     uiSchema: {
                         type: 'VerticalLayout',
                         elements: [
+                            {
+                                type: 'Control',
+                                scope: '#/properties/siteNumber',
+                            },
                             {
                                 type: 'Control',
                                 scope: '#/properties/limit',
@@ -2090,32 +2294,63 @@ class AxisCareIntegration extends BaseCRMIntegration {
                         ],
                     },
                 };
+            }
         }
         return null;
     }
 
     async syncClientsToQuo(args) {
+        const { siteNumber } = args;
+
+        // Validate siteNumber is in phone mappings
+        const mappedSites = Object.keys(
+            this.config?.phoneNumberSiteMappings || {},
+        );
+        if (!siteNumber || !mappedSites.includes(siteNumber)) {
+            throw new Error(
+                `Invalid siteNumber: ${siteNumber}. Must be one of: ${mappedSites.join(', ')}`,
+            );
+        }
+
+        const api = this._getAxisCareApiForSite(siteNumber);
+        console.log(
+            `[AxisCare] Syncing clients from siteNumber: ${siteNumber}`,
+        );
+
         try {
-            const axiscareClients = await this.axisCare.api.listClients({
+            const axiscareClients = await api.listClients({
                 limit: args.limit || 50,
                 statuses: args.status,
             });
 
             const syncResults = [];
-
-            for (const client of axiscareClients.results?.clients?.slice(
+            const clients = (axiscareClients.results?.clients || []).slice(
                 0,
                 args.maxClients || 10,
-            ) || []) {
+            );
+
+            for (const client of clients) {
                 try {
+                    // Create copy with siteNumber to avoid mutating original
+                    const clientWithSite = { ...client, siteNumber };
+
                     const quoContactData =
-                        await this.transformPersonToQuo(client);
+                        await this.transformPersonToQuo(clientWithSite);
 
                     let quoResult = null;
                     if (this.quo?.api) {
                         quoResult =
                             await this.quo.api.createContact(quoContactData);
                     }
+
+                    // Store mapping with siteNumber for call routing
+                    await this.upsertMapping(client.id, {
+                        externalId: client.id,
+                        entityType: 'client',
+                        siteNumber: siteNumber,
+                        lastSyncedAt: new Date().toISOString(),
+                        syncMethod: 'manual',
+                    });
 
                     syncResults.push({
                         axisCareClient: {
@@ -2142,6 +2377,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
             return {
                 label: 'Client Sync Results',
                 data: {
+                    siteNumber,
                     totalClientsProcessed: syncResults.length,
                     syncSummary: syncResults.reduce((summary, result) => {
                         summary[result.syncStatus] =
@@ -2153,8 +2389,174 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 },
             };
         } catch (error) {
-            console.error('Client sync failed:', error);
+            console.error(
+                `[AxisCare] Client sync failed for siteNumber ${siteNumber}:`,
+                error,
+            );
             throw new Error(`Client sync failed: ${error.message}`);
+        }
+    }
+
+    /**
+     * Run initial sync for one or more siteNumbers
+     * Uses queue-based SyncOrchestrator for handling large datasets
+     */
+    async runInitialSync({ req, res }) {
+        const { integrationId } = req.params;
+        const { siteNumbers } = req.body;
+
+        if (
+            !siteNumbers ||
+            !Array.isArray(siteNumbers) ||
+            siteNumbers.length === 0
+        ) {
+            return res
+                .status(400)
+                .json({ error: 'siteNumbers array is required' });
+        }
+
+        const result =
+            await this.commands.loadIntegrationContextById(integrationId);
+        if (result.error) {
+            const status = result.error === 404 ? 404 : 500;
+            return res.status(status).json({
+                error:
+                    result.reason || `Integration not found: ${integrationId}`,
+            });
+        }
+
+        const { record, modules } = result.context;
+        this.setIntegrationRecord({ record, modules });
+
+        const mappedSites = Object.keys(
+            this.config?.phoneNumberSiteMappings || {},
+        );
+        const invalidSites = siteNumbers.filter(
+            (s) => !mappedSites.includes(s),
+        );
+        if (invalidSites.length > 0) {
+            return res.status(400).json({
+                error: `Invalid siteNumbers: ${invalidSites.join(', ')}. Must be one of: ${mappedSites.join(', ')}`,
+            });
+        }
+
+        const allResults = [];
+
+        for (const site of siteNumbers) {
+            const syncResult = await this._startInitialSyncForSite({
+                integrationId,
+                siteNumber: site,
+            });
+            allResults.push({ siteNumber: site, ...syncResult });
+        }
+
+        return res.json({
+            message: `Initial sync queued for ${siteNumbers.length} siteNumber(s)`,
+            siteNumbers,
+            results: allResults,
+        });
+    }
+
+    /**
+     * Start initial sync for a specific siteNumber
+     * Creates Process records with siteNumber in metadata for concurrent safety
+     */
+    async _startInitialSyncForSite({ integrationId, siteNumber }) {
+        const personObjectTypes = this.constructor.CRMConfig.personObjectTypes;
+        const syncConfig = this.constructor.CRMConfig.syncConfig;
+        const userId = this.userId || this.record?.userId || this.id;
+
+        const processIds = [];
+
+        for (const personType of personObjectTypes) {
+            const process = await this.processManager.createSyncProcess({
+                integrationId,
+                userId,
+                syncType: 'INITIAL',
+                personObjectType: personType.crmObjectName,
+                state: 'INITIALIZING',
+                pageSize: syncConfig.initialBatchSize || 100,
+            });
+
+            await this.processManager.updateMetadata(process.id, {
+                siteNumber,
+            });
+
+            processIds.push(process.id);
+
+            await this.queueManager.queueFetchPersonPage({
+                processId: process.id,
+                personObjectType: personType.crmObjectName,
+                page: 0,
+                limit: syncConfig.initialBatchSize || 100,
+                sortDesc: syncConfig.reverseChronological !== false,
+            });
+        }
+
+        return {
+            processIds,
+            personObjectTypes: personObjectTypes.map((pt) => pt.crmObjectName),
+        };
+    }
+
+    /**
+     * Override fetchPersonPageHandler to retrieve siteNumber from process metadata
+     */
+    async fetchPersonPageHandler({ data }) {
+        const {
+            processId,
+            personObjectType,
+            cursor,
+            limit,
+            modifiedSince,
+            sortDesc,
+        } = data;
+
+        const process = await this.processManager.getProcess(processId);
+        const siteNumber = process?.context?.metadata?.siteNumber;
+
+        try {
+            const result = await this.fetchPersonPage({
+                objectType: personObjectType,
+                cursor,
+                limit,
+                modifiedSince: modifiedSince ? new Date(modifiedSince) : null,
+                sortDesc,
+                siteNumber,
+            });
+
+            const { data: persons, cursor: nextCursor, hasMore } = result;
+
+            if (persons.length > 0) {
+                await this.queueManager.queueProcessPersonBatch({
+                    processId,
+                    crmPersonIds: persons.map((p) => p.id),
+                });
+            }
+
+            if (hasMore && nextCursor) {
+                await this.queueManager.queueFetchPersonPage({
+                    processId,
+                    personObjectType,
+                    cursor: nextCursor,
+                    limit,
+                    modifiedSince,
+                    sortDesc,
+                });
+            } else {
+                await this.processManager.updateState(
+                    processId,
+                    'PROCESSING_BATCHES',
+                );
+            }
+
+            return { processed: persons.length, hasMore };
+        } catch (error) {
+            console.error(`[AxisCare] fetchPersonPageHandler failed:`, error);
+            await this.processManager.updateState(processId, 'FAILED', {
+                error: error.message,
+            });
+            throw error;
         }
     }
 
