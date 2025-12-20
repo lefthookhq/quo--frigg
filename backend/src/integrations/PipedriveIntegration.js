@@ -727,6 +727,10 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 }
             }
 
+            // STEP 1: Fetch phone numbers and store IDs in config
+            console.log('[Quo] Fetching phone numbers for webhook filtering');
+            await this._fetchAndStoreEnabledPhoneIds();
+
             const webhookUrl = this._generateWebhookUrl(`/webhooks/${this.id}`);
 
             console.log(
@@ -1331,17 +1335,14 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 },
                 createCallActivity: async (contactId, activity) => {
                     // Create activity with type 'call' instead of a note
+                    // Note: Not setting due_date - it's not relevant for completed calls
+                    // Pipedrive will set add_time automatically with the creation timestamp
                     const activityData = {
                         subject: activity.title || 'Call',
                         type: 'call',
                         done: 1, // Mark as completed
                         note: `<p><strong>${activity.title}</strong></p><p>${activity.content}</p>`,
-                        person_id: parseInt(contactId),
-                        due_date: activity.timestamp?.split('T')[0],
-                        due_time: activity.timestamp?.split('T')[1]?.substring(
-                            0,
-                            5,
-                        ),
+                        participants: [{ person_id: parseInt(contactId), primary: true }], // Use participants instead of person_id (v2 API)
                         duration: activity.duration
                             ? Math.floor(activity.duration / 60)
                             : undefined,
@@ -1520,7 +1521,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                                 type: 'call',
                                 done: 1, // Mark as completed
                                 note: title + content, // Full HTML content in note field
-                                person_id: parseInt(contactId),
+                                participants: [{ person_id: parseInt(contactId), primary: true }], // Use participants instead of person_id (v2 API)
                             };
                             const activityResponse =
                                 await this.pipedrive.api.createActivity(
