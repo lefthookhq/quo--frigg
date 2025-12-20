@@ -480,9 +480,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 type: 'call',
                 done: 1,
                 note: activity.summary || 'Phone call',
-                person_id: person.data.id,
-                due_date: activity.timestamp.split('T')[0],
-                due_time: activity.timestamp.split('T')[1]?.substring(0, 5),
+                participants: [{ person_id: person.data.id, primary: true }], // Use participants instead of person_id (v2 API)
                 duration: Math.floor(activity.duration / 60),
             };
 
