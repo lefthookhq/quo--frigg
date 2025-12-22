@@ -2561,6 +2561,40 @@ class AxisCareIntegration extends BaseCRMIntegration {
     }
 
     /**
+     * Override processPersonBatchHandler to add mapping storage
+     * Stores siteNumber in mapping for call routing
+     */
+    async processPersonBatchHandler({ data }) {
+        const { processId, crmPersonIds } = data;
+
+        const process = await this.processManager.getProcess(processId);
+        const siteNumber = process?.context?.metadata?.siteNumber;
+        const personObjectType = process?.context?.personObjectType;
+        const entityType = personObjectType?.toLowerCase() || 'client';
+
+        await super.processPersonBatchHandler({ data });
+
+        if (siteNumber) {
+            for (const personId of crmPersonIds) {
+                try {
+                    await this.upsertMapping(personId, {
+                        externalId: personId,
+                        entityType,
+                        siteNumber,
+                        lastSyncedAt: new Date().toISOString(),
+                        syncMethod: 'initial_sync',
+                    });
+                } catch (mappingError) {
+                    console.error(
+                        `[AxisCare] Failed to upsert mapping for ${personId}:`,
+                        mappingError.message,
+                    );
+                }
+            }
+        }
+    }
+
+    /**
      * Fetch a single client by ID
      * @param {string} id - Client ID
      * @returns {Promise<Object>}

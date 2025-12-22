@@ -854,8 +854,8 @@ describe('AxisCareIntegration', () => {
         it('should find phone ID from metadata with exact match', () => {
             integration.config = {
                 phoneNumbersMetadata: [
-                    { id: 'phone-1', phoneNumber: '+15551234567' },
-                    { id: 'phone-2', phoneNumber: '+15559876543' },
+                    { id: 'phone-1', number: '+15551234567' },
+                    { id: 'phone-2', number: '+15559876543' },
                 ],
             };
 
@@ -866,7 +866,7 @@ describe('AxisCareIntegration', () => {
         it('should normalize phone numbers for matching', () => {
             integration.config = {
                 phoneNumbersMetadata: [
-                    { id: 'phone-1', phoneNumber: '+15551234567' },
+                    { id: 'phone-1', number: '+15551234567' },
                 ],
             };
 
@@ -885,7 +885,7 @@ describe('AxisCareIntegration', () => {
         it('should return null when phone not found', () => {
             integration.config = {
                 phoneNumbersMetadata: [
-                    { id: 'phone-1', phoneNumber: '+15551234567' },
+                    { id: 'phone-1', number: '+15551234567' },
                 ],
             };
 

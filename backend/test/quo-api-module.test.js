@@ -16,10 +16,12 @@ describe('Quo API Module - API Key Authentication', () => {
                 expect(api.baseUrl).toBeTruthy();
             });
 
-            it('should set analyticsBaseUrl correctly', () => {
+            it('should set analyticsBaseUrl from env or default', () => {
                 const api = new Api({});
+                // analyticsBaseUrl comes from QUO_ANALYTICS_BASE_URL env var or defaults to openphone.dev
                 expect(api.analyticsBaseUrl).toBe(
-                    'https://integration.openphone.dev',
+                    process.env.QUO_ANALYTICS_BASE_URL ||
+                        'https://integration.openphone.dev',
                 );
             });
 
