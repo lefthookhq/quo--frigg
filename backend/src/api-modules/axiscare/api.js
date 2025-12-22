@@ -47,10 +47,15 @@ class Api extends ApiKeyRequester {
 
     /**
      * Override setApiKey to properly format the Authorization header with Bearer token
-     * @param {string} apiKey - The API key
+     * Handles both raw API keys and keys already prefixed with "Bearer "
+     * @param {string} apiKey - The API key (with or without Bearer prefix)
      */
     setApiKey(apiKey) {
-        this.api_key = `Bearer ${apiKey}`;
+        if (apiKey && apiKey.startsWith('Bearer ')) {
+            this.api_key = apiKey;
+        } else {
+            this.api_key = `Bearer ${apiKey}`;
+        }
     }
 
     /**

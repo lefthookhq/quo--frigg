@@ -184,6 +184,46 @@ Key configurations:
 - **Auth Flow**: Handled by module definition's `requiredAuthMethods`
 - **Testing Auth**: Implement `testAuthRequest` in module definition
 
+### Using Frigg Commands (Important Architecture Pattern)
+
+**CRITICAL**: Integration classes should NEVER use repositories directly. Instead, use Frigg Commands for all database operations.
+
+**Why?**
+- Commands encapsulate use cases and follow hexagonal architecture
+- Repositories are internal implementation details of the framework
+- Commands handle error mapping and provide consistent interfaces
+
+**Available Commands** (via `createFriggCommands({ integrationClass })`):
+```javascript
+// In your integration constructor:
+this.commands = createFriggCommands({ integrationClass: MyIntegration });
+
+// Available methods:
+this.commands.loadIntegrationContextById(integrationId)     // Returns { context: { record, modules } }
+this.commands.updateIntegrationConfig({ integrationId, config })
+this.commands.findIntegrationsByUserId(userId)
+this.commands.createIntegration({ entityIds, userId, config })
+this.commands.findIntegrationContextByExternalEntityId(externalEntityId)
+```
+
+**Example - Loading Integration Config in Route Handler**:
+```javascript
+async myHandler({ req, res }) {
+    const { integrationId } = req.params;
+
+    // ✅ CORRECT: Use commands
+    const result = await this.commands.loadIntegrationContextById(integrationId);
+    if (result.error) {
+        return res.status(result.error).json({ error: result.reason });
+    }
+    const config = result.context.record.config;
+
+    // ❌ WRONG: Never use repositories directly
+    // const repo = createIntegrationRepository();
+    // const record = await repo.findIntegrationById(integrationId);
+}
+```
+
 ### Environment Variables
 
 Required vars in `.env` (copy from `.env.example`):
