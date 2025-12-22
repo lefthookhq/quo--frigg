@@ -467,8 +467,8 @@ describe('PipedriveIntegration (Refactored)', () => {
                     type: 'call',
                     done: 1,
                     note: 'Discussed project proposal',
-                    participants: [{ person_id: 123, primary: true }], // v2 API uses participants instead of person_id
-                    duration: 5, // 300 seconds = 5 minutes
+                    participants: [{ person_id: 123, primary: true }],
+                    duration: 5,
                 });
             });
         });

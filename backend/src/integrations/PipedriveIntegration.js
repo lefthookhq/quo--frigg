@@ -480,7 +480,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 type: 'call',
                 done: 1,
                 note: activity.summary || 'Phone call',
-                participants: [{ person_id: person.data.id, primary: true }], // Use participants instead of person_id (v2 API)
+                participants: [{ person_id: person.data.id, primary: true }],
                 duration: Math.floor(activity.duration / 60),
             };
 
@@ -725,7 +725,6 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 }
             }
 
-            // STEP 1: Fetch phone numbers and store IDs in config
             console.log('[Quo] Fetching phone numbers for webhook filtering');
             await this._fetchAndStoreEnabledPhoneIds();
 
@@ -1332,15 +1331,12 @@ class PipedriveIntegration extends BaseCRMIntegration {
                     }
                 },
                 createCallActivity: async (contactId, activity) => {
-                    // Create activity with type 'call' instead of a note
-                    // Note: Not setting due_date - it's not relevant for completed calls
-                    // Pipedrive will set add_time automatically with the creation timestamp
                     const activityData = {
                         subject: activity.title || 'Call',
                         type: 'call',
-                        done: 1, // Mark as completed
+                        done: 1,
                         note: `<p><strong>${activity.title}</strong></p><p>${activity.content}</p>`,
-                        participants: [{ person_id: parseInt(contactId), primary: true }], // Use participants instead of person_id (v2 API)
+                        participants: [{ person_id: parseInt(contactId), primary: true }],
                         duration: activity.duration
                             ? Math.floor(activity.duration / 60)
                             : undefined,
@@ -1503,11 +1499,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
                     callDetails: callObject,
                     quoApi: this.quo.api,
                     crmAdapter: {
-                        canUpdateNote: () => true, // Pipedrive supports activity updates!
+                        canUpdateNote: () => true,
                         createNote: async ({ contactId, content, title }) => {
-                            // IMPORTANT: Despite the name, this creates an ACTIVITY (not a note) for calls
-                            // Method name kept for compatibility with CallSummaryEnrichmentService
-                            // Extract plain text from HTML title for subject (max 255 chars)
+                            // Note: Creates an Activity (not a Note) for calls
                             const plainTextTitle = title
                                 .replace(/<[^>]*>/g, '')
                                 .trim();
@@ -1517,9 +1511,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
                             const activityData = {
                                 subject,
                                 type: 'call',
-                                done: 1, // Mark as completed
-                                note: title + content, // Full HTML content in note field
-                                participants: [{ person_id: parseInt(contactId), primary: true }], // Use participants instead of person_id (v2 API)
+                                done: 1,
+                                note: title + content,
+                                participants: [{ person_id: parseInt(contactId), primary: true }],
                             };
                             const activityResponse =
                                 await this.pipedrive.api.createActivity(
@@ -1528,11 +1522,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
                             return activityResponse?.data?.id || null;
                         },
                         updateNote: async (activityId, { content, title }) => {
-                            // IMPORTANT: Despite the name, this updates an ACTIVITY (not a note) for calls
-                            // Method name kept for compatibility with CallSummaryEnrichmentService
-                            // Update existing activity's note field with enriched content
+                            // Note: Updates an Activity (not a Note) for calls
                             const activityData = {
-                                note: title + content, // Update with summary/next steps
+                                note: title + content,
                             };
                             return await this.updateActivity(
                                 activityId,
