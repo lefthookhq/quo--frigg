@@ -737,6 +737,10 @@ describe('PipedriveIntegration - Webhook Setup', () => {
 
             // Mock the base class helper
             integration._createQuoWebhooksWithPhoneIds = jest.fn();
+            integration._fetchAndStoreEnabledPhoneIds = jest
+                .fn()
+                .mockResolvedValue();
+            integration.updateIntegrationMessages = { execute: jest.fn() };
             integration._generateWebhookUrl = jest.fn(
                 (path) =>
                     `https://test-api.example.com/api/pipedrive-integration${path}`,

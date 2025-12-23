@@ -62,6 +62,9 @@ describe('Webhook Setup Independence', () => {
         integration.pipedrive = mockPipedriveApi;
         integration.commands = mockCommands;
         integration.updateIntegrationMessages = mockUpdateMessages;
+        integration._fetchAndStoreEnabledPhoneIds = jest
+            .fn()
+            .mockResolvedValue();
         integration.config = {
             enabledPhoneIds: ['PHmR5aU', 'PHxY7bZ'],
         };

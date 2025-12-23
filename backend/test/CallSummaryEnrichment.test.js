@@ -1266,6 +1266,8 @@ describe('Call Summary Enrichment - Pipedrive Integration', () => {
         mockPipedriveApi = {
             api: {
                 createNote: jest.fn(),
+                createActivity: jest.fn(),
+                updateActivity: jest.fn(),
                 _put: jest.fn(), // Used for updateNote
                 searchPersons: jest.fn(),
                 baseUrl: 'https://company.pipedrive.com/api',
@@ -1361,7 +1363,7 @@ describe('Call Summary Enrichment - Pipedrive Integration', () => {
                 data: { firstName: 'John', lastName: 'Doe' },
             });
 
-            mockPipedriveApi.api.createNote.mockResolvedValue({
+            mockPipedriveApi.api.createActivity.mockResolvedValue({
                 data: { id: 12345 },
             });
 
@@ -1373,19 +1375,20 @@ describe('Call Summary Enrichment - Pipedrive Integration', () => {
             // Act
             await integration._handleQuoCallEvent(webhookData);
 
-            // Assert - Note created
-            expect(mockPipedriveApi.api.createNote).toHaveBeenCalledWith(
+            // Assert - Activity created (Activities API instead of Notes)
+            expect(mockPipedriveApi.api.createActivity).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    content: expect.stringContaining('Call'),
-                    person_id: 456789, // parseInt('456789')
+                    type: 'call',
+                    done: 1,
+                    participants: [{ person_id: 456789, primary: true }],
                 }),
             );
 
-            // Assert - Mapping stored: call ID -> note ID
+            // Assert - Mapping stored: call ID -> activity ID
             expect(integration.upsertMapping).toHaveBeenCalledWith(
                 'call-pd-123',
                 expect.objectContaining({
-                    noteId: 12345,
+                    noteId: 12345, // Still called noteId in mapping for backward compat
                     callId: 'call-pd-123',
                     contactId: '456789',
                 }),
@@ -1451,7 +1454,7 @@ describe('Call Summary Enrichment - Pipedrive Integration', () => {
                 data: { firstName: 'Alex', lastName: 'Johnson' },
             });
 
-            mockPipedriveApi.api._put.mockResolvedValue({
+            mockPipedriveApi.api.updateActivity.mockResolvedValue({
                 data: { id: 12345 },
             });
 
@@ -1463,21 +1466,20 @@ describe('Call Summary Enrichment - Pipedrive Integration', () => {
             // Act
             await integration._handleQuoCallSummaryEvent(webhookData);
 
-            // Assert - _put called for update (NOT createNote)
-            expect(mockPipedriveApi.api._put).toHaveBeenCalledWith(
+            // Assert - updateActivity called for update (Activities API, not Notes)
+            expect(mockPipedriveApi.api.updateActivity).toHaveBeenCalledWith(
+                12345,
                 expect.objectContaining({
-                    url: 'https://company.pipedrive.com/api/v1/notes/12345',
-                    body: expect.objectContaining({
-                        content: expect.stringMatching(
-                            /Summary:.*Discussed product features/s,
-                        ),
-                    }),
+                    note: expect.stringMatching(
+                        /Summary:.*Discussed product features/s,
+                    ),
                 }),
             );
 
-            // Assert - Notes include recording URL
-            const updateCall = mockPipedriveApi.api._put.mock.calls[0][0];
-            expect(updateCall.body.content).toContain(
+            // Assert - Activity note includes recording URL
+            const updateCall =
+                mockPipedriveApi.api.updateActivity.mock.calls[0][1];
+            expect(updateCall.note).toContain(
                 'https://storage.example.com/pd-recording.mp3',
             );
 
@@ -1537,7 +1539,7 @@ describe('Call Summary Enrichment - Pipedrive Integration', () => {
                 data: { firstName: 'Sam', lastName: 'Wilson' },
             });
 
-            mockPipedriveApi.api._put.mockResolvedValue({
+            mockPipedriveApi.api.updateActivity.mockResolvedValue({
                 data: { id: 67890 },
             });
 
@@ -1548,12 +1550,13 @@ describe('Call Summary Enrichment - Pipedrive Integration', () => {
             // Act
             await integration._handleQuoCallSummaryEvent(webhookData);
 
-            // Assert - Voicemail URL and transcript included
-            const updateCall = mockPipedriveApi.api._put.mock.calls[0][0];
-            expect(updateCall.body.content).toContain(
+            // Assert - Voicemail URL and transcript included (Activities API)
+            const updateCall =
+                mockPipedriveApi.api.updateActivity.mock.calls[0][1];
+            expect(updateCall.note).toContain(
                 'https://storage.example.com/pd-vm.mp3',
             );
-            expect(updateCall.body.content).toContain(
+            expect(updateCall.note).toContain(
                 'Hi, please call me back about my order',
             );
         });
@@ -1634,7 +1637,7 @@ describe('Call Summary Enrichment - Pipedrive Integration', () => {
                 data: { firstName: 'Sona', lastName: 'AI' },
             });
 
-            mockPipedriveApi.api._put.mockResolvedValue({
+            mockPipedriveApi.api.updateActivity.mockResolvedValue({
                 data: { id: 11111 },
             });
 
@@ -1645,16 +1648,15 @@ describe('Call Summary Enrichment - Pipedrive Integration', () => {
             // Act
             await integration._handleQuoCallSummaryEvent(webhookData);
 
-            // Assert - Note updated with "Handled by Sona" status
-            const updateCall = mockPipedriveApi.api._put.mock.calls[0][0];
-            expect(updateCall.body.content).toContain('Handled by Sona');
+            // Assert - Activity updated with "Handled by Sona" status (Activities API)
+            const updateCall =
+                mockPipedriveApi.api.updateActivity.mock.calls[0][1];
+            expect(updateCall.note).toContain('Handled by Sona');
 
             // Assert - Jobs data included
-            expect(updateCall.body.content).toContain('Message taking');
-            expect(updateCall.body.content).toContain('John Doe');
-            expect(updateCall.body.content).toContain(
-                'Interested in product demo',
-            );
+            expect(updateCall.note).toContain('Message taking');
+            expect(updateCall.note).toContain('John Doe');
+            expect(updateCall.note).toContain('Interested in product demo');
         });
     });
 });
