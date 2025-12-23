@@ -480,9 +480,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 type: 'call',
                 done: 1,
                 note: activity.summary || 'Phone call',
-                person_id: person.data.id,
-                due_date: activity.timestamp.split('T')[0],
-                due_time: activity.timestamp.split('T')[1]?.substring(0, 5),
+                participants: [{ person_id: person.data.id, primary: true }],
                 duration: Math.floor(activity.duration / 60),
             };
 
@@ -491,6 +489,18 @@ class PipedriveIntegration extends BaseCRMIntegration {
             console.error('Failed to log call activity to Pipedrive:', error);
             throw error;
         }
+    }
+
+    /**
+     * Update an existing activity in Pipedrive
+     * Wrapper method for convenience
+     *
+     * @param {string|number} activityId - Activity ID to update
+     * @param {Object} activityData - Activity fields to update
+     * @returns {Promise<Object>} Updated activity response
+     */
+    async updateActivity(activityId, activityData) {
+        return await this.pipedrive.api.updateActivity(activityId, activityData);
     }
 
     /**
@@ -714,6 +724,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
                     }
                 }
             }
+
+            console.log('[Quo] Fetching phone numbers for webhook filtering');
+            await this._fetchAndStoreEnabledPhoneIds();
 
             const webhookUrl = this._generateWebhookUrl(`/webhooks/${this.id}`);
 
@@ -1318,13 +1331,19 @@ class PipedriveIntegration extends BaseCRMIntegration {
                     }
                 },
                 createCallActivity: async (contactId, activity) => {
-                    const noteData = {
-                        content: `<p><strong>${activity.title}</strong></p><p>${activity.content}</p>`,
-                        person_id: parseInt(contactId),
+                    const activityData = {
+                        subject: activity.title || 'Call',
+                        type: 'call',
+                        done: 1,
+                        note: `<p><strong>${activity.title}</strong></p><p>${activity.content}</p>`,
+                        participants: [{ person_id: parseInt(contactId), primary: true }],
+                        duration: activity.duration
+                            ? Math.floor(activity.duration / 60)
+                            : undefined,
                     };
-                    const noteResponse =
-                        await this.pipedrive.api.createNote(noteData);
-                    return noteResponse?.data?.id || null;
+                    const activityResponse =
+                        await this.pipedrive.api.createActivity(activityData);
+                    return activityResponse?.data?.id || null;
                 },
             },
             mappingRepo: {
@@ -1481,25 +1500,37 @@ class PipedriveIntegration extends BaseCRMIntegration {
                     callDetails: callObject,
                     quoApi: this.quo.api,
                     crmAdapter: {
-                        canUpdateNote: () => true, // Pipedrive supports note updates!
+                        canUpdateNote: () => true,
                         createNote: async ({ contactId, content, title }) => {
-                            const noteResponse =
-                                await this.pipedrive.api.createNote({
-                                    content: title + content,
-                                    person_id: parseInt(contactId),
-                                });
-                            return noteResponse?.data?.id || null;
-                        },
-                        updateNote: async (noteId, { content, title }) => {
-                            // Pipedrive v1 Notes API: PUT /v1/notes/{id}
-                            const options = {
-                                url: `${this.pipedrive.api.baseUrl}/v1/notes/${noteId}`,
-                                body: { content: title + content },
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                },
+                            // Note: Creates an Activity (not a Note) for calls
+                            const plainTextTitle = title
+                                .replace(/<[^>]*>/g, '')
+                                .trim();
+                            const subject =
+                                plainTextTitle.substring(0, 255) || 'Call';
+
+                            const activityData = {
+                                subject,
+                                type: 'call',
+                                done: 1,
+                                note: title + content,
+                                participants: [{ person_id: parseInt(contactId), primary: true }],
                             };
-                            return await this.pipedrive.api._put(options);
+                            const activityResponse =
+                                await this.pipedrive.api.createActivity(
+                                    activityData,
+                                );
+                            return activityResponse?.data?.id || null;
+                        },
+                        updateNote: async (activityId, { content, title }) => {
+                            // Note: Updates an Activity (not a Note) for calls
+                            const activityData = {
+                                note: title + content,
+                            };
+                            return await this.updateActivity(
+                                activityId,
+                                activityData,
+                            );
                         },
                     },
                     mappingRepo: {
