@@ -112,16 +112,26 @@ jobs:
         run: |
           echo "Triggering database migrations via deployed Lambda..."
 
-          # Debug: Check if BASE_URL is set
+          # Trim whitespace from secrets (remove leading/trailing spaces and newlines)
+          BASE_URL=$(echo "$BASE_URL" | xargs)
+          ADMIN_API_KEY=$(echo "$ADMIN_API_KEY" | xargs)
+
+          # Validate required secrets
           if [ -z "$BASE_URL" ]; then
-            echo "❌ ERROR: BASE_URL is not set"
+            echo "❌ ERROR: BASE_URL secret is empty or not set"
             exit 1
           fi
 
-          echo "BASE_URL is configured (length: ${#BASE_URL} characters)"
-          echo "Deployment stage: ${{ steps.stage.outputs.stage }}"
+          if [ -z "$ADMIN_API_KEY" ]; then
+            echo "❌ ERROR: ADMIN_API_KEY secret is empty or not set"
+            exit 1
+          fi
 
-          # Trigger migration (disable -e temporarily to capture curl errors)
+          echo "✓ BASE_URL configured (${#BASE_URL} chars)"
+          echo "✓ ADMIN_API_KEY configured (${#ADMIN_API_KEY} chars)"
+          echo "✓ Deployment stage: ${{ steps.stage.outputs.stage }}"
+
+          # Trigger migration
           set +e
           RESPONSE=$(curl -s -X POST "${BASE_URL}/db-migrate" \
             -H "Content-Type: application/json" \
