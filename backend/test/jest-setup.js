@@ -20,8 +20,7 @@ process.env.SQS_QUEUE_URL =
 // Prisma needs DATABASE_URL even in tests (used by bulkUpsertToQuo)
 // This is a mock URL that won't actually be used since Prisma calls are mocked
 process.env.DATABASE_URL =
-    process.env.DATABASE_URL ||
-    'postgresql://test:test@localhost:5432/test_db';
+    process.env.DATABASE_URL || 'postgresql://test:test@localhost:5432/test_db';
 
 jest.mock('aws-sdk', () => ({
     S3: jest.fn(() => ({

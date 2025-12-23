@@ -399,8 +399,7 @@ describe('AttioIntegration (Refactored)', () => {
             it('should use web_url from Attio response for sourceUrl', async () => {
                 const attioPerson = {
                     id: { record_id: 'rec123', object_id: 'people' },
-                    web_url:
-                        'https://app.attio.com/myworkspace/person/rec123',
+                    web_url: 'https://app.attio.com/myworkspace/person/rec123',
                     values: {
                         name: [
                             {
@@ -1405,7 +1404,9 @@ describe('AttioIntegration (Refactored)', () => {
                 integration.getMapping = jest.fn().mockResolvedValue(null);
 
                 // Mock upsertMapping for enrichment service
-                integration.upsertMapping = jest.fn().mockResolvedValue(undefined);
+                integration.upsertMapping = jest
+                    .fn()
+                    .mockResolvedValue(undefined);
 
                 // Mock Quo API methods for enrichment
                 mockQuoApi.api.getCallRecordings = jest
@@ -1424,7 +1425,9 @@ describe('AttioIntegration (Refactored)', () => {
                 expect(result.logged).toBe(true);
                 // summaryPoints and nextStepsCount may or may not be present depending on implementation
                 expect(result.results).toBeDefined();
-                expect(result.results[0].attioRecordId).toBe('attio-record-123');
+                expect(result.results[0].attioRecordId).toBe(
+                    'attio-record-123',
+                );
             });
         });
     });

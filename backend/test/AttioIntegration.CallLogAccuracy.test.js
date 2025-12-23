@@ -17,7 +17,11 @@
  */
 
 const AttioIntegration = require('../src/integrations/AttioIntegration');
-const { mockGetCall, mockGetPhoneNumber, mockGetUser } = require('./fixtures/quo-api-responses');
+const {
+    mockGetCall,
+    mockGetPhoneNumber,
+    mockGetUser,
+} = require('./fixtures/quo-api-responses');
 
 describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
     let integration;
@@ -112,7 +116,8 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
                             duration: 11,
                         },
                     },
-                    deepLink: 'https://app.openphone.com/calls/AC_EXAMPLE_MISSED_CALL_001',
+                    deepLink:
+                        'https://app.openphone.com/calls/AC_EXAMPLE_MISSED_CALL_001',
                 },
             };
 
@@ -139,7 +144,9 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
                 data: transformedWebhookData.data.object,
             });
 
-            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(
+                mockGetPhoneNumber.salesLine,
+            );
             mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
 
             mockAttioApi.api.createNote.mockResolvedValue({
@@ -150,7 +157,8 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
             await integration._handleQuoCallEvent(transformedWebhookData);
 
             // Assert - Should be logged as MISSED, not answered
-            const noteContent = mockAttioApi.api.createNote.mock.calls[0][0].content;
+            const noteContent =
+                mockAttioApi.api.createNote.mock.calls[0][0].content;
             expect(noteContent).toContain('Incoming missed');
             expect(noteContent).not.toContain('Incoming answered by');
             expect(noteContent).toContain('**Voicemail:**');
@@ -177,7 +185,8 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
                         answeredAt: '2025-01-15T10:30:05Z', // ✅ Actually answered
                         answeredBy: 'user-789',
                     },
-                    deepLink: 'https://app.openphone.com/calls/call-answered-001',
+                    deepLink:
+                        'https://app.openphone.com/calls/call-answered-001',
                 },
             };
 
@@ -186,7 +195,9 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
                 data: webhookData.data.object,
             });
 
-            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(
+                mockGetPhoneNumber.salesLine,
+            );
             mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.janeDoe);
 
             mockAttioApi.api.createNote.mockResolvedValue({
@@ -197,7 +208,8 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
             await integration._handleQuoCallEvent(webhookData);
 
             // Assert - Should be logged as ANSWERED
-            const noteContent = mockAttioApi.api.createNote.mock.calls[0][0].content;
+            const noteContent =
+                mockAttioApi.api.createNote.mock.calls[0][0].content;
             expect(noteContent).toContain('Incoming answered by Jane Doe'); // Updated to match mockGetUser.janeDoe
             expect(noteContent).not.toContain('Incoming missed');
             expect(noteContent).toContain('▶️ Recording (2:00)');
@@ -220,7 +232,8 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
                         answeredAt: null, // Not answered
                         answeredBy: null,
                     },
-                    deepLink: 'https://app.openphone.com/calls/call-outgoing-no-answer',
+                    deepLink:
+                        'https://app.openphone.com/calls/call-outgoing-no-answer',
                 },
             };
 
@@ -229,7 +242,9 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
                 data: webhookData.data.object,
             });
 
-            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(
+                mockGetPhoneNumber.salesLine,
+            );
             mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
 
             mockAttioApi.api.createNote.mockResolvedValue({
@@ -240,7 +255,8 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
             await integration._handleQuoCallEvent(webhookData);
 
             // Assert - Should indicate call not answered
-            const noteContent = mockAttioApi.api.createNote.mock.calls[0][0].content;
+            const noteContent =
+                mockAttioApi.api.createNote.mock.calls[0][0].content;
             // For outgoing calls with answeredAt: null, we might show "Outgoing (not answered)" or similar
             expect(noteContent).toContain('Outgoing');
             expect(noteContent).not.toContain('Recording');
@@ -277,7 +293,9 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
                 data: webhookData.data.object,
             });
 
-            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.supportLine);
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(
+                mockGetPhoneNumber.supportLine,
+            );
             mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.janeDoe);
 
             mockAttioApi.api.createNote.mockResolvedValue({
@@ -288,7 +306,8 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
             await integration._handleQuoCallEvent(webhookData);
 
             // Assert - Voicemail URL must be clickable markdown link
-            const noteContent = mockAttioApi.api.createNote.mock.calls[0][0].content;
+            const noteContent =
+                mockAttioApi.api.createNote.mock.calls[0][0].content;
             expect(noteContent).toContain('Incoming missed');
             expect(noteContent).toContain('**Voicemail:**');
             expect(noteContent).toContain('(0:11)');
@@ -327,7 +346,9 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
                 data: webhookData.data.object,
             });
 
-            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(
+                mockGetPhoneNumber.salesLine,
+            );
             mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
 
             mockAttioApi.api.createNote.mockResolvedValue({
@@ -338,7 +359,8 @@ describe('AttioIntegration - Call Log Accuracy (TDD)', () => {
             await integration._handleQuoCallEvent(webhookData);
 
             // Assert - Should show voicemail indicator but no broken link
-            const noteContent = mockAttioApi.api.createNote.mock.calls[0][0].content;
+            const noteContent =
+                mockAttioApi.api.createNote.mock.calls[0][0].content;
             expect(noteContent).toContain('Incoming missed');
             expect(noteContent).toContain('➿ Voicemail (0:15)');
             expect(noteContent).not.toContain('[Listen to voicemail]');

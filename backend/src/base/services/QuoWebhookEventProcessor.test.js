@@ -81,15 +81,9 @@ describe('QuoWebhookEventProcessor', () => {
     // Mock CRM adapter
     const createMockCrmAdapter = (overrides = {}) => ({
         formatMethod: 'markdown',
-        findContactByPhone: jest
-            .fn()
-            .mockResolvedValue('contact_123'),
-        createCallActivity: jest
-            .fn()
-            .mockResolvedValue('activity_123'),
-        createMessageActivity: jest
-            .fn()
-            .mockResolvedValue('activity_456'),
+        findContactByPhone: jest.fn().mockResolvedValue('contact_123'),
+        createCallActivity: jest.fn().mockResolvedValue('activity_123'),
+        createMessageActivity: jest.fn().mockResolvedValue('activity_456'),
         ...overrides,
     });
 
@@ -256,7 +250,9 @@ describe('QuoWebhookEventProcessor', () => {
 
             const [, activity] =
                 mockCrmAdapter.createCallActivity.mock.calls[0];
-            expect(activity.content).toContain('View the call activity in Quo:');
+            expect(activity.content).toContain(
+                'View the call activity in Quo:',
+            );
             expect(activity.content).not.toContain('[');
             expect(activity.title).not.toContain('☎️');
         });
@@ -417,10 +413,11 @@ describe('QuoWebhookEventProcessor', () => {
         it('returns call without voicemail for non no-answer calls', async () => {
             const mockQuoApi = createMockQuoApi();
 
-            const result = await QuoWebhookEventProcessor.fetchCallWithVoicemail(
-                mockQuoApi,
-                'call_123',
-            );
+            const result =
+                await QuoWebhookEventProcessor.fetchCallWithVoicemail(
+                    mockQuoApi,
+                    'call_123',
+                );
 
             expect(result).toBeDefined();
             expect(result.voicemail).toBeUndefined();
@@ -467,10 +464,11 @@ describe('QuoWebhookEventProcessor', () => {
                 getCall: jest.fn().mockResolvedValue({ data: null }),
             });
 
-            const result = await QuoWebhookEventProcessor.fetchCallWithVoicemail(
-                mockQuoApi,
-                'call_123',
-            );
+            const result =
+                await QuoWebhookEventProcessor.fetchCallWithVoicemail(
+                    mockQuoApi,
+                    'call_123',
+                );
 
             expect(result).toBeNull();
         });

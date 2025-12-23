@@ -67,7 +67,9 @@ describe('Quo API - Frigg Contact Endpoints', () => {
                 externalId: 'crm-123',
             };
 
-            api._post.mockResolvedValue({ data: { id: 'quo-contact-id', ...contactData } });
+            api._post.mockResolvedValue({
+                data: { id: 'quo-contact-id', ...contactData },
+            });
 
             await api.createFriggContact(contactData);
 
@@ -113,7 +115,9 @@ describe('Quo API - Frigg Contact Endpoints', () => {
                 },
             };
 
-            api._patch.mockResolvedValue({ data: { id: contactId, ...updateData } });
+            api._patch.mockResolvedValue({
+                data: { id: contactId, ...updateData },
+            });
 
             await api.updateFriggContact(contactId, updateData);
 
@@ -154,7 +158,9 @@ describe('Quo API - Frigg Contact Endpoints', () => {
         });
 
         it('should have friggContactById URL function defined', () => {
-            expect(api.URLs.friggContactById('test-id')).toBe('/frigg/contact/test-id');
+            expect(api.URLs.friggContactById('test-id')).toBe(
+                '/frigg/contact/test-id',
+            );
         });
     });
 });

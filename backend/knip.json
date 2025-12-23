@@ -1,0 +1,38 @@
+{
+    "$schema": "https://unpkg.com/knip@latest/schema.json",
+    "entry": [
+        "index.js",
+        "infrastructure.js",
+        "auth-server/server.js",
+        "src/**/*.js",
+        "test/**/*.js"
+    ],
+    "project": ["**/*.js"],
+    "ignore": ["test-*.js", "src/utils/webpackFakeWindow.js"],
+    "ignoreDependencies": [
+        "body-parser",
+        "cors",
+        "express-async-handler",
+        "node-cache",
+        "serverless-http",
+        "@faker-js/faker",
+        "@friggframework/eslint-config",
+        "@friggframework/serverless-plugin",
+        "@friggframework/test",
+        "chai",
+        "chai-http",
+        "esbuild",
+        "nock",
+        "serverless-dotenv-plugin",
+        "serverless-esbuild",
+        "serverless-jetpack",
+        "serverless-kms-grants",
+        "serverless-offline",
+        "serverless-offline-sqs",
+        "webpack",
+        "uuid",
+        "@aws-sdk/client-sqs",
+        "groups"
+    ],
+    "ignoreBinaries": ["eslint", "cfn-lint"]
+}

@@ -416,7 +416,10 @@ const mockQuoMessage = {
                 status: 'delivered',
                 phoneNumberId: 'PNSeQ1TGZU',
                 userId: 'USpvVF3Lo2',
-                contactIds: ['6772f06a2bc349dd14e4c6bf', '692616c9b8a042e59be3aa60'],
+                contactIds: [
+                    '6772f06a2bc349dd14e4c6bf',
+                    '692616c9b8a042e59be3aa60',
+                ],
                 createdAt: '2025-11-26T03:23:12.819Z',
             },
             deepLink:
@@ -437,7 +440,10 @@ const mockQuoMessage = {
                 status: 'received',
                 phoneNumberId: 'PNSeQ1TGZU',
                 userId: 'USpvVF3Lo2',
-                contactIds: ['6772f06a2bc349dd14e4c6bf', '692616c9b8a042e59be3aa60'],
+                contactIds: [
+                    '6772f06a2bc349dd14e4c6bf',
+                    '692616c9b8a042e59be3aa60',
+                ],
                 createdAt: '2025-11-26T03:23:52.349Z',
             },
             deepLink:
@@ -532,7 +538,9 @@ function setupStandardQuoMocks(mockQuoApi, scenario = 'incoming') {
         mockQuoApi.api.getUser.mockResolvedValue(config.getUser);
     }
     if (config.getCallVoicemails) {
-        mockQuoApi.api.getCallVoicemails.mockResolvedValue(config.getCallVoicemails);
+        mockQuoApi.api.getCallVoicemails.mockResolvedValue(
+            config.getCallVoicemails,
+        );
     }
 }
 

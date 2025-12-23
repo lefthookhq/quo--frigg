@@ -45,7 +45,9 @@ describe('AttioIntegration - Contact Auto-Creation (TDD)', () => {
         // Mock commands (hexagonal port)
         mockCommands = {
             updateIntegrationConfig: jest.fn().mockResolvedValue({}),
-            findOrganizationUserById: jest.fn().mockResolvedValue({ email: 'test@example.com' }),
+            findOrganizationUserById: jest
+                .fn()
+                .mockResolvedValue({ email: 'test@example.com' }),
         };
 
         // Create integration instance (hexagonal core)
@@ -66,66 +68,78 @@ describe('AttioIntegration - Contact Auto-Creation (TDD)', () => {
 
         // Mock helper methods
         integration._resolveObjectType = jest.fn().mockResolvedValue('people');
-        integration.transformPersonToQuo = jest.fn().mockImplementation(async (attioRecord) => {
-            const recordId = attioRecord.id?.record_id || attioRecord.id;
-            const values = attioRecord.values || {};
-            const name = values.name?.[0] || {};
-            const phoneNumbers = values.phone_numbers || [];
-            const emails = values.email_addresses || [];
+        integration.transformPersonToQuo = jest
+            .fn()
+            .mockImplementation(async (attioRecord) => {
+                const recordId = attioRecord.id?.record_id || attioRecord.id;
+                const values = attioRecord.values || {};
+                const name = values.name?.[0] || {};
+                const phoneNumbers = values.phone_numbers || [];
+                const emails = values.email_addresses || [];
 
-            return {
-                defaultFields: {
-                    firstName: name.first_name || '',
-                    lastName: name.last_name || '',
-                    emails: emails.map((e, i) => ({
-                        name: i === 0 ? 'primary' : 'secondary',
-                        value: e.email_address,
-                    })),
-                    phoneNumbers: phoneNumbers.map((p, i) => ({
-                        name: i === 0 ? 'primary' : 'secondary',
-                        value: p.phone_number,
-                    })),
-                },
-                externalId: recordId,
-                source: 'attio',
-                sourceUrl: attioRecord.id?.web_url || null,
-            };
-        });
-        integration.upsertContactToQuo = jest.fn().mockImplementation(async (quoContact) => {
-            const phoneNumber = quoContact.defaultFields?.phoneNumbers?.[0]?.value;
-
-            // Skip contacts without phone numbers (matches production behavior)
-            if (!phoneNumber) {
-                return { action: 'skipped', reason: 'no_phone_number' };
-            }
-
-            const existing = await mockQuoApi.api.listContacts({
-                externalIds: [quoContact.externalId],
-                maxResults: 1,
+                return {
+                    defaultFields: {
+                        firstName: name.first_name || '',
+                        lastName: name.last_name || '',
+                        emails: emails.map((e, i) => ({
+                            name: i === 0 ? 'primary' : 'secondary',
+                            value: e.email_address,
+                        })),
+                        phoneNumbers: phoneNumbers.map((p, i) => ({
+                            name: i === 0 ? 'primary' : 'secondary',
+                            value: p.phone_number,
+                        })),
+                    },
+                    externalId: recordId,
+                    source: 'attio',
+                    sourceUrl: attioRecord.id?.web_url || null,
+                };
             });
+        integration.upsertContactToQuo = jest
+            .fn()
+            .mockImplementation(async (quoContact) => {
+                const phoneNumber =
+                    quoContact.defaultFields?.phoneNumbers?.[0]?.value;
 
-            let result;
-            if (existing?.data?.length > 0) {
-                const updated = await mockQuoApi.api.updateFriggContact(
-                    existing.data[0].id,
-                    quoContact,
-                );
-                result = { action: 'updated', quoContactId: updated?.data?.id };
-            } else {
-                const created = await mockQuoApi.api.createFriggContact(quoContact);
-                result = { action: 'created', quoContactId: created?.data?.id };
-            }
+                // Skip contacts without phone numbers (matches production behavior)
+                if (!phoneNumber) {
+                    return { action: 'skipped', reason: 'no_phone_number' };
+                }
 
-            // Store mapping like the real implementation does
-            await integration.upsertMapping(quoContact.externalId, {
-                quoContactId: result.quoContactId,
-                attioRecordId: quoContact.externalId,
-                phoneNumber,
-                entityType: 'people',
+                const existing = await mockQuoApi.api.listContacts({
+                    externalIds: [quoContact.externalId],
+                    maxResults: 1,
+                });
+
+                let result;
+                if (existing?.data?.length > 0) {
+                    const updated = await mockQuoApi.api.updateFriggContact(
+                        existing.data[0].id,
+                        quoContact,
+                    );
+                    result = {
+                        action: 'updated',
+                        quoContactId: updated?.data?.id,
+                    };
+                } else {
+                    const created =
+                        await mockQuoApi.api.createFriggContact(quoContact);
+                    result = {
+                        action: 'created',
+                        quoContactId: created?.data?.id,
+                    };
+                }
+
+                // Store mapping like the real implementation does
+                await integration.upsertMapping(quoContact.externalId, {
+                    quoContactId: result.quoContactId,
+                    attioRecordId: quoContact.externalId,
+                    phoneNumber,
+                    entityType: 'people',
+                });
+
+                return result;
             });
-
-            return result;
-        });
     });
 
     describe('Domain Rule: Auto-create Quo contact on Attio record.created', () => {
@@ -148,9 +162,13 @@ describe('AttioIntegration - Contact Auto-Creation (TDD)', () => {
                     id: { record_id: 'attio-new-123' },
                     values: {
                         name: [{ first_name: 'John', last_name: 'Doe' }],
-                        email_addresses: [{ email_address: 'john@example.com' }],
+                        email_addresses: [
+                            { email_address: 'john@example.com' },
+                        ],
                         phone_numbers: [{ phone_number: '+15551234567' }],
-                        primary_location: [{ locality: 'New York', country_code: 'US' }],
+                        primary_location: [
+                            { locality: 'New York', country_code: 'US' },
+                        ],
                     },
                 },
             });
@@ -179,7 +197,10 @@ describe('AttioIntegration - Contact Auto-Creation (TDD)', () => {
             });
 
             // Get the result from upsertContactToQuo via mock
-            const result = { action: 'created', quoContactId: 'quo-contact-new-001' };
+            const result = {
+                action: 'created',
+                quoContactId: 'quo-contact-new-001',
+            };
 
             // Assert - Quo contact lookup performed
             expect(mockQuoApi.api.listContacts).toHaveBeenCalledWith({
@@ -211,7 +232,10 @@ describe('AttioIntegration - Contact Auto-Creation (TDD)', () => {
                 }),
             );
 
-            expect(result).toEqual({ action: 'created', quoContactId: 'quo-contact-new-001' });
+            expect(result).toEqual({
+                action: 'created',
+                quoContactId: 'quo-contact-new-001',
+            });
         });
 
         it('should skip creation if Attio record has no phone number', async () => {
@@ -231,7 +255,9 @@ describe('AttioIntegration - Contact Auto-Creation (TDD)', () => {
                     id: { record_id: 'attio-no-phone-123' },
                     values: {
                         name: [{ first_name: 'Jane', last_name: 'Smith' }],
-                        email_addresses: [{ email_address: 'jane@example.com' }],
+                        email_addresses: [
+                            { email_address: 'jane@example.com' },
+                        ],
                         phone_numbers: [], // No phone
                     },
                 },
@@ -248,7 +274,10 @@ describe('AttioIntegration - Contact Auto-Creation (TDD)', () => {
             // Assert - No Quo API calls made
             expect(mockQuoApi.api.listContacts).not.toHaveBeenCalled();
             expect(mockQuoApi.api.createFriggContact).not.toHaveBeenCalled();
-            expect(result).toEqual({ action: 'skipped', reason: 'no_phone_number' });
+            expect(result).toEqual({
+                action: 'skipped',
+                reason: 'no_phone_number',
+            });
         });
     });
 
@@ -270,8 +299,12 @@ describe('AttioIntegration - Contact Auto-Creation (TDD)', () => {
                 data: {
                     id: { record_id: 'attio-existing-123' },
                     values: {
-                        name: [{ first_name: 'John', last_name: 'Doe Updated' }],
-                        email_addresses: [{ email_address: 'john.new@example.com' }],
+                        name: [
+                            { first_name: 'John', last_name: 'Doe Updated' },
+                        ],
+                        email_addresses: [
+                            { email_address: 'john.new@example.com' },
+                        ],
                         phone_numbers: [{ phone_number: '+15551234567' }],
                     },
                 },
@@ -309,7 +342,10 @@ describe('AttioIntegration - Contact Auto-Creation (TDD)', () => {
                 object_id: 'people',
             });
 
-            const result = { action: 'updated', quoContactId: 'quo-contact-existing-001' };
+            const result = {
+                action: 'updated',
+                quoContactId: 'quo-contact-existing-001',
+            };
 
             // Assert - Quo contact lookup performed
             expect(mockQuoApi.api.listContacts).toHaveBeenCalledWith({
@@ -324,8 +360,12 @@ describe('AttioIntegration - Contact Auto-Creation (TDD)', () => {
                     defaultFields: {
                         firstName: 'John',
                         lastName: 'Doe Updated',
-                        emails: [{ name: 'primary', value: 'john.new@example.com' }],
-                        phoneNumbers: [{ name: 'primary', value: '+15551234567' }],
+                        emails: [
+                            { name: 'primary', value: 'john.new@example.com' },
+                        ],
+                        phoneNumbers: [
+                            { name: 'primary', value: '+15551234567' },
+                        ],
                     },
                     externalId: 'attio-existing-123',
                     source: 'attio',
@@ -334,7 +374,10 @@ describe('AttioIntegration - Contact Auto-Creation (TDD)', () => {
             );
 
             expect(mockQuoApi.api.createFriggContact).not.toHaveBeenCalled();
-            expect(result).toEqual({ action: 'updated', quoContactId: 'quo-contact-existing-001' });
+            expect(result).toEqual({
+                action: 'updated',
+                quoContactId: 'quo-contact-existing-001',
+            });
         });
 
         it('should create Quo contact if not found during update', async () => {
@@ -378,7 +421,10 @@ describe('AttioIntegration - Contact Auto-Creation (TDD)', () => {
                 object_id: 'people',
             });
 
-            const result = { action: 'created', quoContactId: 'quo-contact-created-from-update-001' };
+            const result = {
+                action: 'created',
+                quoContactId: 'quo-contact-created-from-update-001',
+            };
 
             // Assert - Falls back to creation
             expect(mockQuoApi.api.createFriggContact).toHaveBeenCalled();
@@ -459,7 +505,10 @@ describe('AttioIntegration - Contact Auto-Creation (TDD)', () => {
                     defaultFields: expect.objectContaining({
                         emails: [
                             { name: 'primary', value: 'work@example.com' },
-                            { name: 'secondary', value: 'personal@example.com' },
+                            {
+                                name: 'secondary',
+                                value: 'personal@example.com',
+                            },
                         ],
                         phoneNumbers: [
                             { name: 'primary', value: '+15551111111' },
@@ -473,7 +522,10 @@ describe('AttioIntegration - Contact Auto-Creation (TDD)', () => {
         it('should include Attio sourceUrl if web_url is present', async () => {
             // Arrange
             const attioRecord = {
-                id: { record_id: 'attio-with-url-123', web_url: 'https://app.attio.com/records/123' },
+                id: {
+                    record_id: 'attio-with-url-123',
+                    web_url: 'https://app.attio.com/records/123',
+                },
                 values: {
                     name: [{ first_name: 'URL', last_name: 'Person' }],
                     phone_numbers: [{ phone_number: '+15551234567' }],
@@ -506,7 +558,12 @@ describe('AttioIntegration - Contact Auto-Creation (TDD)', () => {
             // Arrange
             const webhookData = {
                 event_type: 'record.created',
-                data: { object: { record_id: 'attio-error-123', object_id: 'people' } },
+                data: {
+                    object: {
+                        record_id: 'attio-error-123',
+                        object_id: 'people',
+                    },
+                },
             };
 
             mockAttioApi.api.getRecord.mockRejectedValue(
@@ -526,7 +583,12 @@ describe('AttioIntegration - Contact Auto-Creation (TDD)', () => {
             // Arrange
             const webhookData = {
                 event_type: 'record.created',
-                data: { object: { record_id: 'attio-quo-error-123', object_id: 'people' } },
+                data: {
+                    object: {
+                        record_id: 'attio-quo-error-123',
+                        object_id: 'people',
+                    },
+                },
             };
 
             mockAttioApi.api.getRecord.mockResolvedValue({
@@ -557,14 +619,18 @@ describe('AttioIntegration - Contact Auto-Creation (TDD)', () => {
             // Arrange
             const webhookData = {
                 event_type: 'record.created',
-                data: { object: { record_id: 'attio-dup-123', object_id: 'people' } },
+                data: {
+                    object: { record_id: 'attio-dup-123', object_id: 'people' },
+                },
             };
 
             mockAttioApi.api.getRecord.mockResolvedValue({
                 data: {
                     id: { record_id: 'attio-dup-123' },
                     values: {
-                        name: [{ first_name: 'Duplicate', last_name: 'Contact' }],
+                        name: [
+                            { first_name: 'Duplicate', last_name: 'Contact' },
+                        ],
                         phone_numbers: [{ phone_number: '+15551234567' }],
                     },
                 },
@@ -572,7 +638,9 @@ describe('AttioIntegration - Contact Auto-Creation (TDD)', () => {
 
             mockQuoApi.api.listContacts.mockResolvedValue({ data: [] });
 
-            const conflictError = new Error('Contact with externalId already exists');
+            const conflictError = new Error(
+                'Contact with externalId already exists',
+            );
             conflictError.statusCode = 409;
             mockQuoApi.api.createFriggContact.mockRejectedValue(conflictError);
 
@@ -593,7 +661,10 @@ describe('AttioIntegration - Contact Auto-Creation (TDD)', () => {
                 events: [
                     {
                         event_type: 'record.created',
-                        id: { record_id: 'attio-route-123', object_id: 'people' },
+                        id: {
+                            record_id: 'attio-route-123',
+                            object_id: 'people',
+                        },
                         timestamp: '2025-01-15T10:00:00Z',
                     },
                 ],

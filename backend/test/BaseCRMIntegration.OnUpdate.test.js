@@ -77,7 +77,9 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
         integration.validateConfig = jest.fn().mockResolvedValue(true);
         integration._generateWebhookUrl = jest
             .fn()
-            .mockReturnValue('https://example.com/webhooks/test-integration-id');
+            .mockReturnValue(
+                'https://example.com/webhooks/test-integration-id',
+            );
     });
 
     describe('Config patching behavior', () => {
@@ -287,8 +289,7 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
                     status: 'enabled',
                 }),
             );
-            const callArgs =
-                mockQuoApi.createMessageWebhook.mock.calls[0][0];
+            const callArgs = mockQuoApi.createMessageWebhook.mock.calls[0][0];
             expect(callArgs).not.toHaveProperty('resourceIds');
         });
     });
@@ -297,12 +298,14 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
         it('should rollback message webhook if call webhook creation fails', async () => {
             // Arrange
             let createdMessageWebhookId;
-            mockQuoApi.createMessageWebhook = jest.fn().mockImplementation(() => {
-                createdMessageWebhookId = `msg-webhook-${Date.now()}`;
-                return Promise.resolve({
-                    data: { id: createdMessageWebhookId, key: 'test-key' },
+            mockQuoApi.createMessageWebhook = jest
+                .fn()
+                .mockImplementation(() => {
+                    createdMessageWebhookId = `msg-webhook-${Date.now()}`;
+                    return Promise.resolve({
+                        data: { id: createdMessageWebhookId, key: 'test-key' },
+                    });
                 });
-            });
             mockQuoApi.createCallWebhook = jest
                 .fn()
                 .mockRejectedValue(new Error('Call webhook API error'));
@@ -328,12 +331,14 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
             let createdMessageWebhookId;
             let createdCallWebhookId;
 
-            mockQuoApi.createMessageWebhook = jest.fn().mockImplementation(() => {
-                createdMessageWebhookId = `msg-webhook-${Date.now()}`;
-                return Promise.resolve({
-                    data: { id: createdMessageWebhookId, key: 'test-key' },
+            mockQuoApi.createMessageWebhook = jest
+                .fn()
+                .mockImplementation(() => {
+                    createdMessageWebhookId = `msg-webhook-${Date.now()}`;
+                    return Promise.resolve({
+                        data: { id: createdMessageWebhookId, key: 'test-key' },
+                    });
                 });
-            });
             mockQuoApi.createCallWebhook = jest.fn().mockImplementation(() => {
                 createdCallWebhookId = `call-webhook-${Date.now()}`;
                 return Promise.resolve({
@@ -386,12 +391,14 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
         it('should continue rollback even if rollback deletion fails', async () => {
             // Arrange
             let createdMessageWebhookId;
-            mockQuoApi.createMessageWebhook = jest.fn().mockImplementation(() => {
-                createdMessageWebhookId = `msg-webhook-${Date.now()}`;
-                return Promise.resolve({
-                    data: { id: createdMessageWebhookId, key: 'test-key' },
+            mockQuoApi.createMessageWebhook = jest
+                .fn()
+                .mockImplementation(() => {
+                    createdMessageWebhookId = `msg-webhook-${Date.now()}`;
+                    return Promise.resolve({
+                        data: { id: createdMessageWebhookId, key: 'test-key' },
+                    });
                 });
-            });
             mockQuoApi.createCallWebhook = jest
                 .fn()
                 .mockRejectedValue(new Error('Call webhook API error'));
@@ -582,8 +589,16 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
             integration.config = {
                 enabledPhoneIds: ['phone-1', 'phone-2'],
                 phoneNumbersMetadata: [
-                    { id: 'phone-1', number: '+11111111111', name: 'Main Line' },
-                    { id: 'phone-2', number: '+12222222222', name: 'Support Line' },
+                    {
+                        id: 'phone-1',
+                        number: '+11111111111',
+                        name: 'Main Line',
+                    },
+                    {
+                        id: 'phone-2',
+                        number: '+12222222222',
+                        name: 'Support Line',
+                    },
                 ],
                 phoneNumbersFetchedAt: '2024-01-01T00:00:00.000Z',
                 quoMessageWebhookId: 'webhook-msg-123',
@@ -591,52 +606,106 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
                 quoCallSummaryWebhookId: 'webhook-summary-123',
             };
 
-            mockQuoApi.getPhoneNumber = jest.fn().mockImplementation((phoneId) => {
-                const phones = {
-                    'phone-1': { data: { id: 'phone-1', number: '+11111111111', name: 'Main Line' } },
-                    'phone-2': { data: { id: 'phone-2', number: '+12222222222', name: 'Support Line' } },
-                    'phone-3': { data: { id: 'phone-3', number: '+13333333333', name: 'Sales Line' } },
-                    'phone-4': { data: { id: 'phone-4', number: '+14444444444', name: 'Marketing Line' } },
-                };
-                return Promise.resolve(phones[phoneId] || { data: null });
-            });
-
-            mockQuoApi.listPhoneNumbers = jest.fn().mockImplementation(({ maxResults, ids } = {}) => {
-                const allPhones = [
-                    { id: 'phone-1', number: '+11111111111', name: 'Main Line' },
-                    { id: 'phone-2', number: '+12222222222', name: 'Support Line' },
-                    { id: 'phone-3', number: '+13333333333', name: 'Sales Line' },
-                    { id: 'phone-4', number: '+14444444444', name: 'Marketing Line' },
-                ];
-                if (ids && Array.isArray(ids)) {
-                    return Promise.resolve({ data: allPhones.filter(p => ids.includes(p.id)) });
-                }
-                return Promise.resolve({ data: allPhones });
-            });
-
-            mockQuoApi.createMessageWebhook = jest.fn().mockImplementation(() => {
-                const id = `new-msg-webhook-${++webhookIdCounter}`;
-                return Promise.resolve({
-                    data: { id, key: `key-${id}` },
+            mockQuoApi.getPhoneNumber = jest
+                .fn()
+                .mockImplementation((phoneId) => {
+                    const phones = {
+                        'phone-1': {
+                            data: {
+                                id: 'phone-1',
+                                number: '+11111111111',
+                                name: 'Main Line',
+                            },
+                        },
+                        'phone-2': {
+                            data: {
+                                id: 'phone-2',
+                                number: '+12222222222',
+                                name: 'Support Line',
+                            },
+                        },
+                        'phone-3': {
+                            data: {
+                                id: 'phone-3',
+                                number: '+13333333333',
+                                name: 'Sales Line',
+                            },
+                        },
+                        'phone-4': {
+                            data: {
+                                id: 'phone-4',
+                                number: '+14444444444',
+                                name: 'Marketing Line',
+                            },
+                        },
+                    };
+                    return Promise.resolve(phones[phoneId] || { data: null });
                 });
-            });
+
+            mockQuoApi.listPhoneNumbers = jest
+                .fn()
+                .mockImplementation(({ maxResults, ids } = {}) => {
+                    const allPhones = [
+                        {
+                            id: 'phone-1',
+                            number: '+11111111111',
+                            name: 'Main Line',
+                        },
+                        {
+                            id: 'phone-2',
+                            number: '+12222222222',
+                            name: 'Support Line',
+                        },
+                        {
+                            id: 'phone-3',
+                            number: '+13333333333',
+                            name: 'Sales Line',
+                        },
+                        {
+                            id: 'phone-4',
+                            number: '+14444444444',
+                            name: 'Marketing Line',
+                        },
+                    ];
+                    if (ids && Array.isArray(ids)) {
+                        return Promise.resolve({
+                            data: allPhones.filter((p) => ids.includes(p.id)),
+                        });
+                    }
+                    return Promise.resolve({ data: allPhones });
+                });
+
+            mockQuoApi.createMessageWebhook = jest
+                .fn()
+                .mockImplementation(() => {
+                    const id = `new-msg-webhook-${++webhookIdCounter}`;
+                    return Promise.resolve({
+                        data: { id, key: `key-${id}` },
+                    });
+                });
             mockQuoApi.createCallWebhook = jest.fn().mockImplementation(() => {
                 const id = `new-call-webhook-${++webhookIdCounter}`;
                 return Promise.resolve({
                     data: { id, key: `key-${id}` },
                 });
             });
-            mockQuoApi.createCallSummaryWebhook = jest.fn().mockImplementation(() => {
-                const id = `new-summary-webhook-${++webhookIdCounter}`;
-                return Promise.resolve({
-                    data: { id, key: `key-${id}` },
+            mockQuoApi.createCallSummaryWebhook = jest
+                .fn()
+                .mockImplementation(() => {
+                    const id = `new-summary-webhook-${++webhookIdCounter}`;
+                    return Promise.resolve({
+                        data: { id, key: `key-${id}` },
+                    });
                 });
-            });
-            mockQuoApi.deleteWebhook = jest.fn().mockResolvedValue({ success: true });
+            mockQuoApi.deleteWebhook = jest
+                .fn()
+                .mockResolvedValue({ success: true });
 
-            integration._generateWebhookUrl = jest.fn().mockReturnValue(
-                'https://example.com/webhooks/test-integration-id'
-            );
+            integration._generateWebhookUrl = jest
+                .fn()
+                .mockReturnValue(
+                    'https://example.com/webhooks/test-integration-id',
+                );
         });
 
         it('should update phoneNumbersMetadata when adding a new phone number', async () => {
@@ -653,7 +722,10 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
             // Assert
             expect(integration.config.phoneNumbersMetadata).toHaveLength(3);
             expect(integration.config.phoneNumbersMetadata).toContainEqual(
-                expect.objectContaining({ id: 'phone-3', number: '+13333333333' })
+                expect.objectContaining({
+                    id: 'phone-3',
+                    number: '+13333333333',
+                }),
             );
         });
 
@@ -671,10 +743,13 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
             // Assert
             expect(integration.config.phoneNumbersMetadata).toHaveLength(1);
             expect(integration.config.phoneNumbersMetadata).not.toContainEqual(
-                expect.objectContaining({ id: 'phone-2' })
+                expect.objectContaining({ id: 'phone-2' }),
             );
             expect(integration.config.phoneNumbersMetadata).toContainEqual(
-                expect.objectContaining({ id: 'phone-1', number: '+11111111111' })
+                expect.objectContaining({
+                    id: 'phone-1',
+                    number: '+11111111111',
+                }),
             );
         });
 
@@ -692,16 +767,22 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
             // Assert
             expect(integration.config.phoneNumbersMetadata).toHaveLength(2);
             expect(integration.config.phoneNumbersMetadata).toContainEqual(
-                expect.objectContaining({ id: 'phone-3', number: '+13333333333' })
+                expect.objectContaining({
+                    id: 'phone-3',
+                    number: '+13333333333',
+                }),
             );
             expect(integration.config.phoneNumbersMetadata).toContainEqual(
-                expect.objectContaining({ id: 'phone-4', number: '+14444444444' })
+                expect.objectContaining({
+                    id: 'phone-4',
+                    number: '+14444444444',
+                }),
             );
             expect(integration.config.phoneNumbersMetadata).not.toContainEqual(
-                expect.objectContaining({ id: 'phone-1' })
+                expect.objectContaining({ id: 'phone-1' }),
             );
             expect(integration.config.phoneNumbersMetadata).not.toContainEqual(
-                expect.objectContaining({ id: 'phone-2' })
+                expect.objectContaining({ id: 'phone-2' }),
             );
         });
 
@@ -733,9 +814,12 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
             await integration.onUpdate(updateParams);
 
             // Assert
-            expect(integration.config.phoneNumbersFetchedAt).not.toBe(originalTimestamp);
-            expect(new Date(integration.config.phoneNumbersFetchedAt).getTime())
-                .toBeGreaterThan(new Date(originalTimestamp).getTime());
+            expect(integration.config.phoneNumbersFetchedAt).not.toBe(
+                originalTimestamp,
+            );
+            expect(
+                new Date(integration.config.phoneNumbersFetchedAt).getTime(),
+            ).toBeGreaterThan(new Date(originalTimestamp).getTime());
         });
 
         it('should persist updated phoneNumbersMetadata to database', async () => {
@@ -757,7 +841,7 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
                             expect.objectContaining({ id: 'phone-3' }),
                         ]),
                     }),
-                })
+                }),
             );
         });
 
@@ -818,10 +902,10 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
             expect(integration.config.phoneNumbersMetadata).toBeDefined();
             expect(integration.config.phoneNumbersMetadata).toHaveLength(2);
             expect(integration.config.phoneNumbersMetadata).toContainEqual(
-                expect.objectContaining({ id: 'phone-1' })
+                expect.objectContaining({ id: 'phone-1' }),
             );
             expect(integration.config.phoneNumbersMetadata).toContainEqual(
-                expect.objectContaining({ id: 'phone-2' })
+                expect.objectContaining({ id: 'phone-2' }),
             );
         });
 
@@ -838,19 +922,19 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
 
             // Assert
             const validPhones = integration.config.phoneNumbersMetadata.filter(
-                (p) => p && p.id
+                (p) => p && p.id,
             );
             expect(validPhones).toContainEqual(
-                expect.objectContaining({ id: 'phone-3' })
+                expect.objectContaining({ id: 'phone-3' }),
             );
             expect(validPhones).not.toContainEqual(
-                expect.objectContaining({ id: 'non-existent-phone' })
+                expect.objectContaining({ id: 'non-existent-phone' }),
             );
             expect(validPhones).not.toContainEqual(
-                expect.objectContaining({ id: 'phone-1' })
+                expect.objectContaining({ id: 'phone-1' }),
             );
             expect(validPhones).not.toContainEqual(
-                expect.objectContaining({ id: 'phone-2' })
+                expect.objectContaining({ id: 'phone-2' }),
             );
         });
 
@@ -872,10 +956,10 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
             expect(finalConfig.enabledPhoneIds).toEqual(['phone-1', 'phone-3']);
             expect(finalConfig.phoneNumbersMetadata).toHaveLength(2);
             expect(finalConfig.phoneNumbersMetadata).toContainEqual(
-                expect.objectContaining({ id: 'phone-1' })
+                expect.objectContaining({ id: 'phone-1' }),
             );
             expect(finalConfig.phoneNumbersMetadata).toContainEqual(
-                expect.objectContaining({ id: 'phone-3' })
+                expect.objectContaining({ id: 'phone-3' }),
             );
         });
     });

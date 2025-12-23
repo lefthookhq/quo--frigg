@@ -39,7 +39,9 @@ describe('AttioIntegration - Webhook Mapping Optimization', () => {
         integration.getMapping = jest.fn();
         // Mock commands for trackAnalyticsEvent
         integration.commands = {
-            findOrganizationUserById: jest.fn().mockResolvedValue({ email: 'test@example.com' }),
+            findOrganizationUserById: jest
+                .fn()
+                .mockResolvedValue({ email: 'test@example.com' }),
             updateIntegrationConfig: jest.fn().mockResolvedValue({}),
         };
         // Mock config with phoneNumbersMetadata for filterExternalParticipants

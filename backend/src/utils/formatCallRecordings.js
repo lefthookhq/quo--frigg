@@ -65,7 +65,11 @@ function formatDuration(seconds) {
  * ])
  * // Returns: "▶️ Recordings: [Part 1 (0:45)](url1) | [Part 2 (0:30)](url2)"
  */
-function formatCallRecordings(recordings, callDuration = null, { formatMethod, useHtml = false } = {}) {
+function formatCallRecordings(
+    recordings,
+    callDuration = null,
+    { formatMethod, useHtml = false } = {},
+) {
     if (!recordings || !Array.isArray(recordings) || recordings.length === 0) {
         return null;
     }

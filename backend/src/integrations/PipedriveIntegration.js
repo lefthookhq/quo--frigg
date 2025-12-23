@@ -1442,7 +1442,8 @@ class PipedriveIntegration extends BaseCRMIntegration {
             this.quo.api.getUser(callObject.userId),
         ]);
 
-        const inboxName = QuoCallContentBuilder.buildInboxName(phoneNumberDetails);
+        const inboxName =
+            QuoCallContentBuilder.buildInboxName(phoneNumberDetails);
         const inboxNumber =
             phoneNumberDetails.data?.number ||
             phoneNumberDetails.data?.formattedNumber ||

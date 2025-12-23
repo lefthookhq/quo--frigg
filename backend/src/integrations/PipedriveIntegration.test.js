@@ -677,10 +677,12 @@ describe('PipedriveIntegration (Refactored)', () => {
                 mockQuoApi.api.updateContact = jest.fn();
                 mockQuoApi.api.listContacts = jest.fn();
                 integration.transformPersonToQuo = jest.fn();
-                integration.commands.findOrganizationUserById = jest.fn().mockResolvedValue({
-                    id: 'user-123',
-                    appOrgId: 'org-123',
-                });
+                integration.commands.findOrganizationUserById = jest
+                    .fn()
+                    .mockResolvedValue({
+                        id: 'user-123',
+                        appOrgId: 'org-123',
+                    });
             });
 
             it('should use upsertContactToQuo for added action', async () => {

@@ -62,23 +62,31 @@ function extractQuoPhoneNumbers(phoneNumbersMetadata) {
  * // Returns: ['+15559876543', '+15559998888']
  */
 function filterExternalParticipants(participants, phoneNumbersMetadata) {
-    if (!participants || !Array.isArray(participants) || participants.length === 0) {
+    if (
+        !participants ||
+        !Array.isArray(participants) ||
+        participants.length === 0
+    ) {
         return [];
     }
 
     const quoNumbers = extractQuoPhoneNumbers(phoneNumbersMetadata);
 
     if (quoNumbers.size === 0) {
-        console.warn('[ParticipantFilter] No phoneNumbersMetadata available, returning all participants');
+        console.warn(
+            '[ParticipantFilter] No phoneNumbersMetadata available, returning all participants',
+        );
         return [...participants];
     }
 
-    const externalParticipants = participants.filter(participant => {
+    const externalParticipants = participants.filter((participant) => {
         const normalized = normalizePhoneNumber(participant);
         return !quoNumbers.has(normalized);
     });
 
-    console.log(`[ParticipantFilter] Found ${externalParticipants.length} external participant(s): ${externalParticipants.join(', ')}`);
+    console.log(
+        `[ParticipantFilter] Found ${externalParticipants.length} external participant(s): ${externalParticipants.join(', ')}`,
+    );
     return externalParticipants;
 }
 

@@ -41,7 +41,9 @@ describe('ZohoCRMIntegration - Notification Token Verification', () => {
 
         describe('Error Cases - Invalid Tokens', () => {
             it('returns false when received token is null', () => {
-                const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+                const warnSpy = jest
+                    .spyOn(console, 'warn')
+                    .mockImplementation();
 
                 const result = integration._verifyNotificationToken({
                     receivedToken: null,
@@ -50,14 +52,18 @@ describe('ZohoCRMIntegration - Notification Token Verification', () => {
 
                 expect(result).toBe(false);
                 expect(warnSpy).toHaveBeenCalledWith(
-                    expect.stringContaining('Missing received token or stored token'),
+                    expect.stringContaining(
+                        'Missing received token or stored token',
+                    ),
                 );
 
                 warnSpy.mockRestore();
             });
 
             it('returns false when stored token is null', () => {
-                const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+                const warnSpy = jest
+                    .spyOn(console, 'warn')
+                    .mockImplementation();
 
                 const result = integration._verifyNotificationToken({
                     receivedToken: 'received-token',
@@ -79,7 +85,9 @@ describe('ZohoCRMIntegration - Notification Token Verification', () => {
             });
 
             it('handles undefined received token as missing', () => {
-                const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+                const warnSpy = jest
+                    .spyOn(console, 'warn')
+                    .mockImplementation();
 
                 const result = integration._verifyNotificationToken({
                     receivedToken: undefined,
@@ -97,7 +105,9 @@ describe('ZohoCRMIntegration - Notification Token Verification', () => {
 
         describe('Edge Cases', () => {
             it('handles empty string tokens', () => {
-                const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+                const warnSpy = jest
+                    .spyOn(console, 'warn')
+                    .mockImplementation();
 
                 const result = integration._verifyNotificationToken({
                     receivedToken: '',
@@ -190,7 +200,9 @@ describe('ZohoCRMIntegration - Notification Setup', () => {
                     notificationUrl: 'https://test.com/notifications',
                     events: ['Accounts.all', 'Contacts.all'],
                 });
-                expect(mockZohoCrmApi.api.enableNotification).not.toHaveBeenCalled();
+                expect(
+                    mockZohoCrmApi.api.enableNotification,
+                ).not.toHaveBeenCalled();
             });
         });
 
@@ -210,15 +222,23 @@ describe('ZohoCRMIntegration - Notification Setup', () => {
                     ],
                 };
 
-                mockZohoCrmApi.api.enableNotification.mockResolvedValue(mockResponse);
+                mockZohoCrmApi.api.enableNotification.mockResolvedValue(
+                    mockResponse,
+                );
 
-                const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'log')
+                    .mockImplementation();
 
                 await integration.setupZohoNotifications();
 
                 // Verify token was generated (40 char hex string)
-                const configCall = integration.commands.updateIntegrationConfig.mock.calls[0][0];
-                expect(configCall.config.zohoNotificationToken).toMatch(/^[a-f0-9]{40}$/);
+                const configCall =
+                    integration.commands.updateIntegrationConfig.mock
+                        .calls[0][0];
+                expect(configCall.config.zohoNotificationToken).toMatch(
+                    /^[a-f0-9]{40}$/,
+                );
 
                 consoleSpy.mockRestore();
             });
@@ -238,13 +258,19 @@ describe('ZohoCRMIntegration - Notification Setup', () => {
                     ],
                 };
 
-                mockZohoCrmApi.api.enableNotification.mockResolvedValue(mockResponse);
+                mockZohoCrmApi.api.enableNotification.mockResolvedValue(
+                    mockResponse,
+                );
 
-                const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'log')
+                    .mockImplementation();
 
                 await integration.setupZohoNotifications();
 
-                expect(mockZohoCrmApi.api.enableNotification).toHaveBeenCalledWith(
+                expect(
+                    mockZohoCrmApi.api.enableNotification,
+                ).toHaveBeenCalledWith(
                     expect.objectContaining({
                         watch: expect.arrayContaining([
                             expect.objectContaining({
@@ -272,20 +298,31 @@ describe('ZohoCRMIntegration - Notification Setup', () => {
                     ],
                 };
 
-                mockZohoCrmApi.api.enableNotification.mockResolvedValue(mockResponse);
+                mockZohoCrmApi.api.enableNotification.mockResolvedValue(
+                    mockResponse,
+                );
 
-                const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'log')
+                    .mockImplementation();
 
                 await integration.setupZohoNotifications();
 
-                expect(integration.commands.updateIntegrationConfig).toHaveBeenCalledWith(
+                expect(
+                    integration.commands.updateIntegrationConfig,
+                ).toHaveBeenCalledWith(
                     expect.objectContaining({
                         integrationId: 'test-integration-id',
                         config: expect.objectContaining({
                             zohoNotificationChannelId: expect.any(Number),
                             zohoNotificationToken: expect.any(String),
-                            zohoNotificationUrl: expect.stringContaining('test-integration-id'),
-                            notificationEvents: ['Accounts.all', 'Contacts.all'],
+                            zohoNotificationUrl: expect.stringContaining(
+                                'test-integration-id',
+                            ),
+                            notificationEvents: [
+                                'Accounts.all',
+                                'Contacts.all',
+                            ],
                         }),
                     }),
                 );
@@ -308,13 +345,19 @@ describe('ZohoCRMIntegration - Notification Setup', () => {
                     ],
                 };
 
-                mockZohoCrmApi.api.enableNotification.mockResolvedValue(mockResponse);
+                mockZohoCrmApi.api.enableNotification.mockResolvedValue(
+                    mockResponse,
+                );
 
-                const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'log')
+                    .mockImplementation();
 
                 await integration.setupZohoNotifications();
 
-                const configCall = integration.commands.updateIntegrationConfig.mock.calls[0][0];
+                const configCall =
+                    integration.commands.updateIntegrationConfig.mock
+                        .calls[0][0];
                 expect(configCall.config.zohoNotificationChannelId).toBe(
                     ZohoCRMIntegration.ZOHO_NOTIFICATION_CHANNEL_ID,
                 );
@@ -327,9 +370,9 @@ describe('ZohoCRMIntegration - Notification Setup', () => {
             it('throws error when BASE_URL not configured', async () => {
                 delete process.env.BASE_URL;
 
-                await expect(integration.setupZohoNotifications()).rejects.toThrow(
-                    'BASE_URL environment variable is required',
-                );
+                await expect(
+                    integration.setupZohoNotifications(),
+                ).rejects.toThrow('BASE_URL environment variable is required');
             });
 
             it('throws error when notification creation fails', async () => {
@@ -337,11 +380,13 @@ describe('ZohoCRMIntegration - Notification Setup', () => {
                     new Error('Zoho API error'),
                 );
 
-                const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'error')
+                    .mockImplementation();
 
-                await expect(integration.setupZohoNotifications()).rejects.toThrow(
-                    'Zoho API error',
-                );
+                await expect(
+                    integration.setupZohoNotifications(),
+                ).rejects.toThrow('Zoho API error');
 
                 consoleSpy.mockRestore();
             });
@@ -356,13 +401,17 @@ describe('ZohoCRMIntegration - Notification Setup', () => {
                     ],
                 };
 
-                mockZohoCrmApi.api.enableNotification.mockResolvedValue(mockResponse);
-
-                const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
-
-                await expect(integration.setupZohoNotifications()).rejects.toThrow(
-                    'Notification channel creation failed',
+                mockZohoCrmApi.api.enableNotification.mockResolvedValue(
+                    mockResponse,
                 );
+
+                const consoleSpy = jest
+                    .spyOn(console, 'error')
+                    .mockImplementation();
+
+                await expect(
+                    integration.setupZohoNotifications(),
+                ).rejects.toThrow('Notification channel creation failed');
 
                 consoleSpy.mockRestore();
             });
@@ -372,13 +421,17 @@ describe('ZohoCRMIntegration - Notification Setup', () => {
                     watch: [],
                 };
 
-                mockZohoCrmApi.api.enableNotification.mockResolvedValue(mockResponse);
-
-                const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
-
-                await expect(integration.setupZohoNotifications()).rejects.toThrow(
-                    'Notification channel creation failed',
+                mockZohoCrmApi.api.enableNotification.mockResolvedValue(
+                    mockResponse,
                 );
+
+                const consoleSpy = jest
+                    .spyOn(console, 'error')
+                    .mockImplementation();
+
+                await expect(
+                    integration.setupZohoNotifications(),
+                ).rejects.toThrow('Notification channel creation failed');
 
                 consoleSpy.mockRestore();
             });
@@ -397,13 +450,19 @@ describe('ZohoCRMIntegration - Notification Setup', () => {
                     ],
                 };
 
-                mockZohoCrmApi.api.enableNotification.mockResolvedValue(mockResponse);
+                mockZohoCrmApi.api.enableNotification.mockResolvedValue(
+                    mockResponse,
+                );
 
-                const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'log')
+                    .mockImplementation();
 
                 await integration.setupZohoNotifications();
 
-                expect(mockZohoCrmApi.api.enableNotification).toHaveBeenCalledWith(
+                expect(
+                    mockZohoCrmApi.api.enableNotification,
+                ).toHaveBeenCalledWith(
                     expect.objectContaining({
                         watch: expect.arrayContaining([
                             expect.objectContaining({
@@ -428,13 +487,19 @@ describe('ZohoCRMIntegration - Notification Setup', () => {
                     ],
                 };
 
-                mockZohoCrmApi.api.enableNotification.mockResolvedValue(mockResponse);
+                mockZohoCrmApi.api.enableNotification.mockResolvedValue(
+                    mockResponse,
+                );
 
-                const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'log')
+                    .mockImplementation();
 
                 await integration.setupZohoNotifications();
 
-                expect(mockZohoCrmApi.api.enableNotification).toHaveBeenCalledWith(
+                expect(
+                    mockZohoCrmApi.api.enableNotification,
+                ).toHaveBeenCalledWith(
                     expect.objectContaining({
                         watch: expect.arrayContaining([
                             expect.objectContaining({
@@ -448,7 +513,8 @@ describe('ZohoCRMIntegration - Notification Setup', () => {
             });
 
             it('includes timestamp in config', async () => {
-                const dateSpy = jest.spyOn(Date.prototype, 'toISOString')
+                const dateSpy = jest
+                    .spyOn(Date.prototype, 'toISOString')
                     .mockReturnValue('2024-01-20T10:00:00.000Z');
 
                 const mockResponse = {
@@ -462,14 +528,22 @@ describe('ZohoCRMIntegration - Notification Setup', () => {
                     ],
                 };
 
-                mockZohoCrmApi.api.enableNotification.mockResolvedValue(mockResponse);
+                mockZohoCrmApi.api.enableNotification.mockResolvedValue(
+                    mockResponse,
+                );
 
-                const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'log')
+                    .mockImplementation();
 
                 await integration.setupZohoNotifications();
 
-                const configCall = integration.commands.updateIntegrationConfig.mock.calls[0][0];
-                expect(configCall.config.notificationCreatedAt).toBe('2024-01-20T10:00:00.000Z');
+                const configCall =
+                    integration.commands.updateIntegrationConfig.mock
+                        .calls[0][0];
+                expect(configCall.config.notificationCreatedAt).toBe(
+                    '2024-01-20T10:00:00.000Z',
+                );
 
                 dateSpy.mockRestore();
                 consoleSpy.mockRestore();
@@ -528,7 +602,8 @@ describe('ZohoCRMIntegration - Notification Processing', () => {
                     },
                 };
 
-                const result = await integration._handleZohoNotification(notificationData);
+                const result =
+                    await integration._handleZohoNotification(notificationData);
 
                 expect(result.success).toBe(true);
                 expect(result.successCount).toBe(1);
@@ -545,9 +620,9 @@ describe('ZohoCRMIntegration - Notification Processing', () => {
                     },
                 };
 
-                await expect(integration._handleZohoNotification(notificationData)).rejects.toThrow(
-                    'Notification token verification failed',
-                );
+                await expect(
+                    integration._handleZohoNotification(notificationData),
+                ).rejects.toThrow('Notification token verification failed');
             });
 
             it('warns when token not available', async () => {
@@ -562,7 +637,8 @@ describe('ZohoCRMIntegration - Notification Processing', () => {
                     },
                 };
 
-                const result = await integration._handleZohoNotification(notificationData);
+                const result =
+                    await integration._handleZohoNotification(notificationData);
 
                 expect(result.success).toBe(true);
                 expect(console.warn).toHaveBeenCalledWith(
@@ -582,7 +658,8 @@ describe('ZohoCRMIntegration - Notification Processing', () => {
                     },
                 };
 
-                const result = await integration._handleZohoNotification(notificationData);
+                const result =
+                    await integration._handleZohoNotification(notificationData);
 
                 expect(result.success).toBe(true);
                 expect(result.module).toBe('Contacts');
@@ -604,7 +681,8 @@ describe('ZohoCRMIntegration - Notification Processing', () => {
                     },
                 };
 
-                const result = await integration._handleZohoNotification(notificationData);
+                const result =
+                    await integration._handleZohoNotification(notificationData);
 
                 expect(result.success).toBe(true);
                 expect(result.module).toBe('Accounts');
@@ -626,7 +704,8 @@ describe('ZohoCRMIntegration - Notification Processing', () => {
                     },
                 };
 
-                const result = await integration._handleZohoNotification(notificationData);
+                const result =
+                    await integration._handleZohoNotification(notificationData);
 
                 expect(result.success).toBe(true);
                 expect(result.skipped).toBe(true);
@@ -646,13 +725,16 @@ describe('ZohoCRMIntegration - Notification Processing', () => {
                     },
                 };
 
-                const result = await integration._handleZohoNotification(notificationData);
+                const result =
+                    await integration._handleZohoNotification(notificationData);
 
                 expect(result.success).toBe(true);
                 expect(result.recordCount).toBe(3);
                 expect(result.successCount).toBe(3);
                 expect(result.errorCount).toBe(0);
-                expect(integration._handlePersonWebhook).toHaveBeenCalledTimes(3);
+                expect(integration._handlePersonWebhook).toHaveBeenCalledTimes(
+                    3,
+                );
             });
 
             it('continues processing after individual errors', async () => {
@@ -670,14 +752,19 @@ describe('ZohoCRMIntegration - Notification Processing', () => {
                     },
                 };
 
-                const result = await integration._handleZohoNotification(notificationData);
+                const result =
+                    await integration._handleZohoNotification(notificationData);
 
                 expect(result.success).toBe(true);
                 expect(result.successCount).toBe(2);
                 expect(result.errorCount).toBe(1);
                 expect(result.results).toEqual([
                     { recordId: 'contact-1', status: 'success' },
-                    { recordId: 'contact-2', status: 'error', error: 'Sync failed' },
+                    {
+                        recordId: 'contact-2',
+                        status: 'error',
+                        error: 'Sync failed',
+                    },
                     { recordId: 'contact-3', status: 'success' },
                 ]);
             });
@@ -699,7 +786,8 @@ describe('ZohoCRMIntegration - Notification Processing', () => {
                     },
                 };
 
-                const result = await integration._handleZohoNotification(notificationData);
+                const result =
+                    await integration._handleZohoNotification(notificationData);
 
                 expect(result.success).toBe(true);
                 expect(result.successCount).toBe(3);
@@ -717,9 +805,9 @@ describe('ZohoCRMIntegration - Notification Processing', () => {
                     },
                 };
 
-                await expect(integration._handleZohoNotification(notificationData)).rejects.toThrow(
-                    'Notification payload missing module or ids',
-                );
+                await expect(
+                    integration._handleZohoNotification(notificationData),
+                ).rejects.toThrow('Notification payload missing module or ids');
             });
 
             it('throws error when ids array empty', async () => {
@@ -732,9 +820,9 @@ describe('ZohoCRMIntegration - Notification Processing', () => {
                     },
                 };
 
-                await expect(integration._handleZohoNotification(notificationData)).rejects.toThrow(
-                    'Notification payload missing module or ids',
-                );
+                await expect(
+                    integration._handleZohoNotification(notificationData),
+                ).rejects.toThrow('Notification payload missing module or ids');
             });
 
             it('throws error when ids missing', async () => {
@@ -746,7 +834,9 @@ describe('ZohoCRMIntegration - Notification Processing', () => {
                     },
                 };
 
-                await expect(integration._handleZohoNotification(notificationData)).rejects.toThrow();
+                await expect(
+                    integration._handleZohoNotification(notificationData),
+                ).rejects.toThrow();
             });
 
             it('logs error to integration messages', async () => {
@@ -763,11 +853,15 @@ describe('ZohoCRMIntegration - Notification Processing', () => {
                     integration._handleZohoNotification(notificationData),
                 ).rejects.toThrow();
 
-                expect(integration.updateIntegrationMessages.execute).toHaveBeenCalledWith(
+                expect(
+                    integration.updateIntegrationMessages.execute,
+                ).toHaveBeenCalledWith(
                     'test-integration-id',
                     'errors',
                     'Notification Processing Error',
-                    expect.stringContaining('Failed to process InvalidModule notification'),
+                    expect.stringContaining(
+                        'Failed to process InvalidModule notification',
+                    ),
                     expect.any(Number),
                 );
             });
@@ -837,21 +931,26 @@ describe('ZohoCRMIntegration - Notification Processing', () => {
                 operation: 'update',
             });
 
-            expect(testIntegration.upsertMapping).toHaveBeenCalledWith('contact-789', {
-                externalId: 'contact-789',
-                entityType: 'Contact',
-                lastSyncedAt: expect.any(String),
-                syncMethod: 'webhook',
-                moduleName: 'Contacts',
-                operation: 'update',
-            });
+            expect(testIntegration.upsertMapping).toHaveBeenCalledWith(
+                'contact-789',
+                {
+                    externalId: 'contact-789',
+                    entityType: 'Contact',
+                    lastSyncedAt: expect.any(String),
+                    syncMethod: 'webhook',
+                    moduleName: 'Contacts',
+                    operation: 'update',
+                },
+            );
 
             logSpy.mockRestore();
         });
 
         it('throws error on sync failure', async () => {
             const testIntegration = new ZohoCRMIntegration();
-            testIntegration._syncPersonToQuo = jest.fn().mockRejectedValue(new Error('Sync failed'));
+            testIntegration._syncPersonToQuo = jest
+                .fn()
+                .mockRejectedValue(new Error('Sync failed'));
             testIntegration.upsertMapping = jest.fn().mockResolvedValue();
 
             const logSpy = jest.spyOn(console, 'log').mockImplementation();

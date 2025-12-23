@@ -77,7 +77,11 @@ describe('Call Summary Enrichment - Attio Integration', () => {
             quoCallWebhookKey: 'test-key',
             // Mark the Quo phone number as internal so only external contact is processed
             phoneNumbersMetadata: [
-                { number: '+15551234567', name: 'Sales Line', type: 'internal' }
+                {
+                    number: '+15551234567',
+                    name: 'Sales Line',
+                    type: 'internal',
+                },
             ],
         };
 
@@ -98,9 +102,13 @@ describe('Call Summary Enrichment - Attio Integration', () => {
             };
 
             // Mock Quo API calls needed by processor
-            mockQuoApi.api.getCall.mockResolvedValue(mockGetCall.completedIncoming);
+            mockQuoApi.api.getCall.mockResolvedValue(
+                mockGetCall.completedIncoming,
+            );
             mockQuoApi.api.getCallVoicemails.mockResolvedValue({ data: [] });
-            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(
+                mockGetPhoneNumber.salesLine,
+            );
             mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
 
             mockAttioApi.api.getRecord.mockResolvedValue({
@@ -130,7 +138,9 @@ describe('Call Summary Enrichment - Attio Integration', () => {
                 parent_record_id: 'attio-contact-123',
                 title: expect.stringContaining('Call'),
                 format: 'markdown',
-                content: expect.stringContaining('Incoming answered by John Smith'),
+                content: expect.stringContaining(
+                    'Incoming answered by John Smith',
+                ),
                 created_at: mockGetCall.completedIncoming.data.createdAt,
             });
 
@@ -169,15 +179,19 @@ describe('Call Summary Enrichment - Attio Integration', () => {
                 },
             });
 
-            mockQuoApi.api.getCall.mockResolvedValue(mockGetCall.completedIncoming);
+            mockQuoApi.api.getCall.mockResolvedValue(
+                mockGetCall.completedIncoming,
+            );
 
             mockQuoApi.api.getCallRecordings.mockResolvedValue(
-                mockGetCallRecordings.singleRecording
+                mockGetCallRecordings.singleRecording,
             );
 
             mockQuoApi.api.getCallVoicemails.mockResolvedValue({ data: null });
 
-            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(
+                mockGetPhoneNumber.salesLine,
+            );
 
             mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
 
@@ -199,7 +213,9 @@ describe('Call Summary Enrichment - Attio Integration', () => {
             const callOrder = [];
             mockAttioApi.api.createNote.mockImplementation(() => {
                 callOrder.push('create');
-                return Promise.resolve({ data: { id: { note_id: 'note-with-recording-456' } } });
+                return Promise.resolve({
+                    data: { id: { note_id: 'note-with-recording-456' } },
+                });
             });
             mockAttioApi.api.deleteNote.mockImplementation(() => {
                 callOrder.push('delete');
@@ -216,12 +232,16 @@ describe('Call Summary Enrichment - Attio Integration', () => {
             expect(mockAttioApi.api.createNote).toHaveBeenCalledWith(
                 expect.objectContaining({
                     content: expect.stringContaining('▶️ Recording'),
-                    content: expect.stringContaining('https://storage.example.com'),
+                    content: expect.stringContaining(
+                        'https://storage.example.com',
+                    ),
                 }),
             );
 
             // Assert - Old note deleted
-            expect(mockAttioApi.api.deleteNote).toHaveBeenCalledWith('note-initial-123');
+            expect(mockAttioApi.api.deleteNote).toHaveBeenCalledWith(
+                'note-initial-123',
+            );
 
             // Assert - Mapping updated with new note ID
             expect(integration.upsertMapping).toHaveBeenCalledWith(
@@ -245,12 +265,16 @@ describe('Call Summary Enrichment - Attio Integration', () => {
             // No existing mapping
             integration.getMapping.mockResolvedValue(null);
 
-            mockQuoApi.api.getCall.mockResolvedValue(mockGetCall.completedIncoming);
+            mockQuoApi.api.getCall.mockResolvedValue(
+                mockGetCall.completedIncoming,
+            );
             mockQuoApi.api.getCallRecordings.mockResolvedValue(
-                mockGetCallRecordings.singleRecording
+                mockGetCallRecordings.singleRecording,
             );
             mockQuoApi.api.getCallVoicemails.mockResolvedValue({ data: null });
-            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(
+                mockGetPhoneNumber.salesLine,
+            );
             mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
             mockAttioApi.api.getRecord.mockResolvedValue({
                 data: { id: { record_id: 'attio-contact-123' } },
@@ -299,17 +323,21 @@ describe('Call Summary Enrichment - Attio Integration', () => {
 
             mockQuoApi.api.getCall.mockResolvedValue(mockGetCall.aiHandledCall);
             mockQuoApi.api.getCallRecordings.mockResolvedValue(
-                mockGetCallRecordings.singleRecording
+                mockGetCallRecordings.singleRecording,
             );
             mockQuoApi.api.getCallVoicemails.mockResolvedValue({ data: null });
-            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(
+                mockGetPhoneNumber.salesLine,
+            );
             mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
 
             integration._findAttioContactFromQuoWebhook = jest
                 .fn()
                 .mockResolvedValue('attio-contact-123');
 
-            integration.logCallToActivity = jest.fn().mockResolvedValue('note-ai-456');
+            integration.logCallToActivity = jest
+                .fn()
+                .mockResolvedValue('note-ai-456');
             mockAttioApi.api.deleteNote.mockResolvedValue({});
 
             await integration._handleQuoCallRecordingEvent(webhookData);
@@ -317,7 +345,7 @@ describe('Call Summary Enrichment - Attio Integration', () => {
             expect(integration.logCallToActivity).toHaveBeenCalledWith(
                 expect.objectContaining({
                     summary: expect.stringContaining('Handled by Sona'),
-                })
+                }),
             );
         });
     });
@@ -381,7 +409,11 @@ describe('Call Summary Enrichment - Attio Integration', () => {
             });
 
             mockQuoApi.api.getPhoneNumber.mockResolvedValue({
-                data: { symbol: '📞', name: 'Sales Line', number: '+15559876543' },
+                data: {
+                    symbol: '📞',
+                    name: 'Sales Line',
+                    number: '+15559876543',
+                },
             });
 
             mockQuoApi.api.getUser.mockResolvedValue({
@@ -409,10 +441,14 @@ describe('Call Summary Enrichment - Attio Integration', () => {
             expect(mockQuoApi.api.getCall).toHaveBeenCalledWith('call-123');
 
             // Assert - Recordings fetched
-            expect(mockQuoApi.api.getCallRecordings).toHaveBeenCalledWith('call-123');
+            expect(mockQuoApi.api.getCallRecordings).toHaveBeenCalledWith(
+                'call-123',
+            );
 
             // Assert - Voicemails fetched
-            expect(mockQuoApi.api.getCallVoicemails).toHaveBeenCalledWith('call-123');
+            expect(mockQuoApi.api.getCallVoicemails).toHaveBeenCalledWith(
+                'call-123',
+            );
         });
     });
 
@@ -489,7 +525,9 @@ describe('Call Summary Enrichment - Attio Integration', () => {
             const callOrder = [];
             mockAttioApi.api.createNote.mockImplementation(() => {
                 callOrder.push('create');
-                return Promise.resolve({ data: { id: { note_id: 'note-new-456' } } });
+                return Promise.resolve({
+                    data: { id: { note_id: 'note-new-456' } },
+                });
             });
             mockAttioApi.api.deleteNote.mockImplementation(() => {
                 callOrder.push('delete');
@@ -507,19 +545,25 @@ describe('Call Summary Enrichment - Attio Integration', () => {
                 expect.objectContaining({
                     parent_object: 'people',
                     parent_record_id: 'attio-contact-123',
-                    content: expect.stringMatching(/Summary:.*Customer inquired about pricing/s),
+                    content: expect.stringMatching(
+                        /Summary:.*Customer inquired about pricing/s,
+                    ),
                 }),
             );
 
             // Assert - New note includes recording link
             expect(mockAttioApi.api.createNote).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    content: expect.stringContaining('https://storage.example.com/rec.mp3'),
+                    content: expect.stringContaining(
+                        'https://storage.example.com/rec.mp3',
+                    ),
                 }),
             );
 
             // Assert - Old note deleted
-            expect(mockAttioApi.api.deleteNote).toHaveBeenCalledWith('note-old-123');
+            expect(mockAttioApi.api.deleteNote).toHaveBeenCalledWith(
+                'note-old-123',
+            );
 
             // Assert - Mapping updated with new note ID
             expect(integration.upsertMapping).toHaveBeenCalledWith(
@@ -609,8 +653,12 @@ describe('Call Summary Enrichment - Attio Integration', () => {
 
             // Assert - Note contains both recording and voicemail links
             const noteCall = mockAttioApi.api.createNote.mock.calls[0][0];
-            expect(noteCall.content).toContain('https://storage.example.com/recording.mp3');
-            expect(noteCall.content).toContain('https://storage.example.com/voicemail.mp3');
+            expect(noteCall.content).toContain(
+                'https://storage.example.com/recording.mp3',
+            );
+            expect(noteCall.content).toContain(
+                'https://storage.example.com/voicemail.mp3',
+            );
         });
 
         it('should keep old note if new note creation fails', async () => {
@@ -807,8 +855,14 @@ describe('Call Summary Enrichment - AxisCare Integration', () => {
                 data: {
                     object: {
                         callId: 'call-456',
-                        summary: ['Discussed care plan', 'Reviewed medications'],
-                        nextSteps: ['Schedule nurse visit', 'Update prescription'],
+                        summary: [
+                            'Discussed care plan',
+                            'Reviewed medications',
+                        ],
+                        nextSteps: [
+                            'Schedule nurse visit',
+                            'Update prescription',
+                        ],
                         status: 'completed',
                     },
                     deepLink: 'https://app.openphone.com/calls/call-456',
@@ -861,11 +915,13 @@ describe('Call Summary Enrichment - AxisCare Integration', () => {
             });
 
             // Mock _findAxisCareContactByPhone to return the contact
-            integration._findAxisCareContactByPhone = jest.fn().mockResolvedValue({
-                id: 123,
-                type: 'client',
-                name: 'Test Client',
-            });
+            integration._findAxisCareContactByPhone = jest
+                .fn()
+                .mockResolvedValue({
+                    id: 123,
+                    type: 'client',
+                    name: 'Test Client',
+                });
 
             // Act
             await integration._handleQuoCallSummaryEvent(webhookData);
@@ -874,13 +930,18 @@ describe('Call Summary Enrichment - AxisCare Integration', () => {
             expect(mockAxisCareApi.api.updateCallLog).toHaveBeenCalledWith(
                 789,
                 expect.objectContaining({
-                    notes: expect.stringMatching(/Summary:.*Discussed care plan/s),
+                    notes: expect.stringMatching(
+                        /Summary:.*Discussed care plan/s,
+                    ),
                 }),
             );
 
             // Assert - Notes include recording URL
-            const updateCall = mockAxisCareApi.api.updateCallLog.mock.calls[0][1];
-            expect(updateCall.notes).toContain('https://storage.example.com/care-call.mp3');
+            const updateCall =
+                mockAxisCareApi.api.updateCallLog.mock.calls[0][1];
+            expect(updateCall.notes).toContain(
+                'https://storage.example.com/care-call.mp3',
+            );
 
             // Assert - createCallLog NOT called (update only)
             expect(mockAxisCareApi.api.createCallLog).not.toHaveBeenCalled();
@@ -942,19 +1003,26 @@ describe('Call Summary Enrichment - AxisCare Integration', () => {
             mockAxisCareApi.api.updateCallLog.mockResolvedValue({ id: 999 });
 
             // Mock _findAxisCareContactByPhone to return the contact
-            integration._findAxisCareContactByPhone = jest.fn().mockResolvedValue({
-                id: 456,
-                type: 'client',
-                name: 'Test Client',
-            });
+            integration._findAxisCareContactByPhone = jest
+                .fn()
+                .mockResolvedValue({
+                    id: 456,
+                    type: 'client',
+                    name: 'Test Client',
+                });
 
             // Act
             await integration._handleQuoCallSummaryEvent(webhookData);
 
             // Assert - Voicemail URL and transcript included
-            const updateCall = mockAxisCareApi.api.updateCallLog.mock.calls[0][1];
-            expect(updateCall.notes).toContain('https://storage.example.com/vm-789.mp3');
-            expect(updateCall.notes).toContain('Please call me back regarding my appointment');
+            const updateCall =
+                mockAxisCareApi.api.updateCallLog.mock.calls[0][1];
+            expect(updateCall.notes).toContain(
+                'https://storage.example.com/vm-789.mp3',
+            );
+            expect(updateCall.notes).toContain(
+                'Please call me back regarding my appointment',
+            );
         });
     });
 });
@@ -1008,7 +1076,11 @@ describe('Call Summary Enrichment - Zoho CRM Integration', () => {
         integration.config = {
             quoCallWebhookKey: 'test-key',
             phoneNumbersMetadata: [
-                { number: '+15551234567', name: 'Sales Line', type: 'internal' }
+                {
+                    number: '+15551234567',
+                    name: 'Sales Line',
+                    type: 'internal',
+                },
             ],
         };
 
@@ -1088,13 +1160,18 @@ describe('Call Summary Enrichment - Zoho CRM Integration', () => {
                 'zoho-note-456',
                 expect.objectContaining({
                     Subject: expect.any(String),
-                    Description: expect.stringMatching(/Summary:.*Discussed product demo/s),
+                    Description: expect.stringMatching(
+                        /Summary:.*Discussed product demo/s,
+                    ),
                 }),
             );
 
             // Assert - Description includes recording URL
-            const updateCallArgs = mockZohoCrmApi.api.updateCall.mock.calls[0][1];
-            expect(updateCallArgs.Description).toContain('https://storage.example.com/zoho-recording.mp3');
+            const updateCallArgs =
+                mockZohoCrmApi.api.updateCall.mock.calls[0][1];
+            expect(updateCallArgs.Description).toContain(
+                'https://storage.example.com/zoho-recording.mp3',
+            );
 
             // Assert - createNote NOT called (update only)
             expect(mockZohoCrmApi.api.createNote).not.toHaveBeenCalled();
@@ -1164,9 +1241,14 @@ describe('Call Summary Enrichment - Zoho CRM Integration', () => {
             await integration._handleQuoCallSummaryEvent(webhookData);
 
             // Assert - Voicemail URL and transcript included (uses updateCall)
-            const updateCallArgs = mockZohoCrmApi.api.updateCall.mock.calls[0][1];
-            expect(updateCallArgs.Description).toContain('https://storage.example.com/zoho-vm.mp3');
-            expect(updateCallArgs.Description).toContain('Hi, please call me back about the proposal');
+            const updateCallArgs =
+                mockZohoCrmApi.api.updateCall.mock.calls[0][1];
+            expect(updateCallArgs.Description).toContain(
+                'https://storage.example.com/zoho-vm.mp3',
+            );
+            expect(updateCallArgs.Description).toContain(
+                'Hi, please call me back about the proposal',
+            );
         });
     });
 });
@@ -1220,7 +1302,11 @@ describe('Call Summary Enrichment - Pipedrive Integration', () => {
             quoCallWebhookKey: 'test-key',
             // Mark the Quo phone number as internal (not the contact number)
             phoneNumbersMetadata: [
-                { number: '+15551234567', name: 'Sales Line', type: 'internal' }
+                {
+                    number: '+15551234567',
+                    name: 'Sales Line',
+                    type: 'internal',
+                },
             ],
         };
 
@@ -1264,7 +1350,11 @@ describe('Call Summary Enrichment - Pipedrive Integration', () => {
             });
 
             mockQuoApi.api.getPhoneNumber.mockResolvedValue({
-                data: { symbol: '📞', name: 'Sales Line', number: '+15559876543' },
+                data: {
+                    symbol: '📞',
+                    name: 'Sales Line',
+                    number: '+15559876543',
+                },
             });
 
             mockQuoApi.api.getUser.mockResolvedValue({
@@ -1311,7 +1401,10 @@ describe('Call Summary Enrichment - Pipedrive Integration', () => {
                 data: {
                     object: {
                         callId: 'call-pd-123',
-                        summary: ['Discussed product features', 'Reviewed pricing'],
+                        summary: [
+                            'Discussed product features',
+                            'Reviewed pricing',
+                        ],
                         nextSteps: ['Send proposal', 'Schedule demo'],
                         status: 'completed',
                     },
@@ -1375,14 +1468,18 @@ describe('Call Summary Enrichment - Pipedrive Integration', () => {
                 expect.objectContaining({
                     url: 'https://company.pipedrive.com/api/v1/notes/12345',
                     body: expect.objectContaining({
-                        content: expect.stringMatching(/Summary:.*Discussed product features/s),
+                        content: expect.stringMatching(
+                            /Summary:.*Discussed product features/s,
+                        ),
                     }),
                 }),
             );
 
             // Assert - Notes include recording URL
             const updateCall = mockPipedriveApi.api._put.mock.calls[0][0];
-            expect(updateCall.body.content).toContain('https://storage.example.com/pd-recording.mp3');
+            expect(updateCall.body.content).toContain(
+                'https://storage.example.com/pd-recording.mp3',
+            );
 
             // Assert - createNote NOT called (update only)
             expect(mockPipedriveApi.api.createNote).not.toHaveBeenCalled();
@@ -1453,8 +1550,12 @@ describe('Call Summary Enrichment - Pipedrive Integration', () => {
 
             // Assert - Voicemail URL and transcript included
             const updateCall = mockPipedriveApi.api._put.mock.calls[0][0];
-            expect(updateCall.body.content).toContain('https://storage.example.com/pd-vm.mp3');
-            expect(updateCall.body.content).toContain('Hi, please call me back about my order');
+            expect(updateCall.body.content).toContain(
+                'https://storage.example.com/pd-vm.mp3',
+            );
+            expect(updateCall.body.content).toContain(
+                'Hi, please call me back about my order',
+            );
         });
 
         it('should show "Handled by Sona" status and include jobs data for AI-handled calls', async () => {
@@ -1464,7 +1565,9 @@ describe('Call Summary Enrichment - Pipedrive Integration', () => {
                 data: {
                     object: {
                         callId: 'call-pd-sona',
-                        summary: ['The AI assistant took a message from the caller'],
+                        summary: [
+                            'The AI assistant took a message from the caller',
+                        ],
                         nextSteps: [],
                         jobs: [
                             {
@@ -1472,8 +1575,14 @@ describe('Call Summary Enrichment - Pipedrive Integration', () => {
                                 name: 'Message taking',
                                 result: {
                                     data: [
-                                        { name: 'First and last name', value: 'John Doe' },
-                                        { name: 'Summarize the message', value: 'Interested in product demo' },
+                                        {
+                                            name: 'First and last name',
+                                            value: 'John Doe',
+                                        },
+                                        {
+                                            name: 'Summarize the message',
+                                            value: 'Interested in product demo',
+                                        },
                                     ],
                                 },
                             },
@@ -1507,7 +1616,12 @@ describe('Call Summary Enrichment - Pipedrive Integration', () => {
             });
 
             mockQuoApi.api.getCallRecordings.mockResolvedValue({
-                data: [{ url: 'https://storage.example.com/sona-recording.mp3', duration: 120 }],
+                data: [
+                    {
+                        url: 'https://storage.example.com/sona-recording.mp3',
+                        duration: 120,
+                    },
+                ],
             });
 
             mockQuoApi.api.getCallVoicemails.mockResolvedValue({ data: null });
@@ -1538,7 +1652,9 @@ describe('Call Summary Enrichment - Pipedrive Integration', () => {
             // Assert - Jobs data included
             expect(updateCall.body.content).toContain('Message taking');
             expect(updateCall.body.content).toContain('John Doe');
-            expect(updateCall.body.content).toContain('Interested in product demo');
+            expect(updateCall.body.content).toContain(
+                'Interested in product demo',
+            );
         });
     });
 });
