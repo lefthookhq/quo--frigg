@@ -112,8 +112,16 @@ jobs:
         run: |
           echo "Triggering database migrations via deployed Lambda..."
 
+          # Debug: Check if BASE_URL is set
+          if [ -z "$BASE_URL" ]; then
+            echo "❌ ERROR: BASE_URL is not set"
+            exit 1
+          fi
+
+          echo "BASE_URL is configured (length: ${#BASE_URL} characters)"
+
           # Trigger migration
-          RESPONSE=$(curl -s -X POST "${BASE_URL}/db-migrate" \
+          RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "${BASE_URL}/db-migrate" \
             -H "Content-Type: application/json" \
             -H "x-frigg-admin-api-key: ${ADMIN_API_KEY}" \
             -d '{"dbType": "postgresql", "stage": "${{ steps.stage.outputs.stage }}"}')
