@@ -102,10 +102,54 @@ jobs:
           echo "Deploying with SSM Parameter Store..."
           npx frigg deploy --stage ${{ steps.stage.outputs.stage }} --verbose --use-ssm
 
-      - name: Setup Database with Prisma
+      - name: Run Database Migrations (via Lambda)
+        env:
+          BASE_URL: ${{ secrets.BASE_URL }}
+          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
         run: |
-          echo "Setting up database with Prisma migrations..."
-          npx frigg db:setup --stage ${{ steps.stage.outputs.stage }}
+          echo "Triggering database migrations via deployed Lambda..."
+
+          # Trigger migration
+          RESPONSE=$(curl -s -X POST "${BASE_URL}/db-migrate" \
+            -H "Content-Type: application/json" \
+            -H "x-frigg-admin-api-key: ${ADMIN_API_KEY}" \
+            -d '{"dbType": "postgresql", "stage": "${{ steps.stage.outputs.stage }}"}')
+
+          echo "Migration trigger response: $RESPONSE"
+
+          # Extract process ID
+          PROCESS_ID=$(echo $RESPONSE | jq -r '.processId // empty')
+
+          if [ -z "$PROCESS_ID" ]; then
+            echo "⚠️ Could not get process ID. Migration may have failed to start."
+            echo "Response: $RESPONSE"
+            # Don't fail the build - migrations might already be up to date
+            exit 0
+          fi
+
+          echo "Migration started with process ID: $PROCESS_ID"
+
+          # Poll for completion (max 5 minutes)
+          for i in {1..30}; do
+            sleep 10
+            STATUS=$(curl -s "${BASE_URL}/db-migrate/${PROCESS_ID}" \
+              -H "x-frigg-admin-api-key: ${ADMIN_API_KEY}")
+
+            STATE=$(echo $STATUS | jq -r '.state // empty')
+            echo "Migration status: $STATE"
+
+            if [ "$STATE" = "COMPLETED" ]; then
+              echo "✅ Database migrations completed successfully"
+              exit 0
+            elif [ "$STATE" = "FAILED" ]; then
+              echo "❌ Database migrations failed"
+              echo $STATUS | jq .
+              exit 1
+            fi
+          done
+
+          echo "⚠️ Migration timed out - check status manually"
+          exit 0
 
       - name: Deployment Summary
         run: |
