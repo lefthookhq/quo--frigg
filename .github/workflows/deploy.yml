@@ -102,6 +102,9 @@ jobs:
           echo "Deploying with SSM Parameter Store..."
           npx frigg deploy --stage ${{ steps.stage.outputs.stage }} --verbose --use-ssm
 
+      - name: Install jq for JSON parsing
+        run: sudo apt-get update && sudo apt-get install -y jq
+
       - name: Run Database Migrations (via Lambda)
         env:
           BASE_URL: ${{ secrets.BASE_URL }}
