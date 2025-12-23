@@ -70,13 +70,15 @@ describe('AttioIntegration - Empty Participants (Voicemail)', () => {
         integration.config = {
             quoCallWebhookKey: 'test-key',
             phoneNumbersMetadata: [
-                { number: '+15551234567', name: 'Sales Line' }
-            ]
+                { number: '+15551234567', name: 'Sales Line' },
+            ],
         };
 
         integration.upsertMapping = jest.fn().mockResolvedValue({});
         integration.getMapping = jest.fn();
-        integration._findAttioContactFromQuoWebhook = jest.fn().mockResolvedValue('attio-contact-123');
+        integration._findAttioContactFromQuoWebhook = jest
+            .fn()
+            .mockResolvedValue('attio-contact-123');
         integration.logCallToActivity = jest.fn().mockResolvedValue('note-123');
     });
 
@@ -96,7 +98,8 @@ describe('AttioIntegration - Empty Participants (Voicemail)', () => {
                         answeredAt: null,
                         createdAt: '2025-11-26T04:13:39.317Z',
                     },
-                    deepLink: 'https://my.quo.com/calls/CALL_TEST_VOICEMAIL_001',
+                    deepLink:
+                        'https://my.quo.com/calls/CALL_TEST_VOICEMAIL_001',
                 },
             };
 
@@ -126,7 +129,9 @@ describe('AttioIntegration - Empty Participants (Voicemail)', () => {
                 },
             });
 
-            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(
+                mockGetPhoneNumber.salesLine,
+            );
             mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
             mockQuoApi.api.getCallRecordings.mockResolvedValue({ data: [] });
 
@@ -134,10 +139,14 @@ describe('AttioIntegration - Empty Participants (Voicemail)', () => {
 
             // Should have called getCall once
             expect(mockQuoApi.api.getCall).toHaveBeenCalledTimes(1);
-            expect(mockQuoApi.api.getCall).toHaveBeenCalledWith('CALL_TEST_VOICEMAIL_001');
+            expect(mockQuoApi.api.getCall).toHaveBeenCalledWith(
+                'CALL_TEST_VOICEMAIL_001',
+            );
 
             // Should have fetched voicemail for no-answer call
-            expect(mockQuoApi.api.getCallVoicemails).toHaveBeenCalledWith('CALL_TEST_VOICEMAIL_001');
+            expect(mockQuoApi.api.getCallVoicemails).toHaveBeenCalledWith(
+                'CALL_TEST_VOICEMAIL_001',
+            );
 
             // Should have logged to Attio with voicemail
             expect(integration.logCallToActivity).toHaveBeenCalled();
@@ -161,7 +170,8 @@ describe('AttioIntegration - Empty Participants (Voicemail)', () => {
                         answeredAt: null,
                         createdAt: '2025-11-26T04:13:39.317Z',
                     },
-                    deepLink: 'https://my.quo.com/calls/AC_NO_PARTICIPANTS_NO_VM',
+                    deepLink:
+                        'https://my.quo.com/calls/AC_NO_PARTICIPANTS_NO_VM',
                 },
             };
 
@@ -189,7 +199,9 @@ describe('AttioIntegration - Empty Participants (Voicemail)', () => {
                     status: 'completed',
                 },
             });
-            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(
+                mockGetPhoneNumber.salesLine,
+            );
             mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
 
             const result = await integration._handleQuoCallEvent(webhookData);

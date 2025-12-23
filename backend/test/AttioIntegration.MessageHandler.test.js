@@ -67,13 +67,15 @@ describe('AttioIntegration - Message Handler (Bug Fix)', () => {
         integration.config = {
             quoCallWebhookKey: 'test-key',
             phoneNumbersMetadata: [
-                { number: '+15551234567', name: 'Sales Line' }
-            ]
+                { number: '+15551234567', name: 'Sales Line' },
+            ],
         };
 
         integration.upsertMapping = jest.fn().mockResolvedValue({});
         integration.getMapping = jest.fn().mockResolvedValue(null);
-        integration._findAttioContactFromQuoWebhook = jest.fn().mockResolvedValue('attio-contact-123');
+        integration._findAttioContactFromQuoWebhook = jest
+            .fn()
+            .mockResolvedValue('attio-contact-123');
         integration.logSMSToActivity = jest.fn().mockResolvedValue('note-123');
     });
 
@@ -85,13 +87,17 @@ describe('AttioIntegration - Message Handler (Bug Fix)', () => {
             // Mock no existing mapping (first message)
             integration.getMapping.mockResolvedValueOnce(null);
 
-            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(
+                mockGetPhoneNumber.salesLine,
+            );
             mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
 
             await integration._handleQuoMessageEvent(webhookData);
 
             // CRITICAL: Should use getMapping() not integrationMappingRepository.get()
-            expect(integration.getMapping).toHaveBeenCalledWith(webhookData.data.object.id);
+            expect(integration.getMapping).toHaveBeenCalledWith(
+                webhookData.data.object.id,
+            );
             expect(integration.getMapping).toHaveBeenCalledTimes(1);
 
             // Should have logged SMS to Attio
@@ -102,7 +108,7 @@ describe('AttioIntegration - Message Handler (Bug Fix)', () => {
                 webhookData.data.object.id,
                 expect.objectContaining({
                     messageId: webhookData.data.object.id,
-                })
+                }),
             );
         });
 
@@ -117,10 +123,13 @@ describe('AttioIntegration - Message Handler (Bug Fix)', () => {
                 contactId: 'attio-contact-123',
             });
 
-            const result = await integration._handleQuoMessageEvent(webhookData);
+            const result =
+                await integration._handleQuoMessageEvent(webhookData);
 
             // Should have checked for duplicate using getMapping
-            expect(integration.getMapping).toHaveBeenCalledWith(webhookData.data.object.id);
+            expect(integration.getMapping).toHaveBeenCalledWith(
+                webhookData.data.object.id,
+            );
 
             // Should skip logging duplicate
             expect(result.skipped).toBe(true);
@@ -140,13 +149,17 @@ describe('AttioIntegration - Message Handler (Bug Fix)', () => {
             const webhookData = messageReceivedWebhook;
 
             integration.getMapping.mockResolvedValueOnce(null);
-            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(
+                mockGetPhoneNumber.salesLine,
+            );
             mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
 
             await integration._handleQuoMessageEvent(webhookData);
 
             // Should have found contact from external phone
-            expect(integration._findAttioContactFromQuoWebhook).toHaveBeenCalledWith(webhookData.data.object.from);
+            expect(
+                integration._findAttioContactFromQuoWebhook,
+            ).toHaveBeenCalledWith(webhookData.data.object.from);
 
             // Should have logged SMS with message content
             expect(integration.logSMSToActivity).toHaveBeenCalledWith(
@@ -154,7 +167,7 @@ describe('AttioIntegration - Message Handler (Bug Fix)', () => {
                     contactExternalId: 'attio-contact-123',
                     content: expect.stringContaining('more information'),
                     title: expect.stringContaining('Message'),
-                })
+                }),
             );
         });
 
@@ -163,13 +176,17 @@ describe('AttioIntegration - Message Handler (Bug Fix)', () => {
             const webhookData = messageDeliveredWebhook;
 
             integration.getMapping.mockResolvedValueOnce(null);
-            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(
+                mockGetPhoneNumber.salesLine,
+            );
             mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
 
             await integration._handleQuoMessageEvent(webhookData);
 
             // Should have found contact from recipient phone (outgoing = use 'to')
-            expect(integration._findAttioContactFromQuoWebhook).toHaveBeenCalledWith(webhookData.data.object.to);
+            expect(
+                integration._findAttioContactFromQuoWebhook,
+            ).toHaveBeenCalledWith(webhookData.data.object.to);
 
             // Should have logged SMS
             expect(integration.logSMSToActivity).toHaveBeenCalled();
@@ -194,17 +211,24 @@ describe('AttioIntegration - Message Handler (Bug Fix)', () => {
             };
 
             integration.getMapping.mockResolvedValueOnce(null);
-            integration._findAttioContactFromQuoWebhook.mockResolvedValueOnce(null);
-            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+            integration._findAttioContactFromQuoWebhook.mockResolvedValueOnce(
+                null,
+            );
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(
+                mockGetPhoneNumber.salesLine,
+            );
             mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
 
-            const result = await integration._handleQuoMessageEvent(webhookData);
+            const result =
+                await integration._handleQuoMessageEvent(webhookData);
 
             // Should have checked for duplicate
             expect(integration.getMapping).toHaveBeenCalled();
 
             // Should have tried to find contact
-            expect(integration._findAttioContactFromQuoWebhook).toHaveBeenCalled();
+            expect(
+                integration._findAttioContactFromQuoWebhook,
+            ).toHaveBeenCalled();
 
             // New behavior: Should NOT log when no contact found (consistent across all integrations)
             expect(integration.logSMSToActivity).not.toHaveBeenCalled();

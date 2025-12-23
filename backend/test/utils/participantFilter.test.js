@@ -16,8 +16,12 @@ describe('ParticipantFilter Utility', () => {
     describe('normalizePhoneNumber', () => {
         it('should remove spaces, dashes, and parentheses', () => {
             expect(normalizePhoneNumber('(555) 123-4567')).toBe('5551234567');
-            expect(normalizePhoneNumber('+1 555 123 4567')).toBe('+15551234567');
-            expect(normalizePhoneNumber('+1-555-123-4567')).toBe('+15551234567');
+            expect(normalizePhoneNumber('+1 555 123 4567')).toBe(
+                '+15551234567',
+            );
+            expect(normalizePhoneNumber('+1-555-123-4567')).toBe(
+                '+15551234567',
+            );
         });
 
         it('should preserve + for E.164 format', () => {
@@ -46,9 +50,7 @@ describe('ParticipantFilter Utility', () => {
         });
 
         it('should normalize numbers during extraction', () => {
-            const metadata = [
-                { number: '(555) 123-4567', name: 'Sales' },
-            ];
+            const metadata = [{ number: '(555) 123-4567', name: 'Sales' }];
 
             const quoNumbers = extractQuoPhoneNumbers(metadata);
 
@@ -83,7 +85,10 @@ describe('ParticipantFilter Utility', () => {
             const participants = ['+15559876543', '+15551234567'];
             const metadata = [{ number: '+15551234567', name: 'Sales' }];
 
-            const externalPhones = filterExternalParticipants(participants, metadata);
+            const externalPhones = filterExternalParticipants(
+                participants,
+                metadata,
+            );
 
             expect(externalPhones).toEqual(['+15559876543']);
         });
@@ -92,28 +97,46 @@ describe('ParticipantFilter Utility', () => {
             const participants = ['+15551234567', '+15559876543']; // Quo first
             const metadata = [{ number: '+15551234567', name: 'Sales' }];
 
-            const externalPhones = filterExternalParticipants(participants, metadata);
+            const externalPhones = filterExternalParticipants(
+                participants,
+                metadata,
+            );
 
             expect(externalPhones).toEqual(['+15559876543']);
         });
 
         it('should return multiple external participants (3-way call)', () => {
-            const participants = ['+15557654321', '+15551234567', '+15559998888'];
+            const participants = [
+                '+15557654321',
+                '+15551234567',
+                '+15559998888',
+            ];
             const metadata = [{ number: '+15551234567', name: 'Sales' }];
 
-            const externalPhones = filterExternalParticipants(participants, metadata);
+            const externalPhones = filterExternalParticipants(
+                participants,
+                metadata,
+            );
 
             expect(externalPhones).toEqual(['+15557654321', '+15559998888']);
         });
 
         it('should handle multiple Quo numbers in metadata', () => {
-            const participants = ['+15557654321', '+15551234567', '+15559876543', '+15559998888'];
+            const participants = [
+                '+15557654321',
+                '+15551234567',
+                '+15559876543',
+                '+15559998888',
+            ];
             const metadata = [
                 { number: '+15551234567', name: 'Sales' },
                 { number: '+15559876543', name: 'Support' },
             ];
 
-            const externalPhones = filterExternalParticipants(participants, metadata);
+            const externalPhones = filterExternalParticipants(
+                participants,
+                metadata,
+            );
 
             expect(externalPhones).toEqual(['+15557654321', '+15559998888']);
         });
@@ -122,7 +145,10 @@ describe('ParticipantFilter Utility', () => {
             const participants = ['+15559876543', '+15551234567'];
             const metadata = [];
 
-            const externalPhones = filterExternalParticipants(participants, metadata);
+            const externalPhones = filterExternalParticipants(
+                participants,
+                metadata,
+            );
 
             expect(externalPhones).toEqual(['+15559876543', '+15551234567']);
         });
@@ -131,7 +157,10 @@ describe('ParticipantFilter Utility', () => {
             const participants = [];
             const metadata = [{ number: '+15551234567', name: 'Sales' }];
 
-            const externalPhones = filterExternalParticipants(participants, metadata);
+            const externalPhones = filterExternalParticipants(
+                participants,
+                metadata,
+            );
 
             expect(externalPhones).toEqual([]);
         });
@@ -143,7 +172,10 @@ describe('ParticipantFilter Utility', () => {
                 { number: '+15559876543', name: 'Support' },
             ];
 
-            const externalPhones = filterExternalParticipants(participants, metadata);
+            const externalPhones = filterExternalParticipants(
+                participants,
+                metadata,
+            );
 
             expect(externalPhones).toEqual([]);
         });
@@ -151,7 +183,10 @@ describe('ParticipantFilter Utility', () => {
         it('should work with real phoneNumbersMetadata fixture', () => {
             const participants = ['+15559876543', '+15551234567'];
 
-            const externalPhones = filterExternalParticipants(participants, phoneNumbersMetadata);
+            const externalPhones = filterExternalParticipants(
+                participants,
+                phoneNumbersMetadata,
+            );
 
             expect(externalPhones).toEqual(['+15559876543']);
         });

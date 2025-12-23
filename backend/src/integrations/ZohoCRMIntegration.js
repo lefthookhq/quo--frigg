@@ -1119,14 +1119,16 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
      */
     async _handleQuoCallEvent(webhookData) {
         const callId = webhookData.data.object.id;
-        const formatOptions = QuoCallContentBuilder.getFormatOptions('plainText');
+        const formatOptions =
+            QuoCallContentBuilder.getFormatOptions('plainText');
 
         console.log(`[Quo Webhook] Processing call.completed: ${callId}`);
 
-        const callObject = await QuoWebhookEventProcessor.fetchCallWithVoicemail(
-            this.quo.api,
-            callId,
-        );
+        const callObject =
+            await QuoWebhookEventProcessor.fetchCallWithVoicemail(
+                this.quo.api,
+                callId,
+            );
 
         if (!callObject) {
             console.warn(`[Quo Webhook] Call ${callId} not found`);
@@ -1329,11 +1331,9 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 upsert: (id, data) => this.upsertMapping(id, data),
             },
             onActivityCreated: ({ messageId }) => {
-                trackAnalyticsEvent(
-                    this,
-                    QUO_ANALYTICS_EVENTS.MESSAGE_LOGGED,
-                    { messageId },
-                );
+                trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.MESSAGE_LOGGED, {
+                    messageId,
+                });
             },
         });
 
@@ -1351,7 +1351,8 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         const callId = summaryObject.callId;
         const summary = summaryObject.summary || [];
         const nextSteps = summaryObject.nextSteps || [];
-        const formatOptions = QuoCallContentBuilder.getFormatOptions('plainText');
+        const formatOptions =
+            QuoCallContentBuilder.getFormatOptions('plainText');
 
         console.log(
             `[Quo Webhook] Processing call summary for call: ${callId}, ${summary.length} summary points, ${nextSteps.length} next steps`,
@@ -1412,7 +1413,8 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         const phoneNumberDetails = await this.quo.api.getPhoneNumber(
             callObject.phoneNumberId,
         );
-        const inboxName = QuoCallContentBuilder.buildInboxName(phoneNumberDetails);
+        const inboxName =
+            QuoCallContentBuilder.buildInboxName(phoneNumberDetails);
         const inboxNumber =
             phoneNumberDetails.data?.number ||
             phoneNumberDetails.data?.formattedNumber ||

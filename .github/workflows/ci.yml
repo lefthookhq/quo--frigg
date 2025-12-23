@@ -1,12 +1,29 @@
 name: Code Quality and Tests
 
-on: 
+on:
   push:
-    branches: [ main, develop ]
+    branches: [main]
   pull_request:
-    branches: [ main, develop ]
+    branches: [main]
 
 jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js with Cache
+        uses: ./.github/actions/setup-node-with-cache
+        with:
+          working-directory: ./backend
+
+      - name: Run ESLint
+        run: npm run lint
+
   format:
     name: Format Check
     runs-on: ubuntu-latest
@@ -16,18 +33,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Node.js with Cache
+        uses: ./.github/actions/setup-node-with-cache
         with:
-          node-version: 20
-          cache: 'npm'
-          cache-dependency-path: './backend/package-lock.json'
-
-      - name: Install dependencies
-        run: npm ci
+          working-directory: ./backend
 
       - name: Check formatting
-        run: npm run format
+        run: npm run format:check
 
   test:
     name: Test
@@ -38,41 +50,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Node.js with Cache
+        uses: ./.github/actions/setup-node-with-cache
         with:
-          node-version: 20
-          cache: 'npm'
-          cache-dependency-path: './backend/package-lock.json'
-
-      - name: Install libssl1.1
-        run: |
-          wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb
-          sudo dpkg -i libssl1.1_1.1.1f-1ubuntu2_amd64.deb
-          rm libssl1.1_1.1.1f-1ubuntu2_amd64.deb
-
-      - name: Install MongoDB
-        run: |
-          wget -qO - https://www.mongodb.org/static/pgp/server-7.0.asc | sudo apt-key add -
-          echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
-          sudo apt-get update
-          sudo apt-get install -y mongodb-org
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Generate Prisma Client for debian-openssl-1.1.x
-        run: |
-          cd node_modules/@friggframework/core
-          npx prisma generate --schema=./prisma-postgresql/schema.prisma
-        continue-on-error: true
+          working-directory: ./backend
 
       - name: Run tests
         run: npm run test:ci
 
       - name: Upload coverage reports
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           working-directory: ./backend
           files: ./coverage/lcov.info
-          fail_ci_if_error: false 
+          fail_ci_if_error: false
+
+  knip:
+    name: Check Unused Dependencies
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js with Cache
+        uses: ./.github/actions/setup-node-with-cache
+        with:
+          working-directory: ./backend
+
+      - name: Run knip
+        run: npm run knip

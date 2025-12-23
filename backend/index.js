@@ -65,6 +65,10 @@ const appDefinition = {
         S3_BUCKET_NAME: true,
 
         QUO_BASE_URL: true,
+        QUO_API_KEY: true,
+        QUO_ANALYTICS_BASE_URL: true,
+        AXISCARE_API_KEY: true,
+        AXISCARE_BASE_URL: true,
         ATTIO_CLIENT_ID: true,
         ATTIO_CLIENT_SECRET: true,
         ATTIO_SCOPE: true,

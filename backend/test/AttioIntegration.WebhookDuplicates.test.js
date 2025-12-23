@@ -1,5 +1,10 @@
 const AttioIntegration = require('../src/integrations/AttioIntegration');
-const { mockQuoMessage, mockGetPhoneNumber, mockGetUser, mockGetCall } = require('./fixtures/quo-api-responses');
+const {
+    mockQuoMessage,
+    mockGetPhoneNumber,
+    mockGetUser,
+    mockGetCall,
+} = require('./fixtures/quo-api-responses');
 
 /**
  * Unit tests to verify:
@@ -41,7 +46,9 @@ describe('AttioIntegration - Webhook Duplicate Prevention', () => {
 
         // Mock commands (needed for analytics tracking)
         integration.commands = {
-            findOrganizationUserById: jest.fn().mockResolvedValue({ id: 'test-user-id' }),
+            findOrganizationUserById: jest
+                .fn()
+                .mockResolvedValue({ id: 'test-user-id' }),
         };
 
         // Mock getRecord to return valid person
@@ -57,7 +64,9 @@ describe('AttioIntegration - Webhook Duplicate Prevention', () => {
         });
 
         // Mock phone number lookup using centralized fixture
-        mockQuoApi.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+        mockQuoApi.getPhoneNumber.mockResolvedValue(
+            mockGetPhoneNumber.salesLine,
+        );
 
         // Mock user lookup using centralized fixture
         mockQuoApi.getUser.mockResolvedValue(mockGetUser.johnSmith);
@@ -141,7 +150,8 @@ describe('AttioIntegration - Webhook Duplicate Prevention', () => {
                     parent_object: 'people',
                     parent_record_id: 'attio-person-123',
                     format: 'markdown',
-                    created_at: mockQuoMessage.incomingMinimal.data.object.createdAt,
+                    created_at:
+                        mockQuoMessage.incomingMinimal.data.object.createdAt,
                 }),
             );
         });
@@ -675,7 +685,11 @@ describe('AttioIntegration - Webhook Duplicate Prevention', () => {
             expect(result.logged).toBe(false);
             expect(result.results.length).toBeGreaterThan(0);
             expect(result.results.every((r) => r.logged === false)).toBe(true);
-            expect(result.results.some((r) => r.error?.includes('Attio API error'))).toBe(true);
+            expect(
+                result.results.some((r) =>
+                    r.error?.includes('Attio API error'),
+                ),
+            ).toBe(true);
         });
     });
 });

@@ -2,7 +2,10 @@
  * Format Call Recordings Utility Tests
  */
 
-const { formatCallRecordings, formatVoicemail } = require('../../src/utils/formatCallRecordings');
+const {
+    formatCallRecordings,
+    formatVoicemail,
+} = require('../../src/utils/formatCallRecordings');
 
 describe('formatCallRecordings', () => {
     describe('Single Recording', () => {
@@ -16,7 +19,9 @@ describe('formatCallRecordings', () => {
 
             const result = formatCallRecordings(recordings, 75);
 
-            expect(result).toBe('[▶️ Recording (1:15)](https://storage.example.com/rec1.mp3)');
+            expect(result).toBe(
+                '[▶️ Recording (1:15)](https://storage.example.com/rec1.mp3)',
+            );
         });
 
         it('should format single recording without URL', () => {
@@ -41,7 +46,9 @@ describe('formatCallRecordings', () => {
 
             const result = formatCallRecordings(recordings, 90);
 
-            expect(result).toBe('[▶️ Recording (1:30)](https://storage.example.com/rec1.mp3)');
+            expect(result).toBe(
+                '[▶️ Recording (1:30)](https://storage.example.com/rec1.mp3)',
+            );
         });
     });
 
@@ -61,7 +68,7 @@ describe('formatCallRecordings', () => {
             const result = formatCallRecordings(recordings, 75);
 
             expect(result).toBe(
-                '▶️ Recordings: [Part 1 (0:45)](https://storage.example.com/part1.mp3) | [Part 2 (0:30)](https://storage.example.com/part2.mp3)'
+                '▶️ Recordings: [Part 1 (0:45)](https://storage.example.com/part1.mp3) | [Part 2 (0:30)](https://storage.example.com/part2.mp3)',
             );
         });
 
@@ -80,7 +87,7 @@ describe('formatCallRecordings', () => {
             const result = formatCallRecordings(recordings, 75);
 
             expect(result).toBe(
-                '▶️ Recordings: [Part 1 (0:45)](https://storage.example.com/part1.mp3) | Part 2 (0:30)'
+                '▶️ Recordings: [Part 1 (0:45)](https://storage.example.com/part1.mp3) | Part 2 (0:30)',
             );
         });
 
@@ -126,7 +133,9 @@ describe('formatCallRecordings', () => {
 
             const result = formatCallRecordings(recordings, 0);
 
-            expect(result).toBe('[▶️ Recording (0:00)](https://example.com/rec.mp3)');
+            expect(result).toBe(
+                '[▶️ Recording (0:00)](https://example.com/rec.mp3)',
+            );
         });
 
         it('should handle very long duration', () => {
@@ -139,7 +148,9 @@ describe('formatCallRecordings', () => {
 
             const result = formatCallRecordings(recordings, 3665);
 
-            expect(result).toBe('[▶️ Recording (61:05)](https://example.com/rec.mp3)');
+            expect(result).toBe(
+                '[▶️ Recording (61:05)](https://example.com/rec.mp3)',
+            );
         });
     });
 });
@@ -153,7 +164,9 @@ describe('formatVoicemail', () => {
 
         const result = formatVoicemail(voicemail);
 
-        expect(result).toBe('[➿ Voicemail (0:35)](https://storage.example.com/vm.mp3)');
+        expect(result).toBe(
+            '[➿ Voicemail (0:35)](https://storage.example.com/vm.mp3)',
+        );
     });
 
     it('should format voicemail without URL', () => {
@@ -185,7 +198,9 @@ describe('formatVoicemail', () => {
 
         const result = formatVoicemail(voicemail);
 
-        expect(result).toBe('[➿ Voicemail (3:00)](https://storage.example.com/vm-long.mp3)');
+        expect(result).toBe(
+            '[➿ Voicemail (3:00)](https://storage.example.com/vm-long.mp3)',
+        );
     });
 });
 
@@ -199,9 +214,13 @@ describe('formatCallRecordings - HTML mode', () => {
                 },
             ];
 
-            const result = formatCallRecordings(recordings, 75, { useHtml: true });
+            const result = formatCallRecordings(recordings, 75, {
+                useHtml: true,
+            });
 
-            expect(result).toBe('<a href="https://storage.example.com/rec1.mp3">▶️ Recording (1:15)</a>');
+            expect(result).toBe(
+                '<a href="https://storage.example.com/rec1.mp3">▶️ Recording (1:15)</a>',
+            );
         });
 
         it('should format single recording without URL (same as markdown)', () => {
@@ -212,7 +231,9 @@ describe('formatCallRecordings - HTML mode', () => {
                 },
             ];
 
-            const result = formatCallRecordings(recordings, 75, { useHtml: true });
+            const result = formatCallRecordings(recordings, 75, {
+                useHtml: true,
+            });
 
             expect(result).toBe('▶️ Recording (1:15)');
         });
@@ -231,10 +252,12 @@ describe('formatCallRecordings - HTML mode', () => {
                 },
             ];
 
-            const result = formatCallRecordings(recordings, 75, { useHtml: true });
+            const result = formatCallRecordings(recordings, 75, {
+                useHtml: true,
+            });
 
             expect(result).toBe(
-                '▶️ Recordings: <a href="https://storage.example.com/part1.mp3">Part 1 (0:45)</a> | <a href="https://storage.example.com/part2.mp3">Part 2 (0:30)</a>'
+                '▶️ Recordings: <a href="https://storage.example.com/part1.mp3">Part 1 (0:45)</a> | <a href="https://storage.example.com/part2.mp3">Part 2 (0:30)</a>',
             );
         });
 
@@ -250,10 +273,12 @@ describe('formatCallRecordings - HTML mode', () => {
                 },
             ];
 
-            const result = formatCallRecordings(recordings, 75, { useHtml: true });
+            const result = formatCallRecordings(recordings, 75, {
+                useHtml: true,
+            });
 
             expect(result).toBe(
-                '▶️ Recordings: <a href="https://storage.example.com/part1.mp3">Part 1 (0:45)</a> | Part 2 (0:30)'
+                '▶️ Recordings: <a href="https://storage.example.com/part1.mp3">Part 1 (0:45)</a> | Part 2 (0:30)',
             );
         });
     });
@@ -269,7 +294,9 @@ describe('formatCallRecordings - HTML mode', () => {
 
             const result = formatCallRecordings(recordings, 75);
 
-            expect(result).toBe('[▶️ Recording (1:15)](https://storage.example.com/rec1.mp3)');
+            expect(result).toBe(
+                '[▶️ Recording (1:15)](https://storage.example.com/rec1.mp3)',
+            );
         });
 
         it('should use markdown when useHtml is false', () => {
@@ -280,9 +307,13 @@ describe('formatCallRecordings - HTML mode', () => {
                 },
             ];
 
-            const result = formatCallRecordings(recordings, 75, { useHtml: false });
+            const result = formatCallRecordings(recordings, 75, {
+                useHtml: false,
+            });
 
-            expect(result).toBe('[▶️ Recording (1:15)](https://storage.example.com/rec1.mp3)');
+            expect(result).toBe(
+                '[▶️ Recording (1:15)](https://storage.example.com/rec1.mp3)',
+            );
         });
     });
 });
@@ -296,7 +327,9 @@ describe('formatVoicemail - HTML mode', () => {
 
         const result = formatVoicemail(voicemail, { useHtml: true });
 
-        expect(result).toBe('<a href="https://storage.example.com/vm.mp3">➿ Voicemail (0:35)</a>');
+        expect(result).toBe(
+            '<a href="https://storage.example.com/vm.mp3">➿ Voicemail (0:35)</a>',
+        );
     });
 
     it('should format voicemail without URL (same as markdown)', () => {
@@ -318,7 +351,9 @@ describe('formatVoicemail - HTML mode', () => {
 
         const result = formatVoicemail(voicemail);
 
-        expect(result).toBe('[➿ Voicemail (0:35)](https://storage.example.com/vm.mp3)');
+        expect(result).toBe(
+            '[➿ Voicemail (0:35)](https://storage.example.com/vm.mp3)',
+        );
     });
 
     it('should use markdown when useHtml is false', () => {
@@ -329,6 +364,8 @@ describe('formatVoicemail - HTML mode', () => {
 
         const result = formatVoicemail(voicemail, { useHtml: false });
 
-        expect(result).toBe('[➿ Voicemail (0:35)](https://storage.example.com/vm.mp3)');
+        expect(result).toBe(
+            '[➿ Voicemail (0:35)](https://storage.example.com/vm.mp3)',
+        );
     });
 });

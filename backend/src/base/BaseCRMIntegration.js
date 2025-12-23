@@ -1408,7 +1408,9 @@ class BaseCRMIntegration extends IntegrationBase {
         }
 
         if (!phoneIds || phoneIds.length === 0) {
-            console.log('[Quo] No phone IDs provided, returning empty metadata');
+            console.log(
+                '[Quo] No phone IDs provided, returning empty metadata',
+            );
             return [];
         }
 
@@ -1568,7 +1570,9 @@ class BaseCRMIntegration extends IntegrationBase {
      */
     async _recreateQuoWebhooks(newPhoneIds) {
         if (!this.quo?.api) {
-            throw new Error('Quo API not configured - cannot recreate webhooks');
+            throw new Error(
+                'Quo API not configured - cannot recreate webhooks',
+            );
         }
 
         const oldWebhookIds = {
@@ -1645,7 +1649,10 @@ class BaseCRMIntegration extends IntegrationBase {
                 label: WEBHOOK_LABELS.QUO_CALLS,
             });
 
-            if (!callWebhookResponse?.data?.id || !callWebhookResponse.data.key) {
+            if (
+                !callWebhookResponse?.data?.id ||
+                !callWebhookResponse.data.key
+            ) {
                 throw new Error(
                     'Invalid Quo call webhook response: missing id or key',
                 );
@@ -1760,7 +1767,9 @@ class BaseCRMIntegration extends IntegrationBase {
                 );
 
                 try {
-                    console.log('[Config Update] Fetching fresh phone metadata...');
+                    console.log(
+                        '[Config Update] Fetching fresh phone metadata...',
+                    );
                     const freshMetadata =
                         await this._fetchPhoneMetadataForIds(newPhoneIds);
 
@@ -1782,7 +1791,8 @@ class BaseCRMIntegration extends IntegrationBase {
                     patchedConfig.quoMessageWebhookKey =
                         newWebhooks.messageWebhookKey;
                     patchedConfig.quoCallWebhookId = newWebhooks.callWebhookId;
-                    patchedConfig.quoCallWebhookKey = newWebhooks.callWebhookKey;
+                    patchedConfig.quoCallWebhookKey =
+                        newWebhooks.callWebhookKey;
                     patchedConfig.quoCallSummaryWebhookId =
                         newWebhooks.callSummaryWebhookId;
                     patchedConfig.quoCallSummaryWebhookKey =

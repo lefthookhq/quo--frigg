@@ -58,6 +58,10 @@ describe('Quo Webhook Subscriptions', () => {
         integration.commands = mockCommands;
         integration.config = {};
         integration.id = 'integration-123'; // Ensure ID is set
+        integration.updateIntegrationMessages = { execute: jest.fn() };
+        integration._fetchAndStoreEnabledPhoneIds = jest
+            .fn()
+            .mockResolvedValue();
 
         // Mock environment
         process.env.BASE_URL = 'https://api.example.com';

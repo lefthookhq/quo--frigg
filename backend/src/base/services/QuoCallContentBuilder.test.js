@@ -124,7 +124,9 @@ describe('QuoCallContentBuilder', () => {
                 userName,
             });
 
-            expect(result).toBe('Outgoing initiated by John Doe (not answered)');
+            expect(result).toBe(
+                'Outgoing initiated by John Doe (not answered)',
+            );
         });
 
         it('returns correct status for forwarded call with destination', () => {
@@ -199,9 +201,7 @@ describe('QuoCallContentBuilder', () => {
                 formatOptions,
             });
 
-            expect(result).toBe(
-                '☎️  Call 📞 Sales +1234567890 → +0987654321',
-            );
+            expect(result).toBe('☎️  Call 📞 Sales +1234567890 → +0987654321');
         });
 
         it('builds incoming call title with emoji for markdown', () => {
@@ -213,9 +213,7 @@ describe('QuoCallContentBuilder', () => {
                 formatOptions,
             });
 
-            expect(result).toBe(
-                '☎️  Call +0987654321 → 📞 Sales +1234567890',
-            );
+            expect(result).toBe('☎️  Call +0987654321 → 📞 Sales +1234567890');
         });
 
         it('builds call title without emoji for plainText', () => {

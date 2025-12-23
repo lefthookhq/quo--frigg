@@ -91,7 +91,8 @@ function logWithUserContext(message, integration, additionalData = {}) {
     const contextStr = [
         userContext.appOrgId && `appOrgId=${userContext.appOrgId}`,
         userContext.appUserId && `appUserId=${userContext.appUserId}`,
-        userContext.integrationId && `integrationId=${userContext.integrationId}`,
+        userContext.integrationId &&
+            `integrationId=${userContext.integrationId}`,
     ]
         .filter(Boolean)
         .join(' ');
@@ -123,19 +124,17 @@ function logWebhook(webhookType, integration, webhookData, headers = {}) {
     const contextStr = [
         finalContext.appOrgId && `appOrgId=${finalContext.appOrgId}`,
         finalContext.appUserId && `appUserId=${finalContext.appUserId}`,
-        finalContext.integrationId && `integrationId=${finalContext.integrationId}`,
+        finalContext.integrationId &&
+            `integrationId=${finalContext.integrationId}`,
     ]
         .filter(Boolean)
         .join(' ');
 
-    console.log(
-        `[${contextStr}] Webhook: ${webhookType}`,
-        {
-            webhookId: webhookData.id,
-            eventType: webhookData.type,
-            createdAt: webhookData.createdAt,
-        },
-    );
+    console.log(`[${contextStr}] Webhook: ${webhookType}`, {
+        webhookId: webhookData.id,
+        eventType: webhookData.type,
+        createdAt: webhookData.createdAt,
+    });
 
     return finalContext;
 }
@@ -148,7 +147,9 @@ function logWebhook(webhookType, integration, webhookData, headers = {}) {
  * @param {Object} params - API call parameters
  */
 function logApiCall(apiMethod, integration, params = {}) {
-    return logWithUserContext(`API Call: ${apiMethod}`, integration, { params });
+    return logWithUserContext(`API Call: ${apiMethod}`, integration, {
+        params,
+    });
 }
 
 module.exports = {

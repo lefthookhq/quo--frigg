@@ -55,7 +55,8 @@ const callRecordingCompletedWebhook = {
     apiVersion: 'v4',
     createdAt: '2025-01-15T10:30:45.675Z',
     data: {
-        deepLink: 'https://my.quo.com/inbox/PN_TEST_001/c/CN_TEST_001?at=AC_TEST_001',
+        deepLink:
+            'https://my.quo.com/inbox/PN_TEST_001/c/CN_TEST_001?at=AC_TEST_001',
         object: {
             answeredAt: '2025-01-15T10:29:30.000Z',
             answeredBy: 'SY_TEST_001',
@@ -98,7 +99,8 @@ const callSummaryCompletedWebhook = {
     apiVersion: 'v4',
     createdAt: '2025-01-15T10:30:46.350Z',
     data: {
-        deepLink: 'https://my.quo.com/inbox/PN_TEST_001/c/CN_TEST_001?at=AC_TEST_001',
+        deepLink:
+            'https://my.quo.com/inbox/PN_TEST_001/c/CN_TEST_001?at=AC_TEST_001',
         object: {
             callId: 'AC_TEST_001', // Note: different from call webhooks (data.object.id)
             jobs: [
@@ -140,7 +142,8 @@ const callCompletedWebhook = {
     apiVersion: 'v4',
     createdAt: '2025-01-15T10:30:44.097Z',
     data: {
-        deepLink: 'https://my.quo.com/inbox/PN_TEST_001/c/CN_TEST_001?at=AC_TEST_001',
+        deepLink:
+            'https://my.quo.com/inbox/PN_TEST_001/c/CN_TEST_001?at=AC_TEST_001',
         object: {
             answeredAt: '2025-01-15T10:29:30.000Z',
             answeredBy: 'SY_TEST_001',
@@ -175,7 +178,8 @@ const messageReceivedWebhook = {
     apiVersion: 'v4',
     createdAt: '2025-01-15T10:20:15.342Z',
     data: {
-        deepLink: 'https://quo.com/inbox/PN_TEST_001/c/CN_TEST_002?at=MSG_TEST_002',
+        deepLink:
+            'https://quo.com/inbox/PN_TEST_001/c/CN_TEST_002?at=MSG_TEST_002',
         object: {
             contactIds: ['CONT_TEST_002'],
             createdAt: '2025-01-15T10:20:12.445Z',
@@ -203,13 +207,10 @@ const messageDeliveredWebhook = {
     apiVersion: 'v4',
     createdAt: '2025-01-15T10:25:10.736Z',
     data: {
-        deepLink: 'https://quo.com/inbox/PN_TEST_001/c/CN_TEST_002?at=AC_TEST_002',
+        deepLink:
+            'https://quo.com/inbox/PN_TEST_001/c/CN_TEST_002?at=AC_TEST_002',
         object: {
-            contactIds: [
-                'CONT_TEST_002',
-                'CONT_TEST_003',
-                'CONT_TEST_004',
-            ],
+            contactIds: ['CONT_TEST_002', 'CONT_TEST_003', 'CONT_TEST_004'],
             createdAt: '2025-01-15T10:25:08.771Z',
             direction: 'outgoing',
             from: '+15551234567', // Quo phone (outgoing FROM)
@@ -235,7 +236,8 @@ const callCompletedEmptyParticipants = {
     apiVersion: 'v4',
     createdAt: '2025-01-15T11:00:15.000Z',
     data: {
-        deepLink: 'https://quo.com/inbox/PN_TEST_002/c/CN_TEST_003?at=AC_TEST_EMPTY',
+        deepLink:
+            'https://quo.com/inbox/PN_TEST_002/c/CN_TEST_003?at=AC_TEST_EMPTY',
         object: {
             id: 'AC_TEST_EMPTY',
             direction: 'incoming',

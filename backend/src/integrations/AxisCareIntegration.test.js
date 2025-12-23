@@ -331,7 +331,10 @@ describe('AxisCareIntegration', () => {
                 params: { integrationId: 'non-existent-id' },
             };
 
-            await integration.updatePhoneMapping({ req: mockReq, res: mockRes });
+            await integration.updatePhoneMapping({
+                req: mockReq,
+                res: mockRes,
+            });
 
             expect(mockRes.status).toHaveBeenCalledWith(404);
             expect(mockRes.json).toHaveBeenCalledWith({
@@ -340,9 +343,15 @@ describe('AxisCareIntegration', () => {
         });
 
         it('should return 400 when phoneNumberSiteMappings is missing', async () => {
-            mockReq = { body: {}, params: { integrationId: 'test-integration-id' } };
+            mockReq = {
+                body: {},
+                params: { integrationId: 'test-integration-id' },
+            };
 
-            await integration.updatePhoneMapping({ req: mockReq, res: mockRes });
+            await integration.updatePhoneMapping({
+                req: mockReq,
+                res: mockRes,
+            });
 
             expect(mockRes.status).toHaveBeenCalledWith(400);
             expect(mockRes.json).toHaveBeenCalledWith({
@@ -351,9 +360,15 @@ describe('AxisCareIntegration', () => {
         });
 
         it('should return 400 when phoneNumberSiteMappings is an array', async () => {
-            mockReq = { body: { phoneNumberSiteMappings: [] }, params: { integrationId: 'test-integration-id' } };
+            mockReq = {
+                body: { phoneNumberSiteMappings: [] },
+                params: { integrationId: 'test-integration-id' },
+            };
 
-            await integration.updatePhoneMapping({ req: mockReq, res: mockRes });
+            await integration.updatePhoneMapping({
+                req: mockReq,
+                res: mockRes,
+            });
 
             expect(mockRes.status).toHaveBeenCalledWith(400);
             expect(mockRes.json).toHaveBeenCalledWith({
@@ -371,7 +386,10 @@ describe('AxisCareIntegration', () => {
                 params: { integrationId: 'test-integration-id' },
             };
 
-            await integration.updatePhoneMapping({ req: mockReq, res: mockRes });
+            await integration.updatePhoneMapping({
+                req: mockReq,
+                res: mockRes,
+            });
 
             expect(mockRes.status).toHaveBeenCalledWith(400);
             expect(mockRes.json).toHaveBeenCalledWith({
@@ -383,13 +401,18 @@ describe('AxisCareIntegration', () => {
             mockReq = {
                 body: {
                     phoneNumberSiteMappings: {
-                        demomark: { quoPhoneNumbers: ['256787567092', '', '123456'] },
+                        demomark: {
+                            quoPhoneNumbers: ['256787567092', '', '123456'],
+                        },
                     },
                 },
                 params: { integrationId: 'test-integration-id' },
             };
 
-            await integration.updatePhoneMapping({ req: mockReq, res: mockRes });
+            await integration.updatePhoneMapping({
+                req: mockReq,
+                res: mockRes,
+            });
 
             expect(mockRes.status).toHaveBeenCalledWith(400);
             expect(mockRes.json).toHaveBeenCalledWith({
@@ -412,7 +435,10 @@ describe('AxisCareIntegration', () => {
                 params: { integrationId: 'test-integration-id' },
             };
 
-            await integration.updatePhoneMapping({ req: mockReq, res: mockRes });
+            await integration.updatePhoneMapping({
+                req: mockReq,
+                res: mockRes,
+            });
 
             expect(
                 integration.commands.updateIntegrationConfig,
@@ -466,7 +492,10 @@ describe('AxisCareIntegration', () => {
                 params: { integrationId: 'test-integration-id' },
             };
 
-            await integration.updatePhoneMapping({ req: mockReq, res: mockRes });
+            await integration.updatePhoneMapping({
+                req: mockReq,
+                res: mockRes,
+            });
 
             expect(
                 integration._managePhoneWebhookSubscriptions,
@@ -508,7 +537,10 @@ describe('AxisCareIntegration', () => {
                 .spyOn(console, 'error')
                 .mockImplementation();
 
-            await integration.updatePhoneMapping({ req: mockReq, res: mockRes });
+            await integration.updatePhoneMapping({
+                req: mockReq,
+                res: mockRes,
+            });
 
             // Mappings should still be saved
             expect(
@@ -542,7 +574,10 @@ describe('AxisCareIntegration', () => {
                                 existingField: 'preserved',
                                 phoneNumberSiteMappings: {
                                     existingSite: {
-                                        quoPhoneNumbers: ['111111111', '222222222'],
+                                        quoPhoneNumbers: [
+                                            '111111111',
+                                            '222222222',
+                                        ],
                                     },
                                 },
                             },
@@ -561,7 +596,10 @@ describe('AxisCareIntegration', () => {
                 params: { integrationId: 'test-integration-id' },
             };
 
-            await integration.updatePhoneMapping({ req: mockReq, res: mockRes });
+            await integration.updatePhoneMapping({
+                req: mockReq,
+                res: mockRes,
+            });
 
             expect(
                 integration.commands.updateIntegrationConfig,
@@ -604,7 +642,10 @@ describe('AxisCareIntegration', () => {
                 params: { integrationId: 'test-integration-id' },
             };
 
-            await integration.updatePhoneMapping({ req: mockReq, res: mockRes });
+            await integration.updatePhoneMapping({
+                req: mockReq,
+                res: mockRes,
+            });
 
             expect(mockRes.status).toHaveBeenCalledWith(500);
             expect(mockRes.json).toHaveBeenCalledWith({
@@ -911,10 +952,7 @@ describe('AxisCareIntegration', () => {
 
         it('should delete all webhooks for both types', async () => {
             const subscriptions = {
-                call: [
-                    { webhookId: 'call-wh-1' },
-                    { webhookId: 'call-wh-2' },
-                ],
+                call: [{ webhookId: 'call-wh-1' }, { webhookId: 'call-wh-2' }],
                 callSummary: [{ webhookId: 'summary-wh-1' }],
             };
 
@@ -984,7 +1022,9 @@ describe('AxisCareIntegration', () => {
             };
             integration._generateWebhookUrl = jest
                 .fn()
-                .mockReturnValue('https://example.com/webhooks/test-integration-id');
+                .mockReturnValue(
+                    'https://example.com/webhooks/test-integration-id',
+                );
         });
 
         it('should delete existing webhooks when no phone mappings', async () => {
@@ -1012,7 +1052,10 @@ describe('AxisCareIntegration', () => {
             ).toHaveBeenCalledWith({
                 integrationId: 'test-integration-id',
                 config: expect.objectContaining({
-                    phoneNumberWebhookSubscriptions: { call: [], callSummary: [] },
+                    phoneNumberWebhookSubscriptions: {
+                        call: [],
+                        callSummary: [],
+                    },
                 }),
             });
         });
@@ -1028,20 +1071,24 @@ describe('AxisCareIntegration', () => {
             integration._resolvePhoneMappingsToQuoIds = jest
                 .fn()
                 .mockResolvedValue(['phone-1']);
-            integration.quo.api.createCallWebhook = jest.fn().mockImplementation(() => {
-                callOrder.push('create-call');
-                return { data: { id: 'new-call-wh', key: 'new-key' } };
-            });
+            integration.quo.api.createCallWebhook = jest
+                .fn()
+                .mockImplementation(() => {
+                    callOrder.push('create-call');
+                    return { data: { id: 'new-call-wh', key: 'new-key' } };
+                });
             integration.quo.api.createCallSummaryWebhook = jest
                 .fn()
                 .mockImplementation(() => {
                     callOrder.push('create-summary');
                     return { data: { id: 'new-summary-wh', key: 'new-key' } };
                 });
-            integration.quo.api.deleteWebhook = jest.fn().mockImplementation((id) => {
-                callOrder.push(`delete-${id}`);
-                return {};
-            });
+            integration.quo.api.deleteWebhook = jest
+                .fn()
+                .mockImplementation((id) => {
+                    callOrder.push(`delete-${id}`);
+                    return {};
+                });
 
             await integration._managePhoneWebhookSubscriptions();
 
@@ -1054,13 +1101,17 @@ describe('AxisCareIntegration', () => {
         });
 
         it('should rollback new webhooks on creation failure', async () => {
-            integration.config = { phoneNumberWebhookSubscriptions: { call: [], callSummary: [] } };
+            integration.config = {
+                phoneNumberWebhookSubscriptions: { call: [], callSummary: [] },
+            };
             integration._resolvePhoneMappingsToQuoIds = jest
                 .fn()
                 .mockResolvedValue(['phone-1']);
-            integration.quo.api.createCallWebhook = jest.fn().mockResolvedValue({
-                data: { id: 'new-call-wh', key: 'key' },
-            });
+            integration.quo.api.createCallWebhook = jest
+                .fn()
+                .mockResolvedValue({
+                    data: { id: 'new-call-wh', key: 'key' },
+                });
             integration.quo.api.createCallSummaryWebhook = jest
                 .fn()
                 .mockRejectedValue(new Error('API Error'));
@@ -1075,32 +1126,46 @@ describe('AxisCareIntegration', () => {
         });
 
         it('should create webhooks for all chunks', async () => {
-            integration.config = { phoneNumberWebhookSubscriptions: { call: [], callSummary: [] } };
+            integration.config = {
+                phoneNumberWebhookSubscriptions: { call: [], callSummary: [] },
+            };
             const phoneIds = Array.from({ length: 25 }, (_, i) => `phone-${i}`);
             integration._resolvePhoneMappingsToQuoIds = jest
                 .fn()
                 .mockResolvedValue(phoneIds);
             let callCount = 0;
-            integration.quo.api.createCallWebhook = jest.fn().mockImplementation(() => {
-                callCount++;
-                return { data: { id: `call-wh-${callCount}`, key: `key-${callCount}` } };
-            });
+            integration.quo.api.createCallWebhook = jest
+                .fn()
+                .mockImplementation(() => {
+                    callCount++;
+                    return {
+                        data: {
+                            id: `call-wh-${callCount}`,
+                            key: `key-${callCount}`,
+                        },
+                    };
+                });
             let summaryCount = 0;
             integration.quo.api.createCallSummaryWebhook = jest
                 .fn()
                 .mockImplementation(() => {
                     summaryCount++;
                     return {
-                        data: { id: `summary-wh-${summaryCount}`, key: `key-${summaryCount}` },
+                        data: {
+                            id: `summary-wh-${summaryCount}`,
+                            key: `key-${summaryCount}`,
+                        },
                     };
                 });
 
             const result = await integration._managePhoneWebhookSubscriptions();
 
-            expect(integration.quo.api.createCallWebhook).toHaveBeenCalledTimes(3);
-            expect(integration.quo.api.createCallSummaryWebhook).toHaveBeenCalledTimes(
+            expect(integration.quo.api.createCallWebhook).toHaveBeenCalledTimes(
                 3,
             );
+            expect(
+                integration.quo.api.createCallSummaryWebhook,
+            ).toHaveBeenCalledTimes(3);
             expect(result.subscriptions.call).toHaveLength(3);
             expect(result.subscriptions.callSummary).toHaveLength(3);
         });

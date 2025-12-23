@@ -1044,7 +1044,9 @@ describe('BaseCRMIntegration', () => {
             expect(integration.quo.api.createFriggContact).toHaveBeenCalledWith(
                 quoContact,
             );
-            expect(integration.quo.api.updateFriggContact).not.toHaveBeenCalled();
+            expect(
+                integration.quo.api.updateFriggContact,
+            ).not.toHaveBeenCalled();
             expect(result).toEqual({
                 action: 'created',
                 quoContactId: 'quo-contact-new',
@@ -1079,7 +1081,9 @@ describe('BaseCRMIntegration', () => {
                 'quo-existing-id',
                 quoContact,
             );
-            expect(integration.quo.api.createFriggContact).not.toHaveBeenCalled();
+            expect(
+                integration.quo.api.createFriggContact,
+            ).not.toHaveBeenCalled();
             expect(result).toEqual({
                 action: 'updated',
                 quoContactId: 'quo-existing-id',
@@ -1153,7 +1157,9 @@ describe('BaseCRMIntegration', () => {
 
         it('should throw error when contact has no externalId', async () => {
             await expect(
-                integration.upsertContactToQuo({ defaultFields: { firstName: 'Test' } }),
+                integration.upsertContactToQuo({
+                    defaultFields: { firstName: 'Test' },
+                }),
             ).rejects.toThrow('Contact must have an externalId');
         });
 
@@ -1261,29 +1267,51 @@ describe('BaseCRMIntegration', () => {
                 data: [
                     { id: 'PN-1', number: '+11111111111', name: 'Phone 1' },
                     { id: 'PN-2', number: '+12222222222', name: 'Phone 2' },
-                    { id: 'PN-new-1', number: '+13333333333', name: 'New Phone 1' },
-                    { id: 'PN-new-2', number: '+14444444444', name: 'New Phone 2' },
-                    { id: 'PN-new-3', number: '+15555555555', name: 'New Phone 3' },
+                    {
+                        id: 'PN-new-1',
+                        number: '+13333333333',
+                        name: 'New Phone 1',
+                    },
+                    {
+                        id: 'PN-new-2',
+                        number: '+14444444444',
+                        name: 'New Phone 2',
+                    },
+                    {
+                        id: 'PN-new-3',
+                        number: '+15555555555',
+                        name: 'New Phone 3',
+                    },
                 ],
             });
-            integration.quo.api.deleteWebhook = jest.fn().mockResolvedValue({ success: true });
-            integration.quo.api.createMessageWebhook = jest.fn().mockImplementation(() => {
-                const id = `new-msg-webhook-${++webhookIdCounter}`;
-                return Promise.resolve({ data: { id, key: `key-${id}` } });
-            });
-            integration.quo.api.createCallWebhook = jest.fn().mockImplementation(() => {
-                const id = `new-call-webhook-${++webhookIdCounter}`;
-                return Promise.resolve({ data: { id, key: `key-${id}` } });
-            });
-            integration.quo.api.createCallSummaryWebhook = jest.fn().mockImplementation(() => {
-                const id = `new-summary-webhook-${++webhookIdCounter}`;
-                return Promise.resolve({ data: { id, key: `key-${id}` } });
-            });
+            integration.quo.api.deleteWebhook = jest
+                .fn()
+                .mockResolvedValue({ success: true });
+            integration.quo.api.createMessageWebhook = jest
+                .fn()
+                .mockImplementation(() => {
+                    const id = `new-msg-webhook-${++webhookIdCounter}`;
+                    return Promise.resolve({ data: { id, key: `key-${id}` } });
+                });
+            integration.quo.api.createCallWebhook = jest
+                .fn()
+                .mockImplementation(() => {
+                    const id = `new-call-webhook-${++webhookIdCounter}`;
+                    return Promise.resolve({ data: { id, key: `key-${id}` } });
+                });
+            integration.quo.api.createCallSummaryWebhook = jest
+                .fn()
+                .mockImplementation(() => {
+                    const id = `new-summary-webhook-${++webhookIdCounter}`;
+                    return Promise.resolve({ data: { id, key: `key-${id}` } });
+                });
 
             // Mock _generateWebhookUrl
-            integration._generateWebhookUrl = jest.fn().mockReturnValue(
-                'https://example.com/webhooks/integration-123'
-            );
+            integration._generateWebhookUrl = jest
+                .fn()
+                .mockReturnValue(
+                    'https://example.com/webhooks/integration-123',
+                );
         });
 
         describe('resourceIds translation', () => {
@@ -1395,22 +1423,34 @@ describe('BaseCRMIntegration', () => {
                 });
 
                 // Old webhooks should be deleted
-                expect(integration.quo.api.deleteWebhook).toHaveBeenCalledWith('webhook-msg-123');
-                expect(integration.quo.api.deleteWebhook).toHaveBeenCalledWith('webhook-call-123');
-                expect(integration.quo.api.deleteWebhook).toHaveBeenCalledWith('webhook-summary-123');
+                expect(integration.quo.api.deleteWebhook).toHaveBeenCalledWith(
+                    'webhook-msg-123',
+                );
+                expect(integration.quo.api.deleteWebhook).toHaveBeenCalledWith(
+                    'webhook-call-123',
+                );
+                expect(integration.quo.api.deleteWebhook).toHaveBeenCalledWith(
+                    'webhook-summary-123',
+                );
 
                 // New webhooks should be created with updated resourceIds
-                expect(integration.quo.api.createMessageWebhook).toHaveBeenCalledWith(
+                expect(
+                    integration.quo.api.createMessageWebhook,
+                ).toHaveBeenCalledWith(
                     expect.objectContaining({
                         resourceIds: newResourceIds,
                     }),
                 );
-                expect(integration.quo.api.createCallWebhook).toHaveBeenCalledWith(
+                expect(
+                    integration.quo.api.createCallWebhook,
+                ).toHaveBeenCalledWith(
                     expect.objectContaining({
                         resourceIds: newResourceIds,
                     }),
                 );
-                expect(integration.quo.api.createCallSummaryWebhook).toHaveBeenCalledWith(
+                expect(
+                    integration.quo.api.createCallSummaryWebhook,
+                ).toHaveBeenCalledWith(
                     expect.objectContaining({
                         resourceIds: newResourceIds,
                     }),
@@ -1425,8 +1465,12 @@ describe('BaseCRMIntegration', () => {
                     },
                 });
 
-                expect(integration.quo.api.deleteWebhook).not.toHaveBeenCalled();
-                expect(integration.quo.api.createMessageWebhook).not.toHaveBeenCalled();
+                expect(
+                    integration.quo.api.deleteWebhook,
+                ).not.toHaveBeenCalled();
+                expect(
+                    integration.quo.api.createMessageWebhook,
+                ).not.toHaveBeenCalled();
             });
 
             it('should detect phone ID changes regardless of array order', async () => {
@@ -1437,8 +1481,12 @@ describe('BaseCRMIntegration', () => {
                     },
                 });
 
-                expect(integration.quo.api.deleteWebhook).not.toHaveBeenCalled();
-                expect(integration.quo.api.createMessageWebhook).not.toHaveBeenCalled();
+                expect(
+                    integration.quo.api.deleteWebhook,
+                ).not.toHaveBeenCalled();
+                expect(
+                    integration.quo.api.createMessageWebhook,
+                ).not.toHaveBeenCalled();
             });
 
             it('should recreate webhooks when phone IDs are added', async () => {
@@ -1449,9 +1497,15 @@ describe('BaseCRMIntegration', () => {
                 });
 
                 // Webhooks should be recreated
-                expect(integration.quo.api.createMessageWebhook).toHaveBeenCalledTimes(1);
-                expect(integration.quo.api.createCallWebhook).toHaveBeenCalledTimes(1);
-                expect(integration.quo.api.createCallSummaryWebhook).toHaveBeenCalledTimes(1);
+                expect(
+                    integration.quo.api.createMessageWebhook,
+                ).toHaveBeenCalledTimes(1);
+                expect(
+                    integration.quo.api.createCallWebhook,
+                ).toHaveBeenCalledTimes(1);
+                expect(
+                    integration.quo.api.createCallSummaryWebhook,
+                ).toHaveBeenCalledTimes(1);
             });
 
             it('should recreate webhooks when phone IDs are removed', async () => {
@@ -1460,9 +1514,15 @@ describe('BaseCRMIntegration', () => {
                 });
 
                 // Webhooks should be recreated
-                expect(integration.quo.api.createMessageWebhook).toHaveBeenCalledTimes(1);
-                expect(integration.quo.api.createCallWebhook).toHaveBeenCalledTimes(1);
-                expect(integration.quo.api.createCallSummaryWebhook).toHaveBeenCalledTimes(1);
+                expect(
+                    integration.quo.api.createMessageWebhook,
+                ).toHaveBeenCalledTimes(1);
+                expect(
+                    integration.quo.api.createCallWebhook,
+                ).toHaveBeenCalledTimes(1);
+                expect(
+                    integration.quo.api.createCallSummaryWebhook,
+                ).toHaveBeenCalledTimes(1);
             });
 
             it('should warn but not fail if Quo API is not configured', async () => {

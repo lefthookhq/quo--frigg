@@ -102,8 +102,7 @@ describe('PipedriveIntegration - Webhook Signature Verification', () => {
         });
 
         it('verifies valid signature with dot separator format', async () => {
-            const payload =
-                testTimestamp + '.' + JSON.stringify(testBody);
+            const payload = testTimestamp + '.' + JSON.stringify(testBody);
             const signature = generateSignature(payload, testWebhookKey);
             const headers = {
                 'openphone-signature': createSignatureHeader(
@@ -125,8 +124,7 @@ describe('PipedriveIntegration - Webhook Signature Verification', () => {
             const base64Key = Buffer.from(testWebhookKey).toString('base64');
             integration.config.quoMessageWebhookKey = base64Key;
 
-            const payload =
-                testTimestamp + '.' + JSON.stringify(testBody);
+            const payload = testTimestamp + '.' + JSON.stringify(testBody);
             const signature = generateSignature(payload, base64Key, true);
             const headers = {
                 'openphone-signature': createSignatureHeader(
@@ -476,7 +474,9 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     webhookIds: ['webhook-1', 'webhook-2'],
                     webhookUrl: 'https://test.com/webhooks',
                 });
-                expect(mockPipedriveApi.api.createWebhook).not.toHaveBeenCalled();
+                expect(
+                    mockPipedriveApi.api.createWebhook,
+                ).not.toHaveBeenCalled();
             });
         });
 
@@ -497,7 +497,9 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     'wh-deleted',
                     'wh-merged',
                 ]);
-                expect(mockPipedriveApi.api.createWebhook).toHaveBeenCalledTimes(4);
+                expect(
+                    mockPipedriveApi.api.createWebhook,
+                ).toHaveBeenCalledTimes(4);
             });
 
             it('stores webhook IDs in config after creation', async () => {
@@ -509,12 +511,21 @@ describe('PipedriveIntegration - Webhook Setup', () => {
 
                 await integration.setupPipedriveWebhooks();
 
-                expect(integration.commands.updateIntegrationConfig).toHaveBeenCalledWith(
+                expect(
+                    integration.commands.updateIntegrationConfig,
+                ).toHaveBeenCalledWith(
                     expect.objectContaining({
                         integrationId: 'test-integration-id',
                         config: expect.objectContaining({
-                            pipedriveWebhookIds: ['wh-1', 'wh-2', 'wh-3', 'wh-4'],
-                            pipedriveWebhookUrl: expect.stringContaining('test-integration-id'),
+                            pipedriveWebhookIds: [
+                                'wh-1',
+                                'wh-2',
+                                'wh-3',
+                                'wh-4',
+                            ],
+                            pipedriveWebhookUrl: expect.stringContaining(
+                                'test-integration-id',
+                            ),
                         }),
                     }),
                 );
@@ -529,12 +540,26 @@ describe('PipedriveIntegration - Webhook Setup', () => {
 
                 await integration.setupPipedriveWebhooks();
 
-                const configCall = integration.commands.updateIntegrationConfig.mock.calls[0][0];
+                const configCall =
+                    integration.commands.updateIntegrationConfig.mock
+                        .calls[0][0];
                 expect(configCall.config.pipedriveWebhooks).toEqual([
                     { id: 'wh-1', event: 'added.person', name: 'Person Added' },
-                    { id: 'wh-2', event: 'updated.person', name: 'Person Updated' },
-                    { id: 'wh-3', event: 'deleted.person', name: 'Person Deleted' },
-                    { id: 'wh-4', event: 'merged.person', name: 'Person Merged' },
+                    {
+                        id: 'wh-2',
+                        event: 'updated.person',
+                        name: 'Person Updated',
+                    },
+                    {
+                        id: 'wh-3',
+                        event: 'deleted.person',
+                        name: 'Person Deleted',
+                    },
+                    {
+                        id: 'wh-4',
+                        event: 'merged.person',
+                        name: 'Person Merged',
+                    },
                 ]);
             });
         });
@@ -547,7 +572,9 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     .mockResolvedValueOnce({ data: { id: 'wh-3' } })
                     .mockResolvedValueOnce({ data: { id: 'wh-4' } });
 
-                const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'error')
+                    .mockImplementation();
 
                 const result = await integration.setupPipedriveWebhooks();
 
@@ -568,11 +595,13 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     .mockRejectedValueOnce(new Error('API error 3'))
                     .mockRejectedValueOnce(new Error('API error 4'));
 
-                const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'error')
+                    .mockImplementation();
 
-                await expect(integration.setupPipedriveWebhooks()).rejects.toThrow(
-                    'Failed to create any webhooks',
-                );
+                await expect(
+                    integration.setupPipedriveWebhooks(),
+                ).rejects.toThrow('Failed to create any webhooks');
 
                 consoleSpy.mockRestore();
             });
@@ -582,15 +611,23 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     new Error('Pipedrive API unavailable'),
                 );
 
-                const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'error')
+                    .mockImplementation();
 
-                await expect(integration.setupPipedriveWebhooks()).rejects.toThrow();
+                await expect(
+                    integration.setupPipedriveWebhooks(),
+                ).rejects.toThrow();
 
-                expect(integration.updateIntegrationMessages.execute).toHaveBeenCalledWith(
+                expect(
+                    integration.updateIntegrationMessages.execute,
+                ).toHaveBeenCalledWith(
                     'test-integration-id',
                     'errors',
                     'Webhook Setup Failed',
-                    expect.stringContaining('Could not register webhooks with Pipedrive'),
+                    expect.stringContaining(
+                        'Could not register webhooks with Pipedrive',
+                    ),
                     expect.any(Number),
                 );
 
@@ -600,8 +637,9 @@ describe('PipedriveIntegration - Webhook Setup', () => {
 
         describe('Configuration - URL and Names', () => {
             it('uses correct webhook URL with integration ID', async () => {
-                mockPipedriveApi.api.createWebhook
-                    .mockResolvedValue({ data: { id: 'wh-1' } });
+                mockPipedriveApi.api.createWebhook.mockResolvedValue({
+                    data: { id: 'wh-1' },
+                });
 
                 await integration.setupPipedriveWebhooks();
 
@@ -614,8 +652,9 @@ describe('PipedriveIntegration - Webhook Setup', () => {
             });
 
             it('sets webhook version to 1.0', async () => {
-                mockPipedriveApi.api.createWebhook
-                    .mockResolvedValue({ data: { id: 'wh-1' } });
+                mockPipedriveApi.api.createWebhook.mockResolvedValue({
+                    data: { id: 'wh-1' },
+                });
 
                 await integration.setupPipedriveWebhooks();
 
@@ -626,8 +665,9 @@ describe('PipedriveIntegration - Webhook Setup', () => {
             });
 
             it('prefixes webhook names with "Quo -"', async () => {
-                mockPipedriveApi.api.createWebhook
-                    .mockResolvedValue({ data: { id: 'wh-1' } });
+                mockPipedriveApi.api.createWebhook.mockResolvedValue({
+                    data: { id: 'wh-1' },
+                });
 
                 await integration.setupPipedriveWebhooks();
 
@@ -647,7 +687,9 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     .mockResolvedValueOnce({ data: { id: 'wh-3' } })
                     .mockResolvedValueOnce({ data: { id: 'wh-4' } });
 
-                const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'warn')
+                    .mockImplementation();
 
                 const result = await integration.setupPipedriveWebhooks();
 
@@ -660,16 +702,22 @@ describe('PipedriveIntegration - Webhook Setup', () => {
             });
 
             it('includes timestamp in config', async () => {
-                const dateSpy = jest.spyOn(Date.prototype, 'toISOString')
+                const dateSpy = jest
+                    .spyOn(Date.prototype, 'toISOString')
                     .mockReturnValue('2024-01-01T00:00:00.000Z');
 
-                mockPipedriveApi.api.createWebhook
-                    .mockResolvedValue({ data: { id: 'wh-1' } });
+                mockPipedriveApi.api.createWebhook.mockResolvedValue({
+                    data: { id: 'wh-1' },
+                });
 
                 await integration.setupPipedriveWebhooks();
 
-                const configCall = integration.commands.updateIntegrationConfig.mock.calls[0][0];
-                expect(configCall.config.webhookCreatedAt).toBe('2024-01-01T00:00:00.000Z');
+                const configCall =
+                    integration.commands.updateIntegrationConfig.mock
+                        .calls[0][0];
+                expect(configCall.config.webhookCreatedAt).toBe(
+                    '2024-01-01T00:00:00.000Z',
+                );
 
                 dateSpy.mockRestore();
             });
@@ -689,8 +737,13 @@ describe('PipedriveIntegration - Webhook Setup', () => {
 
             // Mock the base class helper
             integration._createQuoWebhooksWithPhoneIds = jest.fn();
+            integration._fetchAndStoreEnabledPhoneIds = jest
+                .fn()
+                .mockResolvedValue();
+            integration.updateIntegrationMessages = { execute: jest.fn() };
             integration._generateWebhookUrl = jest.fn(
-                (path) => `https://test-api.example.com/api/pipedrive-integration${path}`,
+                (path) =>
+                    `https://test-api.example.com/api/pipedrive-integration${path}`,
             );
         });
 
@@ -712,7 +765,9 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     callSummaryWebhookId: 'summary-wh-789',
                     webhookUrl: 'https://test.com/webhooks',
                 });
-                expect(integration._createQuoWebhooksWithPhoneIds).not.toHaveBeenCalled();
+                expect(
+                    integration._createQuoWebhooksWithPhoneIds,
+                ).not.toHaveBeenCalled();
             });
         });
 
@@ -747,7 +802,9 @@ describe('PipedriveIntegration - Webhook Setup', () => {
 
                 await integration.setupQuoWebhook();
 
-                expect(integration.commands.updateIntegrationConfig).toHaveBeenCalledWith(
+                expect(
+                    integration.commands.updateIntegrationConfig,
+                ).toHaveBeenCalledWith(
                     expect.objectContaining({
                         integrationId: 'test-integration-id',
                         config: expect.objectContaining({
@@ -772,7 +829,9 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     callSummaryWebhookKey: 'sensitive-key-789',
                 });
 
-                const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'log')
+                    .mockImplementation();
 
                 await integration.setupQuoWebhook();
 
@@ -799,14 +858,22 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     callSummaryWebhookKey: 'new-key',
                 });
 
-                const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
-                const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'warn')
+                    .mockImplementation();
+                const consoleLogSpy = jest
+                    .spyOn(console, 'log')
+                    .mockImplementation();
 
                 await integration.setupQuoWebhook();
 
-                expect(mockQuoApi.api.deleteWebhook).toHaveBeenCalledWith('orphaned-msg-wh');
+                expect(mockQuoApi.api.deleteWebhook).toHaveBeenCalledWith(
+                    'orphaned-msg-wh',
+                );
                 expect(consoleLogSpy).toHaveBeenCalledWith(
-                    expect.stringContaining('Cleaned up orphaned message webhook'),
+                    expect.stringContaining(
+                        'Cleaned up orphaned message webhook',
+                    ),
                 );
 
                 consoleSpy.mockRestore();
@@ -827,12 +894,18 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     callSummaryWebhookKey: 'new-key',
                 });
 
-                const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation();
-                const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+                const consoleLogSpy = jest
+                    .spyOn(console, 'log')
+                    .mockImplementation();
+                const consoleWarnSpy = jest
+                    .spyOn(console, 'warn')
+                    .mockImplementation();
 
                 await integration.setupQuoWebhook();
 
-                expect(mockQuoApi.api.deleteWebhook).toHaveBeenCalledWith('orphaned-call-wh');
+                expect(mockQuoApi.api.deleteWebhook).toHaveBeenCalledWith(
+                    'orphaned-call-wh',
+                );
                 expect(consoleLogSpy).toHaveBeenCalledWith(
                     expect.stringContaining('Cleaned up orphaned call webhook'),
                 );
@@ -855,14 +928,22 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     callSummaryWebhookKey: 'new-key',
                 });
 
-                const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation();
-                const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+                const consoleLogSpy = jest
+                    .spyOn(console, 'log')
+                    .mockImplementation();
+                const consoleWarnSpy = jest
+                    .spyOn(console, 'warn')
+                    .mockImplementation();
 
                 await integration.setupQuoWebhook();
 
-                expect(mockQuoApi.api.deleteWebhook).toHaveBeenCalledWith('orphaned-summary-wh');
+                expect(mockQuoApi.api.deleteWebhook).toHaveBeenCalledWith(
+                    'orphaned-summary-wh',
+                );
                 expect(consoleLogSpy).toHaveBeenCalledWith(
-                    expect.stringContaining('Cleaned up orphaned call-summary webhook'),
+                    expect.stringContaining(
+                        'Cleaned up orphaned call-summary webhook',
+                    ),
                 );
 
                 consoleLogSpy.mockRestore();
@@ -885,17 +966,27 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     new Error('Database error'),
                 );
 
-                const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
-                const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'error')
+                    .mockImplementation();
+                const warnSpy = jest
+                    .spyOn(console, 'warn')
+                    .mockImplementation();
                 const logSpy = jest.spyOn(console, 'log').mockImplementation();
 
                 const result = await integration.setupQuoWebhook();
 
                 expect(result.status).toBe('failed');
                 expect(mockQuoApi.api.deleteWebhook).toHaveBeenCalledTimes(3);
-                expect(mockQuoApi.api.deleteWebhook).toHaveBeenCalledWith('msg-wh-rollback');
-                expect(mockQuoApi.api.deleteWebhook).toHaveBeenCalledWith('call-wh-rollback');
-                expect(mockQuoApi.api.deleteWebhook).toHaveBeenCalledWith('summary-wh-rollback');
+                expect(mockQuoApi.api.deleteWebhook).toHaveBeenCalledWith(
+                    'msg-wh-rollback',
+                );
+                expect(mockQuoApi.api.deleteWebhook).toHaveBeenCalledWith(
+                    'call-wh-rollback',
+                );
+                expect(mockQuoApi.api.deleteWebhook).toHaveBeenCalledWith(
+                    'summary-wh-rollback',
+                );
 
                 consoleSpy.mockRestore();
                 warnSpy.mockRestore();
@@ -907,7 +998,9 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     new Error('Quo API error'),
                 );
 
-                const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'error')
+                    .mockImplementation();
 
                 const result = await integration.setupQuoWebhook();
 
@@ -922,15 +1015,21 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     new Error('Network timeout'),
                 );
 
-                const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'error')
+                    .mockImplementation();
 
                 await integration.setupQuoWebhook();
 
-                expect(integration.updateIntegrationMessages.execute).toHaveBeenCalledWith(
+                expect(
+                    integration.updateIntegrationMessages.execute,
+                ).toHaveBeenCalledWith(
                     'test-integration-id',
                     'errors',
                     'Quo Webhook Setup Failed',
-                    expect.stringContaining('Could not register webhooks with Quo'),
+                    expect.stringContaining(
+                        'Could not register webhooks with Quo',
+                    ),
                     expect.any(Number),
                 );
 
@@ -942,7 +1041,9 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     new Error('API unavailable'),
                 );
 
-                const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'error')
+                    .mockImplementation();
 
                 const result = await integration.setupQuoWebhook();
 
@@ -975,8 +1076,12 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     .mockResolvedValueOnce({})
                     .mockRejectedValueOnce(new Error('Delete failed 2'));
 
-                const errorSpy = jest.spyOn(console, 'error').mockImplementation();
-                const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+                const errorSpy = jest
+                    .spyOn(console, 'error')
+                    .mockImplementation();
+                const warnSpy = jest
+                    .spyOn(console, 'warn')
+                    .mockImplementation();
                 const logSpy = jest.spyOn(console, 'log').mockImplementation();
 
                 await integration.setupQuoWebhook();
@@ -1010,8 +1115,12 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     new Error('Rollback error'),
                 );
 
-                const errorSpy = jest.spyOn(console, 'error').mockImplementation();
-                const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+                const errorSpy = jest
+                    .spyOn(console, 'error')
+                    .mockImplementation();
+                const warnSpy = jest
+                    .spyOn(console, 'warn')
+                    .mockImplementation();
                 const logSpy = jest.spyOn(console, 'log').mockImplementation();
 
                 const result = await integration.setupQuoWebhook();
@@ -1043,14 +1152,18 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     callSummaryWebhookKey: 'new-key',
                 });
 
-                const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+                const warnSpy = jest
+                    .spyOn(console, 'warn')
+                    .mockImplementation();
                 const logSpy = jest.spyOn(console, 'log').mockImplementation();
 
                 const result = await integration.setupQuoWebhook();
 
                 expect(result.status).toBe('configured');
                 expect(warnSpy).toHaveBeenCalledWith(
-                    expect.stringContaining('Could not clean up message webhook'),
+                    expect.stringContaining(
+                        'Could not clean up message webhook',
+                    ),
                 );
 
                 warnSpy.mockRestore();
@@ -1058,7 +1171,8 @@ describe('PipedriveIntegration - Webhook Setup', () => {
             });
 
             it('includes timestamp in config', async () => {
-                const dateSpy = jest.spyOn(Date.prototype, 'toISOString')
+                const dateSpy = jest
+                    .spyOn(Date.prototype, 'toISOString')
                     .mockReturnValue('2024-01-15T10:30:00.000Z');
 
                 integration._createQuoWebhooksWithPhoneIds.mockResolvedValue({
@@ -1072,8 +1186,12 @@ describe('PipedriveIntegration - Webhook Setup', () => {
 
                 await integration.setupQuoWebhook();
 
-                const configCall = integration.commands.updateIntegrationConfig.mock.calls[0][0];
-                expect(configCall.config.quoWebhooksCreatedAt).toBe('2024-01-15T10:30:00.000Z');
+                const configCall =
+                    integration.commands.updateIntegrationConfig.mock
+                        .calls[0][0];
+                expect(configCall.config.quoWebhooksCreatedAt).toBe(
+                    '2024-01-15T10:30:00.000Z',
+                );
 
                 dateSpy.mockRestore();
             });
@@ -1083,7 +1201,8 @@ describe('PipedriveIntegration - Webhook Setup', () => {
     describe('_generateWebhookUrl', () => {
         beforeEach(() => {
             // Restore the real method for these tests
-            integration._generateWebhookUrl = PipedriveIntegration.prototype._generateWebhookUrl;
+            integration._generateWebhookUrl =
+                PipedriveIntegration.prototype._generateWebhookUrl;
         });
 
         it('generates correct webhook URL with BASE_URL', () => {
@@ -1128,16 +1247,28 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                 const webhookData = {
                     body: {
                         event: 'added.person',
-                        meta: { id: 123, action: 'added', object: 'person', timestamp: '2024-01-01' },
-                        current: { id: 123, first_name: 'John', last_name: 'Doe' },
+                        meta: {
+                            id: 123,
+                            action: 'added',
+                            object: 'person',
+                            timestamp: '2024-01-01',
+                        },
+                        current: {
+                            id: 123,
+                            first_name: 'John',
+                            last_name: 'Doe',
+                        },
                     },
                     headers: {},
                     integrationId: 'test-id',
                 };
 
-                const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'log')
+                    .mockImplementation();
 
-                const result = await integration._handlePipedriveWebhook(webhookData);
+                const result =
+                    await integration._handlePipedriveWebhook(webhookData);
 
                 expect(result.success).toBe(true);
                 expect(result.event).toBe('added.person');
@@ -1165,9 +1296,12 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     integrationId: 'test-id',
                 };
 
-                const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'log')
+                    .mockImplementation();
 
-                const result = await integration._handlePipedriveWebhook(webhookData);
+                const result =
+                    await integration._handlePipedriveWebhook(webhookData);
 
                 expect(result.success).toBe(true);
                 expect(result.action).toBe('updated');
@@ -1192,7 +1326,9 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     integrationId: 'test-id',
                 };
 
-                const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'log')
+                    .mockImplementation();
 
                 await integration._handlePipedriveWebhook(webhookData);
 
@@ -1217,7 +1353,9 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     integrationId: 'test-id',
                 };
 
-                const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'log')
+                    .mockImplementation();
 
                 await integration._handlePipedriveWebhook(webhookData);
 
@@ -1239,9 +1377,12 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     integrationId: 'test-id',
                 };
 
-                const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'log')
+                    .mockImplementation();
 
-                const result = await integration._handlePipedriveWebhook(webhookData);
+                const result =
+                    await integration._handlePipedriveWebhook(webhookData);
 
                 expect(result).toEqual({
                     success: true,
@@ -1270,14 +1411,18 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     new Error('Sync failed'),
                 );
 
-                const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'error')
+                    .mockImplementation();
                 const logSpy = jest.spyOn(console, 'log').mockImplementation();
 
                 await expect(
                     integration._handlePipedriveWebhook(webhookData),
                 ).rejects.toThrow('Sync failed');
 
-                expect(integration.updateIntegrationMessages.execute).toHaveBeenCalledWith(
+                expect(
+                    integration.updateIntegrationMessages.execute,
+                ).toHaveBeenCalledWith(
                     'test-integration-id',
                     'errors',
                     'Webhook Processing Error',
@@ -1304,7 +1449,9 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     new Error('Processing error'),
                 );
 
-                const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'error')
+                    .mockImplementation();
                 const logSpy = jest.spyOn(console, 'log').mockImplementation();
 
                 await expect(
@@ -1325,12 +1472,16 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     integrationId: 'test-id',
                 };
 
-                const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'error')
+                    .mockImplementation();
                 const logSpy = jest.spyOn(console, 'log').mockImplementation();
 
                 await expect(
                     integration._handlePipedriveWebhook(webhookData),
-                ).rejects.toThrow('Invalid webhook payload: missing meta or event');
+                ).rejects.toThrow(
+                    'Invalid webhook payload: missing meta or event',
+                );
 
                 consoleSpy.mockRestore();
                 logSpy.mockRestore();
@@ -1346,12 +1497,16 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     integrationId: 'test-id',
                 };
 
-                const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'error')
+                    .mockImplementation();
                 const logSpy = jest.spyOn(console, 'log').mockImplementation();
 
                 await expect(
                     integration._handlePipedriveWebhook(webhookData),
-                ).rejects.toThrow('Invalid webhook payload: missing meta or event');
+                ).rejects.toThrow(
+                    'Invalid webhook payload: missing meta or event',
+                );
 
                 consoleSpy.mockRestore();
                 logSpy.mockRestore();
@@ -1385,7 +1540,9 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     meta: { id: 123 },
                 });
 
-                expect(mockPipedriveApi.api.getPerson).toHaveBeenCalledWith(123);
+                expect(mockPipedriveApi.api.getPerson).toHaveBeenCalledWith(
+                    123,
+                );
                 expect(integration._syncPersonToQuo).toHaveBeenCalledWith(
                     fullPerson,
                     'added',
@@ -1414,7 +1571,8 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     data: { id: 789 },
                 });
 
-                const dateSpy = jest.spyOn(Date.prototype, 'toISOString')
+                const dateSpy = jest
+                    .spyOn(Date.prototype, 'toISOString')
                     .mockReturnValue('2024-01-15T12:00:00.000Z');
 
                 await integration._handlePersonWebhook({
@@ -1437,7 +1595,9 @@ describe('PipedriveIntegration - Webhook Setup', () => {
 
         describe('Deletion Handling', () => {
             it('handles deleted person without fetching full data', async () => {
-                const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'log')
+                    .mockImplementation();
 
                 await integration._handlePersonWebhook({
                     action: 'deleted',
@@ -1462,7 +1622,9 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                 );
 
                 const webhookData = { id: 111, first_name: 'Fallback' };
-                const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+                const warnSpy = jest
+                    .spyOn(console, 'warn')
+                    .mockImplementation();
                 const logSpy = jest.spyOn(console, 'log').mockImplementation();
 
                 await integration._handlePersonWebhook({
@@ -1485,7 +1647,9 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     data: null,
                 });
 
-                const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+                const warnSpy = jest
+                    .spyOn(console, 'warn')
+                    .mockImplementation();
                 const logSpy = jest.spyOn(console, 'log').mockImplementation();
 
                 await integration._handlePersonWebhook({
@@ -1512,7 +1676,9 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     new Error('Sync failed'),
                 );
 
-                const errorSpy = jest.spyOn(console, 'error').mockImplementation();
+                const errorSpy = jest
+                    .spyOn(console, 'error')
+                    .mockImplementation();
                 const logSpy = jest.spyOn(console, 'log').mockImplementation();
 
                 await expect(

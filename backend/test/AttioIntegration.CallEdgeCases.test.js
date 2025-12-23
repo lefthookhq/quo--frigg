@@ -117,7 +117,11 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
 
             // Mock infrastructure responses
             mockQuoApi.api.getPhoneNumber.mockResolvedValue({
-                data: { symbol: '📞', name: 'Sales Line', number: '+15559876543' },
+                data: {
+                    symbol: '📞',
+                    name: 'Sales Line',
+                    number: '+15559876543',
+                },
             });
 
             mockQuoApi.api.getUser.mockResolvedValue({
@@ -142,7 +146,8 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
             });
 
             // Verify no duration shown for missed calls
-            const noteContent = mockAttioApi.api.createNote.mock.calls[0][0].content;
+            const noteContent =
+                mockAttioApi.api.createNote.mock.calls[0][0].content;
             expect(noteContent).not.toContain('Recording');
             expect(noteContent).toContain('[View the call activity in Quo]');
         });
@@ -162,7 +167,8 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
                         userId: 'user-789',
                         createdAt: '2025-01-15T11:00:00Z',
                     },
-                    deepLink: 'https://app.openphone.com/calls/call-no-answer-001',
+                    deepLink:
+                        'https://app.openphone.com/calls/call-no-answer-001',
                 },
             };
 
@@ -227,7 +233,8 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
             mockQuoApi.api.getCallVoicemails.mockResolvedValue({
                 data: {
                     status: 'completed',
-                    recordingUrl: 'https://files.openphone.co/dev/g/d3d0299416a54cbfaa8ef4dc64840e4b.mp3',
+                    recordingUrl:
+                        'https://files.openphone.co/dev/g/d3d0299416a54cbfaa8ef4dc64840e4b.mp3',
                     duration: 11,
                 },
             });
@@ -248,11 +255,14 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
             await integration._handleQuoCallEvent(webhookData);
 
             // Assert - Voicemail indicator with clickable URL link
-            const noteContent = mockAttioApi.api.createNote.mock.calls[0][0].content;
+            const noteContent =
+                mockAttioApi.api.createNote.mock.calls[0][0].content;
             expect(noteContent).toContain('Incoming missed');
             expect(noteContent).toContain('**Voicemail:**');
             expect(noteContent).toContain('(0:11)');
-            expect(noteContent).toContain('[Listen to voicemail](https://files.openphone.co/dev/g/d3d0299416a54cbfaa8ef4dc64840e4b.mp3)');
+            expect(noteContent).toContain(
+                '[Listen to voicemail](https://files.openphone.co/dev/g/d3d0299416a54cbfaa8ef4dc64840e4b.mp3)',
+            );
             expect(noteContent).toContain('[View the call activity in Quo]');
         });
 
@@ -317,8 +327,12 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
 
             // Assert - Enriched note includes voicemail URL and transcript
             const enrichedNote = mockAttioApi.api.createNote.mock.calls[0][0];
-            expect(enrichedNote.content).toContain('https://storage.example.com/vm-002.mp3');
-            expect(enrichedNote.content).toContain('Hi, please call me back about the proposal');
+            expect(enrichedNote.content).toContain(
+                'https://storage.example.com/vm-002.mp3',
+            );
+            expect(enrichedNote.content).toContain(
+                'Hi, please call me back about the proposal',
+            );
             expect(enrichedNote.content).toContain('Summary:');
             expect(enrichedNote.content).toContain('Customer left voicemail');
         });
@@ -327,8 +341,13 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
     describe('Call Summary Enrichment (Jobs and Title)', () => {
         it('should parse jobs object structure and display formatted job data', async () => {
             // Use centralized webhook fixture with jobs
-            const { callSummaryCompletedWebhook } = require('./fixtures/quo-v4-webhooks');
-            const { mockGetPhoneNumber, mockGetUser } = require('./fixtures/quo-api-responses');
+            const {
+                callSummaryCompletedWebhook,
+            } = require('./fixtures/quo-v4-webhooks');
+            const {
+                mockGetPhoneNumber,
+                mockGetUser,
+            } = require('./fixtures/quo-api-responses');
 
             integration.getMapping.mockResolvedValue({
                 noteId: 'note-initial',
@@ -353,27 +372,42 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
 
             mockQuoApi.api.getCallRecordings.mockResolvedValue({ data: [] });
             mockQuoApi.api.getCallVoicemails.mockResolvedValue({ data: null });
-            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(
+                mockGetPhoneNumber.salesLine,
+            );
             mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
 
-            integration.logCallToActivity = jest.fn().mockResolvedValue('note-enriched');
+            integration.logCallToActivity = jest
+                .fn()
+                .mockResolvedValue('note-enriched');
             mockAttioApi.api.deleteNote.mockResolvedValue({});
 
-            await integration._handleQuoCallSummaryEvent(callSummaryCompletedWebhook);
+            await integration._handleQuoCallSummaryEvent(
+                callSummaryCompletedWebhook,
+            );
 
             // Assert: Jobs parsed correctly with icon, name, and data items
             // Jobs are shown directly with emoji+name format (no separate "Jobs:" header)
             const callArgs = integration.logCallToActivity.mock.calls[0][0];
             expect(callArgs.summary).toContain('✍️ Message taking');
-            expect(callArgs.summary).toContain('**First and last name:** Jane Doe');
+            expect(callArgs.summary).toContain(
+                '**First and last name:** Jane Doe',
+            );
             expect(callArgs.summary).toContain('**Summarize the message:**');
-            expect(callArgs.summary).toContain('Jane Doe called to inquire about product pricing');
+            expect(callArgs.summary).toContain(
+                'Jane Doe called to inquire about product pricing',
+            );
         });
 
         it('should use "Call" prefix in title, not "Call Summary:"', async () => {
             // Use centralized fixtures
-            const { callSummaryCompletedWebhook } = require('./fixtures/quo-v4-webhooks');
-            const { mockGetPhoneNumber, mockGetUser } = require('./fixtures/quo-api-responses');
+            const {
+                callSummaryCompletedWebhook,
+            } = require('./fixtures/quo-v4-webhooks');
+            const {
+                mockGetPhoneNumber,
+                mockGetUser,
+            } = require('./fixtures/quo-api-responses');
 
             integration.getMapping.mockResolvedValue({
                 noteId: 'note-title-test',
@@ -398,13 +432,19 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
 
             mockQuoApi.api.getCallRecordings.mockResolvedValue({ data: [] });
             mockQuoApi.api.getCallVoicemails.mockResolvedValue({ data: null });
-            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(
+                mockGetPhoneNumber.salesLine,
+            );
             mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
 
-            integration.logCallToActivity = jest.fn().mockResolvedValue('note-enriched');
+            integration.logCallToActivity = jest
+                .fn()
+                .mockResolvedValue('note-enriched');
             mockAttioApi.api.deleteNote.mockResolvedValue({});
 
-            await integration._handleQuoCallSummaryEvent(callSummaryCompletedWebhook);
+            await integration._handleQuoCallSummaryEvent(
+                callSummaryCompletedWebhook,
+            );
 
             // Assert: Title uses "Call" prefix, not "Call Summary:"
             const callArgs = integration.logCallToActivity.mock.calls[0][0];
@@ -414,8 +454,13 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
 
         it('should not include jobs section when jobs array is empty', async () => {
             // Use base webhook but modify to have empty jobs
-            const { callSummaryCompletedWebhook } = require('./fixtures/quo-v4-webhooks');
-            const { mockGetPhoneNumber, mockGetUser } = require('./fixtures/quo-api-responses');
+            const {
+                callSummaryCompletedWebhook,
+            } = require('./fixtures/quo-v4-webhooks');
+            const {
+                mockGetPhoneNumber,
+                mockGetUser,
+            } = require('./fixtures/quo-api-responses');
 
             const webhookWithoutJobs = {
                 ...callSummaryCompletedWebhook,
@@ -451,10 +496,14 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
 
             mockQuoApi.api.getCallRecordings.mockResolvedValue({ data: [] });
             mockQuoApi.api.getCallVoicemails.mockResolvedValue({ data: null });
-            mockQuoApi.api.getPhoneNumber.mockResolvedValue(mockGetPhoneNumber.salesLine);
+            mockQuoApi.api.getPhoneNumber.mockResolvedValue(
+                mockGetPhoneNumber.salesLine,
+            );
             mockQuoApi.api.getUser.mockResolvedValue(mockGetUser.johnSmith);
 
-            integration.logCallToActivity = jest.fn().mockResolvedValue('note-no-jobs');
+            integration.logCallToActivity = jest
+                .fn()
+                .mockResolvedValue('note-no-jobs');
             mockAttioApi.api.deleteNote.mockResolvedValue({});
 
             await integration._handleQuoCallSummaryEvent(webhookWithoutJobs);
@@ -506,7 +555,8 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
             await integration._handleQuoCallEvent(webhookData);
 
             // Assert - Forwarded description includes target user
-            const noteContent = mockAttioApi.api.createNote.mock.calls[0][0].content;
+            const noteContent =
+                mockAttioApi.api.createNote.mock.calls[0][0].content;
             expect(noteContent).toContain('Incoming forwarded to USxyz789');
             expect(noteContent).toContain('[View the call activity in Quo]');
         });
@@ -527,7 +577,8 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
                         forwardedTo: null, // Phone menu forwarding
                         createdAt: '2025-01-15T14:00:00Z',
                     },
-                    deepLink: 'https://app.openphone.com/calls/call-fwd-menu-001',
+                    deepLink:
+                        'https://app.openphone.com/calls/call-fwd-menu-001',
                 },
             };
 
@@ -551,7 +602,8 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
             await integration._handleQuoCallEvent(webhookData);
 
             // Assert - Generic forwarding description when no specific target
-            const noteContent = mockAttioApi.api.createNote.mock.calls[0][0].content;
+            const noteContent =
+                mockAttioApi.api.createNote.mock.calls[0][0].content;
             expect(noteContent).toContain('Incoming forwarded by phone menu');
             expect(noteContent).toContain('[View the call activity in Quo]');
         });
@@ -565,11 +617,15 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
                 .mockResolvedValue('attio-contact-new-123');
 
             // Mock that contact doesn't exist in Quo
-            integration._shouldAutoCreateContact = jest.fn().mockResolvedValue(true);
-            integration._createContactFromCallEvent = jest.fn().mockResolvedValue({
-                id: 'quo-contact-new-001',
-                externalId: 'attio-contact-new-123',
-            });
+            integration._shouldAutoCreateContact = jest
+                .fn()
+                .mockResolvedValue(true);
+            integration._createContactFromCallEvent = jest
+                .fn()
+                .mockResolvedValue({
+                    id: 'quo-contact-new-001',
+                    externalId: 'attio-contact-new-123',
+                });
 
             const webhookData = {
                 type: 'call.completed',
@@ -585,7 +641,8 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
                         createdAt: '2025-01-15T17:00:00Z',
                         answeredAt: '2025-01-15T17:00:05Z',
                     },
-                    deepLink: 'https://app.openphone.com/calls/call-new-contact-001',
+                    deepLink:
+                        'https://app.openphone.com/calls/call-new-contact-001',
                 },
             };
 
@@ -620,7 +677,9 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
             await integration._handleQuoCallEvent(webhookData);
 
             // Assert - Contact lookup performed
-            expect(integration._findAttioContactFromQuoWebhook).toHaveBeenCalledWith('+15559999999');
+            expect(
+                integration._findAttioContactFromQuoWebhook,
+            ).toHaveBeenCalledWith('+15559999999');
 
             // Note: Auto-creation logic would be implemented in future iteration
             // For now, this test documents the expected behavior
@@ -657,9 +716,9 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
             );
 
             // Act & Assert - Should propagate error (phone/user metadata fetch failure)
-            await expect(integration._handleQuoCallEvent(webhookData)).rejects.toThrow(
-                'Phone number not found',
-            );
+            await expect(
+                integration._handleQuoCallEvent(webhookData),
+            ).rejects.toThrow('Phone number not found');
         });
 
         it('should handle Attio API failure gracefully', async () => {
@@ -678,7 +737,8 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
                         createdAt: '2025-01-15T19:00:00Z',
                         answeredAt: '2025-01-15T19:00:05Z',
                     },
-                    deepLink: 'https://app.openphone.com/calls/call-attio-error-001',
+                    deepLink:
+                        'https://app.openphone.com/calls/call-attio-error-001',
                 },
             };
 
@@ -705,7 +765,11 @@ describe('AttioIntegration - Call Edge Cases (TDD)', () => {
             expect(result.logged).toBe(false);
             expect(result.results.length).toBeGreaterThan(0);
             expect(result.results.every((r) => r.logged === false)).toBe(true);
-            expect(result.results.some((r) => r.error?.includes('Attio API rate limit exceeded'))).toBe(true);
+            expect(
+                result.results.some((r) =>
+                    r.error?.includes('Attio API rate limit exceeded'),
+                ),
+            ).toBe(true);
         });
     });
 });

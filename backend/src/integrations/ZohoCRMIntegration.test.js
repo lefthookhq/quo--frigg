@@ -163,7 +163,8 @@ describe('ZohoCRMIntegration (Refactored)', () => {
                 ZohoCRMIntegration.Definition.modules.zoho.definition.getName(),
             ).toBe('zoho');
             expect(
-                ZohoCRMIntegration.Definition.modules.zoho.definition.moduleName,
+                ZohoCRMIntegration.Definition.modules.zoho.definition
+                    .moduleName,
             ).toBe('zoho');
 
             // Test redirect_uri override - should use /zoho instead of /zohoCrm
@@ -543,10 +544,12 @@ describe('ZohoCRMIntegration (Refactored)', () => {
                 mockQuoApi.api.listContacts = jest.fn();
                 integration._fetchZohoObject = jest.fn();
                 integration.transformPersonToQuo = jest.fn();
-                integration.commands.findOrganizationUserById = jest.fn().mockResolvedValue({
-                    id: 'user-123',
-                    appOrgId: 'org-123',
-                });
+                integration.commands.findOrganizationUserById = jest
+                    .fn()
+                    .mockResolvedValue({
+                        id: 'user-123',
+                        appOrgId: 'org-123',
+                    });
             });
 
             it('should use upsertContactToQuo for insert operation', async () => {

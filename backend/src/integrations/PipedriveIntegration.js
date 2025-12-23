@@ -500,7 +500,10 @@ class PipedriveIntegration extends BaseCRMIntegration {
      * @returns {Promise<Object>} Updated activity response
      */
     async updateActivity(activityId, activityData) {
-        return await this.pipedrive.api.updateActivity(activityId, activityData);
+        return await this.pipedrive.api.updateActivity(
+            activityId,
+            activityData,
+        );
     }
 
     /**
@@ -1336,7 +1339,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
                         type: 'call',
                         done: 1,
                         note: `<p><strong>${activity.title}</strong></p><p>${activity.content}</p>`,
-                        participants: [{ person_id: parseInt(contactId), primary: true }],
+                        participants: [
+                            { person_id: parseInt(contactId), primary: true },
+                        ],
                         duration: activity.duration
                             ? Math.floor(activity.duration / 60)
                             : undefined,
@@ -1461,7 +1466,8 @@ class PipedriveIntegration extends BaseCRMIntegration {
             this.quo.api.getUser(callObject.userId),
         ]);
 
-        const inboxName = QuoCallContentBuilder.buildInboxName(phoneNumberDetails);
+        const inboxName =
+            QuoCallContentBuilder.buildInboxName(phoneNumberDetails);
         const inboxNumber =
             phoneNumberDetails.data?.number ||
             phoneNumberDetails.data?.formattedNumber ||
@@ -1513,7 +1519,12 @@ class PipedriveIntegration extends BaseCRMIntegration {
                                 type: 'call',
                                 done: 1,
                                 note: title + content,
-                                participants: [{ person_id: parseInt(contactId), primary: true }],
+                                participants: [
+                                    {
+                                        person_id: parseInt(contactId),
+                                        primary: true,
+                                    },
+                                ],
                             };
                             const activityResponse =
                                 await this.pipedrive.api.createActivity(
