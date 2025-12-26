@@ -343,23 +343,69 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
 
         const [_, version, timestamp, receivedSignature] = parts;
 
-        let webhookKey;
+        let webhookArray;
         if (eventType.startsWith('call.summary')) {
-            webhookKey = this.config?.quoCallSummaryWebhookKey;
+            webhookArray = this.config?.quoCallSummaryWebhooks || [];
         } else if (eventType.startsWith('call.')) {
-            webhookKey = this.config?.quoCallWebhookKey;
+            webhookArray = this.config?.quoCallWebhooks || [];
         } else if (eventType.startsWith('message.')) {
-            webhookKey = this.config?.quoMessageWebhookKey;
+            webhookArray = this.config?.quoMessageWebhooks || [];
         } else {
             throw new Error(
                 `Unknown event type for key selection: ${eventType}`,
             );
         }
 
-        if (!webhookKey) {
-            throw new Error('Webhook key not found in config');
+        if (webhookArray.length === 0) {
+            throw new Error('No webhooks configured for this event type');
         }
 
+        const webhookIdFromPayload = body?.id;
+        if (webhookIdFromPayload) {
+            const matchingWebhook = webhookArray.find(
+                (wh) => wh.id === webhookIdFromPayload,
+            );
+            if (matchingWebhook) {
+                try {
+                    this._verifySignatureWithKey(
+                        matchingWebhook.key,
+                        timestamp,
+                        body,
+                        receivedSignature,
+                    );
+                    console.log(
+                        `[Quo Webhook] ✓ Signature verified with webhook ${matchingWebhook.id}`,
+                    );
+                    return;
+                } catch (err) {
+                    // Continue to fallback
+                }
+            }
+        }
+
+        for (const webhook of webhookArray) {
+            try {
+                this._verifySignatureWithKey(
+                    webhook.key,
+                    timestamp,
+                    body,
+                    receivedSignature,
+                );
+                console.log(
+                    `[Quo Webhook] ✓ Signature verified with webhook ${webhook.id}`,
+                );
+                return;
+            } catch (err) {
+                continue;
+            }
+        }
+
+        throw new Error(
+            'Webhook signature verification failed with all configured webhooks',
+        );
+    }
+
+    _verifySignatureWithKey(webhookKey, timestamp, body, receivedSignature) {
         const crypto = require('crypto');
 
         const testFormats = [
@@ -415,8 +461,6 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 'Webhook signature verification failed - no matching format found',
             );
         }
-
-        console.log('[Quo Webhook] ✓ Signature verified');
     }
 
     /**
@@ -536,39 +580,38 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
 
         try {
             if (
-                this.config?.quoMessageWebhookId &&
-                this.config?.quoCallWebhookId &&
-                this.config?.quoCallSummaryWebhookId
+                this.config?.quoMessageWebhooks &&
+                this.config?.quoCallWebhooks &&
+                this.config?.quoCallSummaryWebhooks
             ) {
                 console.log(
-                    `[Quo] Webhooks already registered: message=${this.config.quoMessageWebhookId}, call=${this.config.quoCallWebhookId}, callSummary=${this.config.quoCallSummaryWebhookId}`,
+                    `[Quo] Webhooks already registered: ${this.config.quoMessageWebhooks.length} message, ${this.config.quoCallWebhooks.length} call, ${this.config.quoCallSummaryWebhooks.length} call-summary`,
                 );
                 return {
                     status: 'already_configured',
-                    messageWebhookId: this.config.quoMessageWebhookId,
-                    callWebhookId: this.config.quoCallWebhookId,
-                    callSummaryWebhookId: this.config.quoCallSummaryWebhookId,
+                    messageWebhooks: this.config.quoMessageWebhooks,
+                    callWebhooks: this.config.quoCallWebhooks,
+                    callSummaryWebhooks: this.config.quoCallSummaryWebhooks,
                     webhookUrl: this.config.quoWebhooksUrl,
                 };
             }
 
             const hasPartialConfig =
-                this.config?.quoMessageWebhookId ||
-                this.config?.quoCallWebhookId ||
-                this.config?.quoCallSummaryWebhookId;
+                this.config?.quoMessageWebhooks ||
+                this.config?.quoCallWebhooks ||
+                this.config?.quoCallSummaryWebhooks;
 
             if (hasPartialConfig) {
                 console.warn(
                     '[Quo] Partial webhook configuration detected - cleaning up before retry',
                 );
 
-                if (this.config?.quoMessageWebhookId) {
+                const quoMessageWebhooks = this.config?.quoMessageWebhooks || [];
+                for (const webhook of quoMessageWebhooks) {
                     try {
-                        await this.quo.api.deleteWebhook(
-                            this.config.quoMessageWebhookId,
-                        );
+                        await this.quo.api.deleteWebhook(webhook.id);
                         console.log(
-                            `[Quo] Cleaned up orphaned message webhook: ${this.config.quoMessageWebhookId}`,
+                            `[Quo] Cleaned up orphaned message webhook: ${webhook.id}`,
                         );
                     } catch (cleanupError) {
                         console.warn(
@@ -577,13 +620,12 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                     }
                 }
 
-                if (this.config?.quoCallWebhookId) {
+                const quoCallWebhooks = this.config?.quoCallWebhooks || [];
+                for (const webhook of quoCallWebhooks) {
                     try {
-                        await this.quo.api.deleteWebhook(
-                            this.config.quoCallWebhookId,
-                        );
+                        await this.quo.api.deleteWebhook(webhook.id);
                         console.log(
-                            `[Quo] Cleaned up orphaned call webhook: ${this.config.quoCallWebhookId}`,
+                            `[Quo] Cleaned up orphaned call webhook: ${webhook.id}`,
                         );
                     } catch (cleanupError) {
                         console.warn(
@@ -592,13 +634,12 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                     }
                 }
 
-                if (this.config?.quoCallSummaryWebhookId) {
+                const quoCallSummaryWebhooks = this.config?.quoCallSummaryWebhooks || [];
+                for (const webhook of quoCallSummaryWebhooks) {
                     try {
-                        await this.quo.api.deleteWebhook(
-                            this.config.quoCallSummaryWebhookId,
-                        );
+                        await this.quo.api.deleteWebhook(webhook.id);
                         console.log(
-                            `[Quo] Cleaned up orphaned call-summary webhook: ${this.config.quoCallSummaryWebhookId}`,
+                            `[Quo] Cleaned up orphaned call-summary webhook: ${webhook.id}`,
                         );
                     } catch (cleanupError) {
                         console.warn(
@@ -614,29 +655,23 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 `[Quo] Registering message and call webhooks at: ${webhookUrl}`,
             );
 
-            const {
-                messageWebhookId,
-                messageWebhookKey,
-                callWebhookId,
-                callWebhookKey,
-                callSummaryWebhookId,
-                callSummaryWebhookKey,
-            } = await this._createQuoWebhooksWithPhoneIds(webhookUrl);
+            const { messageWebhooks, callWebhooks, callSummaryWebhooks } =
+                await this._createQuoWebhooksWithPhoneIds(webhookUrl);
 
             createdWebhooks.push(
-                { type: 'message', id: messageWebhookId },
-                { type: 'call', id: callWebhookId },
-                { type: 'callSummary', id: callSummaryWebhookId },
+                ...messageWebhooks.map((wh) => ({ type: 'message', id: wh.id })),
+                ...callWebhooks.map((wh) => ({ type: 'call', id: wh.id })),
+                ...callSummaryWebhooks.map((wh) => ({
+                    type: 'callSummary',
+                    id: wh.id,
+                })),
             );
 
             const updatedConfig = {
                 ...this.config,
-                quoMessageWebhookId: messageWebhookId,
-                quoMessageWebhookKey: messageWebhookKey,
-                quoCallWebhookId: callWebhookId,
-                quoCallWebhookKey: callWebhookKey,
-                quoCallSummaryWebhookId: callSummaryWebhookId,
-                quoCallSummaryWebhookKey: callSummaryWebhookKey,
+                quoMessageWebhooks: messageWebhooks,
+                quoCallWebhooks: callWebhooks,
+                quoCallSummaryWebhooks: callSummaryWebhooks,
                 quoWebhooksUrl: webhookUrl,
                 quoWebhooksCreatedAt: new Date().toISOString(),
             };
@@ -652,9 +687,9 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
 
             return {
                 status: 'configured',
-                messageWebhookId: messageWebhookId,
-                callWebhookId: callWebhookId,
-                callSummaryWebhookId: callSummaryWebhookId,
+                messageWebhooks: messageWebhooks,
+                callWebhooks: callWebhooks,
+                callSummaryWebhooks: callSummaryWebhooks,
                 webhookUrl: webhookUrl,
             };
         } catch (error) {
@@ -1816,16 +1851,51 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
 
             const notificationChannelId =
                 this.config?.zohoNotificationChannelId;
-            if (notificationChannelId) {
+            const quoMessageWebhooks = this.config?.quoMessageWebhooks || [];
+            const quoCallWebhooks = this.config?.quoCallWebhooks || [];
+            const quoCallSummaryWebhooks =
+                this.config?.quoCallSummaryWebhooks || [];
+
+            if (
+                notificationChannelId ||
+                quoMessageWebhooks.length > 0 ||
+                quoCallWebhooks.length > 0 ||
+                quoCallSummaryWebhooks.length > 0
+            ) {
                 console.warn(
-                    '[Webhook Cleanup] Notification channel preserved in config for manual cleanup:',
+                    '[Webhook Cleanup] Webhooks preserved in config for manual cleanup:',
                 );
-                console.warn(
-                    `  - Zoho CRM notification channel: ${notificationChannelId}`,
-                );
-                console.warn(
-                    '[Webhook Cleanup] You will need to manually disable this notification channel from Zoho CRM.',
-                );
+
+                if (notificationChannelId) {
+                    console.warn(
+                        `  - Zoho CRM notification channel: ${notificationChannelId}`,
+                    );
+                }
+
+                quoMessageWebhooks.forEach((wh) => {
+                    console.warn(`  - Quo message webhook: ${wh.id}`);
+                });
+                quoCallWebhooks.forEach((wh) => {
+                    console.warn(`  - Quo call webhook: ${wh.id}`);
+                });
+                quoCallSummaryWebhooks.forEach((wh) => {
+                    console.warn(`  - Quo call-summary webhook: ${wh.id}`);
+                });
+
+                if (notificationChannelId) {
+                    console.warn(
+                        '[Webhook Cleanup] You will need to manually disable the notification channel from Zoho CRM.',
+                    );
+                }
+                if (
+                    quoMessageWebhooks.length > 0 ||
+                    quoCallWebhooks.length > 0 ||
+                    quoCallSummaryWebhooks.length > 0
+                ) {
+                    console.warn(
+                        '[Webhook Cleanup] You will need to manually delete the Quo webhooks.',
+                    );
+                }
             }
 
             await super.onDelete(params);
@@ -1860,78 +1930,86 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         }
 
         try {
-            const quoMessageWebhookId = this.config?.quoMessageWebhookId;
+            const quoMessageWebhooks = this.config?.quoMessageWebhooks || [];
 
-            if (quoMessageWebhookId) {
+            if (quoMessageWebhooks.length > 0) {
                 console.log(
-                    `[Quo] Deleting message webhook: ${quoMessageWebhookId}`,
+                    `[Quo] Deleting ${quoMessageWebhooks.length} message webhook(s)`,
                 );
 
-                try {
-                    await this.quo.api.deleteWebhook(quoMessageWebhookId);
-                    console.log(
-                        `[Quo] ✓ Message webhook ${quoMessageWebhookId} deleted from Quo`,
-                    );
-                } catch (error) {
-                    console.error(
-                        `[Quo] Failed to delete message webhook from Quo:`,
-                        error.message,
-                    );
-                    console.warn(
-                        `[Quo] Message webhook ID ${quoMessageWebhookId} preserved in config for manual cleanup`,
-                    );
+                for (const webhook of quoMessageWebhooks) {
+                    try {
+                        await this.quo.api.deleteWebhook(webhook.id);
+                        console.log(
+                            `[Quo] ✓ Message webhook ${webhook.id} deleted from Quo`,
+                        );
+                    } catch (error) {
+                        console.error(
+                            `[Quo] Failed to delete message webhook ${webhook.id} from Quo:`,
+                            error.message,
+                        );
+                        console.warn(
+                            `[Quo] Message webhook ID ${webhook.id} preserved in config for manual cleanup`,
+                        );
+                    }
                 }
             } else {
-                console.log('[Quo] No message webhook to delete');
+                console.log('[Quo] No message webhooks to delete');
             }
 
-            const quoCallWebhookId = this.config?.quoCallWebhookId;
+            const quoCallWebhooks = this.config?.quoCallWebhooks || [];
 
-            if (quoCallWebhookId) {
-                console.log(`[Quo] Deleting call webhook: ${quoCallWebhookId}`);
-
-                try {
-                    await this.quo.api.deleteWebhook(quoCallWebhookId);
-                    console.log(
-                        `[Quo] ✓ Call webhook ${quoCallWebhookId} deleted from Quo`,
-                    );
-                } catch (error) {
-                    console.error(
-                        `[Quo] Failed to delete call webhook from Quo:`,
-                        error.message,
-                    );
-                    console.warn(
-                        `[Quo] Call webhook ID ${quoCallWebhookId} preserved in config for manual cleanup`,
-                    );
-                }
-            } else {
-                console.log('[Quo] No call webhook to delete');
-            }
-
-            const quoCallSummaryWebhookId =
-                this.config?.quoCallSummaryWebhookId;
-
-            if (quoCallSummaryWebhookId) {
+            if (quoCallWebhooks.length > 0) {
                 console.log(
-                    `[Quo] Deleting call-summary webhook: ${quoCallSummaryWebhookId}`,
+                    `[Quo] Deleting ${quoCallWebhooks.length} call webhook(s)`,
                 );
 
-                try {
-                    await this.quo.api.deleteWebhook(quoCallSummaryWebhookId);
-                    console.log(
-                        `[Quo] ✓ Call-summary webhook ${quoCallSummaryWebhookId} deleted from Quo`,
-                    );
-                } catch (error) {
-                    console.error(
-                        `[Quo] Failed to delete call-summary webhook from Quo:`,
-                        error.message,
-                    );
-                    console.warn(
-                        `[Quo] Call-summary webhook ID ${quoCallSummaryWebhookId} preserved in config for manual cleanup`,
-                    );
+                for (const webhook of quoCallWebhooks) {
+                    try {
+                        await this.quo.api.deleteWebhook(webhook.id);
+                        console.log(
+                            `[Quo] ✓ Call webhook ${webhook.id} deleted from Quo`,
+                        );
+                    } catch (error) {
+                        console.error(
+                            `[Quo] Failed to delete call webhook ${webhook.id} from Quo:`,
+                            error.message,
+                        );
+                        console.warn(
+                            `[Quo] Call webhook ID ${webhook.id} preserved in config for manual cleanup`,
+                        );
+                    }
                 }
             } else {
-                console.log('[Quo] No call-summary webhook to delete');
+                console.log('[Quo] No call webhooks to delete');
+            }
+
+            const quoCallSummaryWebhooks =
+                this.config?.quoCallSummaryWebhooks || [];
+
+            if (quoCallSummaryWebhooks.length > 0) {
+                console.log(
+                    `[Quo] Deleting ${quoCallSummaryWebhooks.length} call-summary webhook(s)`,
+                );
+
+                for (const webhook of quoCallSummaryWebhooks) {
+                    try {
+                        await this.quo.api.deleteWebhook(webhook.id);
+                        console.log(
+                            `[Quo] ✓ Call-summary webhook ${webhook.id} deleted from Quo`,
+                        );
+                    } catch (error) {
+                        console.error(
+                            `[Quo] Failed to delete call-summary webhook ${webhook.id} from Quo:`,
+                            error.message,
+                        );
+                        console.warn(
+                            `[Quo] Call-summary webhook ID ${webhook.id} preserved in config for manual cleanup`,
+                        );
+                    }
+                }
+            } else {
+                console.log('[Quo] No call-summary webhooks to delete');
             }
         } catch (error) {
             console.error('[Quo] Failed to delete Quo webhooks:', error);
