@@ -1253,9 +1253,15 @@ describe('BaseCRMIntegration', () => {
             // Set up existing config with webhooks configured
             integration.config = {
                 enabledPhoneIds: ['PN-old-1', 'PN-old-2'],
-                quoMessageWebhookId: 'webhook-msg-123',
-                quoCallWebhookId: 'webhook-call-123',
-                quoCallSummaryWebhookId: 'webhook-summary-123',
+                quoMessageWebhooks: [
+                    { id: 'webhook-msg-123', key: 'key-msg-123', resourceIds: ['PN-old-1', 'PN-old-2'] }
+                ],
+                quoCallWebhooks: [
+                    { id: 'webhook-call-123', key: 'key-call-123', resourceIds: ['PN-old-1', 'PN-old-2'] }
+                ],
+                quoCallSummaryWebhooks: [
+                    { id: 'webhook-summary-123', key: 'key-summary-123', resourceIds: ['PN-old-1', 'PN-old-2'] }
+                ],
                 someOtherConfig: 'should-be-preserved',
             };
 
@@ -1366,10 +1372,10 @@ describe('BaseCRMIntegration', () => {
 
                 // Webhook IDs will change because webhooks are recreated
                 // when phone IDs change (delete + create pattern)
-                expect(integration.config.quoMessageWebhookId).not.toBe(
+                expect(integration.config.quoMessageWebhooks).toBeDefined();
+                expect(integration.config.quoMessageWebhooks[0].id).not.toBe(
                     'webhook-msg-123',
                 );
-                expect(integration.config.quoMessageWebhookId).toBeDefined();
             });
 
             it('should merge nested objects (deep merge)', async () => {
@@ -1556,7 +1562,9 @@ describe('BaseCRMIntegration', () => {
             });
 
             it('should throw if webhooks are not configured but phone IDs change', async () => {
-                integration.config.quoMessageWebhookId = null;
+                integration.config.quoMessageWebhooks = [];
+                integration.config.quoCallWebhooks = [];
+                integration.config.quoCallSummaryWebhooks = [];
 
                 await expect(
                     integration.onUpdate({
