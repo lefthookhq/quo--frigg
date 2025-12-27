@@ -87,12 +87,27 @@ describe('AttioIntegration (Refactored)', () => {
         integration._createQuoWebhooksWithPhoneIds = jest
             .fn()
             .mockResolvedValue({
-                messageWebhookId: 'quo-msg-wh-456',
-                messageWebhookKey: 'quo-msg-key',
-                callWebhookId: 'quo-call-wh-789',
-                callWebhookKey: 'quo-call-key',
-                callSummaryWebhookId: 'quo-summary-wh-abc',
-                callSummaryWebhookKey: 'quo-summary-key',
+                messageWebhooks: [
+                    {
+                        id: 'quo-msg-wh-456',
+                        key: 'quo-msg-key',
+                        resourceIds: [],
+                    },
+                ],
+                callWebhooks: [
+                    {
+                        id: 'quo-call-wh-789',
+                        key: 'quo-call-key',
+                        resourceIds: [],
+                    },
+                ],
+                callSummaryWebhooks: [
+                    {
+                        id: 'quo-summary-wh-abc',
+                        key: 'quo-summary-key',
+                        resourceIds: [],
+                    },
+                ],
             });
         integration._findAttioContactFromQuoWebhook = jest.fn();
         integration._getExternalIdFromMappingByPhone = jest.fn();
@@ -555,12 +570,27 @@ describe('AttioIntegration (Refactored)', () => {
                     'phone-2',
                 ]);
                 integration._createQuoWebhooksWithPhoneIds.mockResolvedValue({
-                    messageWebhookId: 'quo-msg-wh-456',
-                    messageWebhookKey: 'quo-msg-key',
-                    callWebhookId: 'quo-call-wh-789',
-                    callWebhookKey: 'quo-call-key',
-                    callSummaryWebhookId: 'quo-summary-wh-abc',
-                    callSummaryWebhookKey: 'quo-summary-key',
+                    messageWebhooks: [
+                        {
+                            id: 'quo-msg-wh-456',
+                            key: 'quo-msg-key',
+                            resourceIds: [],
+                        },
+                    ],
+                    callWebhooks: [
+                        {
+                            id: 'quo-call-wh-789',
+                            key: 'quo-call-key',
+                            resourceIds: [],
+                        },
+                    ],
+                    callSummaryWebhooks: [
+                        {
+                            id: 'quo-summary-wh-abc',
+                            key: 'quo-summary-key',
+                            resourceIds: [],
+                        },
+                    ],
                 });
             });
 
@@ -611,9 +641,27 @@ describe('AttioIntegration (Refactored)', () => {
             it('should handle already configured webhooks', async () => {
                 integration.config = {
                     attioWebhookId: 'existing-attio-wh',
-                    quoMessageWebhookId: 'existing-quo-msg-wh',
-                    quoCallWebhookId: 'existing-quo-call-wh',
-                    quoCallSummaryWebhookId: 'existing-quo-summary-wh',
+                    quoMessageWebhooks: [
+                        {
+                            id: 'existing-quo-msg-wh',
+                            key: 'msg-key',
+                            resourceIds: [],
+                        },
+                    ],
+                    quoCallWebhooks: [
+                        {
+                            id: 'existing-quo-call-wh',
+                            key: 'call-key',
+                            resourceIds: [],
+                        },
+                    ],
+                    quoCallSummaryWebhooks: [
+                        {
+                            id: 'existing-quo-summary-wh',
+                            key: 'summary-key',
+                            resourceIds: [],
+                        },
+                    ],
                 };
 
                 const result = await integration.setupWebhooks();
@@ -802,20 +850,33 @@ describe('AttioIntegration (Refactored)', () => {
                     'phone-2',
                 ]);
                 integration._createQuoWebhooksWithPhoneIds.mockResolvedValue({
-                    messageWebhookId: 'msg-wh',
-                    messageWebhookKey: 'msg-key',
-                    callWebhookId: 'call-wh',
-                    callWebhookKey: 'call-key',
-                    callSummaryWebhookId: 'summary-wh',
-                    callSummaryWebhookKey: 'summary-key',
+                    messageWebhooks: [
+                        { id: 'msg-wh', key: 'msg-key', resourceIds: [] },
+                    ],
+                    callWebhooks: [
+                        { id: 'call-wh', key: 'call-key', resourceIds: [] },
+                    ],
+                    callSummaryWebhooks: [
+                        {
+                            id: 'summary-wh',
+                            key: 'summary-key',
+                            resourceIds: [],
+                        },
+                    ],
                 });
 
                 const result = await integration.setupQuoWebhook();
 
                 expect(result.status).toBe('configured');
-                expect(result.messageWebhookId).toBe('msg-wh');
-                expect(result.callWebhookId).toBe('call-wh');
-                expect(result.callSummaryWebhookId).toBe('summary-wh');
+                expect(result.messageWebhooks).toEqual([
+                    { id: 'msg-wh', key: 'msg-key', resourceIds: [] },
+                ]);
+                expect(result.callWebhooks).toEqual([
+                    { id: 'call-wh', key: 'call-key', resourceIds: [] },
+                ]);
+                expect(result.callSummaryWebhooks).toEqual([
+                    { id: 'summary-wh', key: 'summary-key', resourceIds: [] },
+                ]);
                 expect(
                     integration._fetchAndStoreEnabledPhoneIds,
                 ).toHaveBeenCalled();
@@ -826,19 +887,40 @@ describe('AttioIntegration (Refactored)', () => {
 
             it('should cleanup partial config before retry', async () => {
                 integration.config = {
-                    quoMessageWebhookId: 'orphaned-msg-wh',
+                    quoMessageWebhooks: [
+                        {
+                            id: 'orphaned-msg-wh',
+                            key: 'old-key',
+                            resourceIds: [],
+                        },
+                    ],
                 };
 
                 integration._fetchAndStoreEnabledPhoneIds.mockResolvedValue([
                     'phone-1',
                 ]);
                 integration._createQuoWebhooksWithPhoneIds.mockResolvedValue({
-                    messageWebhookId: 'new-msg-wh',
-                    messageWebhookKey: 'key',
-                    callWebhookId: 'new-call-wh',
-                    callWebhookKey: 'key',
-                    callSummaryWebhookId: 'new-summary-wh',
-                    callSummaryWebhookKey: 'key',
+                    messageWebhooks: [
+                        {
+                            id: 'new-msg-wh',
+                            key: 'key',
+                            resourceIds: [],
+                        },
+                    ],
+                    callWebhooks: [
+                        {
+                            id: 'new-call-wh',
+                            key: 'key',
+                            resourceIds: [],
+                        },
+                    ],
+                    callSummaryWebhooks: [
+                        {
+                            id: 'new-summary-wh',
+                            key: 'key',
+                            resourceIds: [],
+                        },
+                    ],
                 });
 
                 await integration.setupQuoWebhook();
@@ -969,7 +1051,11 @@ describe('AttioIntegration (Refactored)', () => {
                 hmac.update(payload);
                 const signature = hmac.digest('base64');
 
-                integration.config = { quoCallWebhookKey: webhookKey };
+                integration.config = {
+                    quoCallWebhooks: [
+                        { id: 'wh-1', key: webhookKey, resourceIds: [] },
+                    ],
+                };
 
                 const headers = {
                     'openphone-signature': `hmac;v1;${timestamp};${signature}`,
@@ -1008,9 +1094,19 @@ describe('AttioIntegration (Refactored)', () => {
 
             it('should select correct webhook key by event type', async () => {
                 integration.config = {
-                    quoMessageWebhookKey: 'msg-key',
-                    quoCallWebhookKey: 'call-key',
-                    quoCallSummaryWebhookKey: 'summary-key',
+                    quoMessageWebhooks: [
+                        { id: 'wh-msg', key: 'msg-key', resourceIds: [] },
+                    ],
+                    quoCallWebhooks: [
+                        { id: 'wh-call', key: 'call-key', resourceIds: [] },
+                    ],
+                    quoCallSummaryWebhooks: [
+                        {
+                            id: 'wh-summary',
+                            key: 'summary-key',
+                            resourceIds: [],
+                        },
+                    ],
                 };
 
                 const timestamp = '1640000000000';
@@ -1045,7 +1141,7 @@ describe('AttioIntegration (Refactored)', () => {
                         {},
                         'call.completed',
                     ),
-                ).rejects.toThrow('Webhook key not found in config');
+                ).rejects.toThrow('No webhooks configured for event type');
             });
         });
     });
@@ -1985,9 +2081,27 @@ describe('AttioIntegration (Refactored)', () => {
             beforeEach(() => {
                 integration.config = {
                     attioWebhookId: 'attio-wh-123',
-                    quoMessageWebhookId: 'quo-msg-wh-456',
-                    quoCallWebhookId: 'quo-call-wh-789',
-                    quoCallSummaryWebhookId: 'quo-summary-wh-abc',
+                    quoMessageWebhooks: [
+                        {
+                            id: 'quo-msg-wh-456',
+                            key: 'msg-key',
+                            resourceIds: [],
+                        },
+                    ],
+                    quoCallWebhooks: [
+                        {
+                            id: 'quo-call-wh-789',
+                            key: 'call-key',
+                            resourceIds: [],
+                        },
+                    ],
+                    quoCallSummaryWebhooks: [
+                        {
+                            id: 'quo-summary-wh-abc',
+                            key: 'summary-key',
+                            resourceIds: [],
+                        },
+                    ],
                 };
                 mockAttioApi.api.deleteWebhook = jest
                     .fn()

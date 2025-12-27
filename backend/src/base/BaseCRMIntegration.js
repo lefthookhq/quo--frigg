@@ -1787,17 +1787,11 @@ class BaseCRMIntegration extends IntegrationBase {
                     const newWebhooks =
                         await this._recreateQuoWebhooks(newPhoneIds);
 
-                    patchedConfig.quoMessageWebhookId =
-                        newWebhooks.messageWebhookId;
-                    patchedConfig.quoMessageWebhookKey =
-                        newWebhooks.messageWebhookKey;
-                    patchedConfig.quoCallWebhookId = newWebhooks.callWebhookId;
-                    patchedConfig.quoCallWebhookKey =
-                        newWebhooks.callWebhookKey;
-                    patchedConfig.quoCallSummaryWebhookId =
-                        newWebhooks.callSummaryWebhookId;
-                    patchedConfig.quoCallSummaryWebhookKey =
-                        newWebhooks.callSummaryWebhookKey;
+                    patchedConfig.quoMessageWebhooks =
+                        newWebhooks.messageWebhooks;
+                    patchedConfig.quoCallWebhooks = newWebhooks.callWebhooks;
+                    patchedConfig.quoCallSummaryWebhooks =
+                        newWebhooks.callSummaryWebhooks;
                     patchedConfig.quoWebhooksCreatedAt =
                         new Date().toISOString();
 

@@ -817,12 +817,9 @@ describe('PipedriveIntegration - Webhook Setup', () => {
 
             it('stores all webhook IDs and keys in config', async () => {
                 integration._createQuoWebhooksWithPhoneIds.mockResolvedValue({
-                    messageWebhookId: 'msg-wh',
-                    messageWebhookKey: 'msg-key',
-                    callWebhookId: 'call-wh',
-                    callWebhookKey: 'call-key',
-                    callSummaryWebhookId: 'summary-wh',
-                    callSummaryWebhookKey: 'summary-key',
+                    messageWebhooks: [{ id: 'msg-wh', key: 'msg-key', resourceIds: [] }],
+                    callWebhooks: [{ id: 'call-wh', key: 'call-key', resourceIds: [] }],
+                    callSummaryWebhooks: [{ id: 'summary-wh', key: 'summary-key', resourceIds: [] }],
                 });
 
                 await integration.setupQuoWebhook();
@@ -833,12 +830,9 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     expect.objectContaining({
                         integrationId: 'test-integration-id',
                         config: expect.objectContaining({
-                            quoMessageWebhookId: 'msg-wh',
-                            quoMessageWebhookKey: 'msg-key',
-                            quoCallWebhookId: 'call-wh',
-                            quoCallWebhookKey: 'call-key',
-                            quoCallSummaryWebhookId: 'summary-wh',
-                            quoCallSummaryWebhookKey: 'summary-key',
+                            quoMessageWebhooks: [{ id: 'msg-wh', key: 'msg-key', resourceIds: [] }],
+                            quoCallWebhooks: [{ id: 'call-wh', key: 'call-key', resourceIds: [] }],
+                            quoCallSummaryWebhooks: [{ id: 'summary-wh', key: 'summary-key', resourceIds: [] }],
                         }),
                     }),
                 );
@@ -846,12 +840,9 @@ describe('PipedriveIntegration - Webhook Setup', () => {
 
             it('encrypts webhook keys at rest', async () => {
                 integration._createQuoWebhooksWithPhoneIds.mockResolvedValue({
-                    messageWebhookId: 'msg-wh',
-                    messageWebhookKey: 'sensitive-key-123',
-                    callWebhookId: 'call-wh',
-                    callWebhookKey: 'sensitive-key-456',
-                    callSummaryWebhookId: 'summary-wh',
-                    callSummaryWebhookKey: 'sensitive-key-789',
+                    messageWebhooks: [{ id: 'msg-wh', key: 'sensitive-key-123', resourceIds: [] }],
+                    callWebhooks: [{ id: 'call-wh', key: 'sensitive-key-456', resourceIds: [] }],
+                    callSummaryWebhooks: [{ id: 'summary-wh', key: 'sensitive-key-789', resourceIds: [] }],
                 });
 
                 const consoleSpy = jest
@@ -871,16 +862,13 @@ describe('PipedriveIntegration - Webhook Setup', () => {
         describe('Partial Configuration Recovery', () => {
             it('cleans up orphaned message webhook before retry', async () => {
                 integration.config = {
-                    quoMessageWebhookId: 'orphaned-msg-wh',
+                    quoMessageWebhooks: [{ id: 'orphaned-msg-wh', key: 'old-key', resourceIds: [] }],
                 };
 
                 integration._createQuoWebhooksWithPhoneIds.mockResolvedValue({
-                    messageWebhookId: 'new-msg-wh',
-                    messageWebhookKey: 'new-key',
-                    callWebhookId: 'new-call-wh',
-                    callWebhookKey: 'new-key',
-                    callSummaryWebhookId: 'new-summary-wh',
-                    callSummaryWebhookKey: 'new-key',
+                    messageWebhooks: [{ id: 'new-msg-wh', key: 'new-key', resourceIds: [] }],
+                    callWebhooks: [{ id: 'new-call-wh', key: 'new-key', resourceIds: [] }],
+                    callSummaryWebhooks: [{ id: 'new-summary-wh', key: 'new-key', resourceIds: [] }],
                 });
 
                 const consoleSpy = jest
@@ -907,16 +895,13 @@ describe('PipedriveIntegration - Webhook Setup', () => {
 
             it('cleans up orphaned call webhook before retry', async () => {
                 integration.config = {
-                    quoCallWebhookId: 'orphaned-call-wh',
+                    quoCallWebhooks: [{ id: 'orphaned-call-wh', key: 'old-key', resourceIds: [] }],
                 };
 
                 integration._createQuoWebhooksWithPhoneIds.mockResolvedValue({
-                    messageWebhookId: 'new-msg-wh',
-                    messageWebhookKey: 'new-key',
-                    callWebhookId: 'new-call-wh',
-                    callWebhookKey: 'new-key',
-                    callSummaryWebhookId: 'new-summary-wh',
-                    callSummaryWebhookKey: 'new-key',
+                    messageWebhooks: [{ id: 'new-msg-wh', key: 'new-key', resourceIds: [] }],
+                    callWebhooks: [{ id: 'new-call-wh', key: 'new-key', resourceIds: [] }],
+                    callSummaryWebhooks: [{ id: 'new-summary-wh', key: 'new-key', resourceIds: [] }],
                 });
 
                 const consoleLogSpy = jest
@@ -941,16 +926,13 @@ describe('PipedriveIntegration - Webhook Setup', () => {
 
             it('cleans up orphaned call-summary webhook before retry', async () => {
                 integration.config = {
-                    quoCallSummaryWebhookId: 'orphaned-summary-wh',
+                    quoCallSummaryWebhooks: [{ id: 'orphaned-summary-wh', key: 'old-key', resourceIds: [] }],
                 };
 
                 integration._createQuoWebhooksWithPhoneIds.mockResolvedValue({
-                    messageWebhookId: 'new-msg-wh',
-                    messageWebhookKey: 'new-key',
-                    callWebhookId: 'new-call-wh',
-                    callWebhookKey: 'new-key',
-                    callSummaryWebhookId: 'new-summary-wh',
-                    callSummaryWebhookKey: 'new-key',
+                    messageWebhooks: [{ id: 'new-msg-wh', key: 'new-key', resourceIds: [] }],
+                    callWebhooks: [{ id: 'new-call-wh', key: 'new-key', resourceIds: [] }],
+                    callSummaryWebhooks: [{ id: 'new-summary-wh', key: 'new-key', resourceIds: [] }],
                 });
 
                 const consoleLogSpy = jest
@@ -979,12 +961,9 @@ describe('PipedriveIntegration - Webhook Setup', () => {
         describe('Error Handling with Rollback', () => {
             it('rolls back all webhooks when config update fails', async () => {
                 integration._createQuoWebhooksWithPhoneIds.mockResolvedValue({
-                    messageWebhookId: 'msg-wh-rollback',
-                    messageWebhookKey: 'msg-key',
-                    callWebhookId: 'call-wh-rollback',
-                    callWebhookKey: 'call-key',
-                    callSummaryWebhookId: 'summary-wh-rollback',
-                    callSummaryWebhookKey: 'summary-key',
+                    messageWebhooks: [{ id: 'msg-wh-rollback', key: 'msg-key', resourceIds: [] }],
+                    callWebhooks: [{ id: 'call-wh-rollback', key: 'call-key', resourceIds: [] }],
+                    callSummaryWebhooks: [{ id: 'summary-wh-rollback', key: 'summary-key', resourceIds: [] }],
                 });
 
                 integration.commands.updateIntegrationConfig.mockRejectedValue(
@@ -1084,12 +1063,9 @@ describe('PipedriveIntegration - Webhook Setup', () => {
         describe('Rollback Error Handling', () => {
             it('continues rollback even if webhook deletion fails', async () => {
                 integration._createQuoWebhooksWithPhoneIds.mockResolvedValue({
-                    messageWebhookId: 'msg-wh',
-                    messageWebhookKey: 'msg-key',
-                    callWebhookId: 'call-wh',
-                    callWebhookKey: 'call-key',
-                    callSummaryWebhookId: 'summary-wh',
-                    callSummaryWebhookKey: 'summary-key',
+                    messageWebhooks: [{ id: 'msg-wh', key: 'msg-key', resourceIds: [] }],
+                    callWebhooks: [{ id: 'call-wh', key: 'call-key', resourceIds: [] }],
+                    callSummaryWebhooks: [{ id: 'summary-wh', key: 'summary-key', resourceIds: [] }],
                 });
 
                 integration.commands.updateIntegrationConfig.mockRejectedValue(
@@ -1161,7 +1137,7 @@ describe('PipedriveIntegration - Webhook Setup', () => {
         describe('Edge Cases', () => {
             it('handles cleanup errors gracefully during recovery', async () => {
                 integration.config = {
-                    quoMessageWebhookId: 'orphaned-wh',
+                    quoMessageWebhooks: [{ id: 'orphaned-wh', key: 'old-key', resourceIds: [] }],
                 };
 
                 mockQuoApi.api.deleteWebhook.mockRejectedValue(
@@ -1169,12 +1145,9 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                 );
 
                 integration._createQuoWebhooksWithPhoneIds.mockResolvedValue({
-                    messageWebhookId: 'new-wh',
-                    messageWebhookKey: 'new-key',
-                    callWebhookId: 'new-call-wh',
-                    callWebhookKey: 'new-key',
-                    callSummaryWebhookId: 'new-summary-wh',
-                    callSummaryWebhookKey: 'new-key',
+                    messageWebhooks: [{ id: 'new-wh', key: 'new-key', resourceIds: [] }],
+                    callWebhooks: [{ id: 'new-call-wh', key: 'new-key', resourceIds: [] }],
+                    callSummaryWebhooks: [{ id: 'new-summary-wh', key: 'new-key', resourceIds: [] }],
                 });
 
                 const warnSpy = jest
@@ -1201,12 +1174,9 @@ describe('PipedriveIntegration - Webhook Setup', () => {
                     .mockReturnValue('2024-01-15T10:30:00.000Z');
 
                 integration._createQuoWebhooksWithPhoneIds.mockResolvedValue({
-                    messageWebhookId: 'msg-wh',
-                    messageWebhookKey: 'msg-key',
-                    callWebhookId: 'call-wh',
-                    callWebhookKey: 'call-key',
-                    callSummaryWebhookId: 'summary-wh',
-                    callSummaryWebhookKey: 'summary-key',
+                    messageWebhooks: [{ id: 'msg-wh', key: 'msg-key', resourceIds: [] }],
+                    callWebhooks: [{ id: 'call-wh', key: 'call-key', resourceIds: [] }],
+                    callSummaryWebhooks: [{ id: 'summary-wh', key: 'summary-key', resourceIds: [] }],
                 });
 
                 await integration.setupQuoWebhook();

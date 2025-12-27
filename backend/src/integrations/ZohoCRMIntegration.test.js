@@ -108,12 +108,27 @@ describe('ZohoCRMIntegration (Refactored)', () => {
         integration._createQuoWebhooksWithPhoneIds = jest
             .fn()
             .mockResolvedValue({
-                messageWebhookId: 'quo-msg-wh',
-                messageWebhookKey: 'quo-msg-key',
-                callWebhookId: 'quo-call-wh',
-                callWebhookKey: 'quo-call-key',
-                callSummaryWebhookId: 'quo-summary-wh',
-                callSummaryWebhookKey: 'quo-summary-key',
+                messageWebhooks: [
+                    {
+                        id: 'quo-msg-wh',
+                        key: 'quo-msg-key',
+                        resourceIds: [],
+                    },
+                ],
+                callWebhooks: [
+                    {
+                        id: 'quo-call-wh',
+                        key: 'quo-call-key',
+                        resourceIds: [],
+                    },
+                ],
+                callSummaryWebhooks: [
+                    {
+                        id: 'quo-summary-wh',
+                        key: 'quo-summary-key',
+                        resourceIds: [],
+                    },
+                ],
             });
     });
 
