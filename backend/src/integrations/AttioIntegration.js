@@ -297,7 +297,9 @@ class AttioIntegration extends BaseCRMIntegration {
             }
         }
 
-        throw new Error('Webhook signature verification failed with all keys');
+        throw new Error(
+            'Webhook signature verification failed with all configured webhooks',
+        );
     }
 
     /**
@@ -1111,40 +1113,39 @@ class AttioIntegration extends BaseCRMIntegration {
 
         try {
             if (
-                this.config?.quoMessageWebhookId &&
-                this.config?.quoCallWebhookId &&
-                this.config?.quoCallSummaryWebhookId
+                this.config?.quoMessageWebhooks &&
+                this.config?.quoCallWebhooks &&
+                this.config?.quoCallSummaryWebhooks
             ) {
                 console.log(
-                    `[Quo] Webhooks already registered: message=${this.config.quoMessageWebhookId}, call=${this.config.quoCallWebhookId}, callSummary=${this.config.quoCallSummaryWebhookId}`,
+                    `[Quo] Webhooks already registered: ${this.config.quoMessageWebhooks.length} message, ${this.config.quoCallWebhooks.length} call, ${this.config.quoCallSummaryWebhooks.length} call-summary`,
                 );
                 return {
                     status: 'already_configured',
-                    messageWebhookId: this.config.quoMessageWebhookId,
-                    callWebhookId: this.config.quoCallWebhookId,
-                    callSummaryWebhookId: this.config.quoCallSummaryWebhookId,
+                    messageWebhooks: this.config.quoMessageWebhooks,
+                    callWebhooks: this.config.quoCallWebhooks,
+                    callSummaryWebhooks: this.config.quoCallSummaryWebhooks,
                     webhookUrl: this.config.quoWebhooksUrl,
                 };
             }
 
             // Check for partial configuration (recovery scenario)
             const hasPartialConfig =
-                this.config?.quoMessageWebhookId ||
-                this.config?.quoCallWebhookId ||
-                this.config?.quoCallSummaryWebhookId;
+                this.config?.quoMessageWebhooks ||
+                this.config?.quoCallWebhooks ||
+                this.config?.quoCallSummaryWebhooks;
 
             if (hasPartialConfig) {
                 console.warn(
                     '[Quo] Partial webhook configuration detected - cleaning up before retry',
                 );
 
-                if (this.config?.quoMessageWebhookId) {
+                const quoMessageWebhooks = this.config?.quoMessageWebhooks || [];
+                for (const webhook of quoMessageWebhooks) {
                     try {
-                        await this.quo.api.deleteWebhook(
-                            this.config.quoMessageWebhookId,
-                        );
+                        await this.quo.api.deleteWebhook(webhook.id);
                         console.log(
-                            `[Quo] Cleaned up orphaned message webhook: ${this.config.quoMessageWebhookId}`,
+                            `[Quo] Cleaned up orphaned message webhook: ${webhook.id}`,
                         );
                     } catch (cleanupError) {
                         console.warn(
@@ -1153,13 +1154,12 @@ class AttioIntegration extends BaseCRMIntegration {
                     }
                 }
 
-                if (this.config?.quoCallWebhookId) {
+                const quoCallWebhooks = this.config?.quoCallWebhooks || [];
+                for (const webhook of quoCallWebhooks) {
                     try {
-                        await this.quo.api.deleteWebhook(
-                            this.config.quoCallWebhookId,
-                        );
+                        await this.quo.api.deleteWebhook(webhook.id);
                         console.log(
-                            `[Quo] Cleaned up orphaned call webhook: ${this.config.quoCallWebhookId}`,
+                            `[Quo] Cleaned up orphaned call webhook: ${webhook.id}`,
                         );
                     } catch (cleanupError) {
                         console.warn(
@@ -1168,13 +1168,13 @@ class AttioIntegration extends BaseCRMIntegration {
                     }
                 }
 
-                if (this.config?.quoCallSummaryWebhookId) {
+                const quoCallSummaryWebhooks =
+                    this.config?.quoCallSummaryWebhooks || [];
+                for (const webhook of quoCallSummaryWebhooks) {
                     try {
-                        await this.quo.api.deleteWebhook(
-                            this.config.quoCallSummaryWebhookId,
-                        );
+                        await this.quo.api.deleteWebhook(webhook.id);
                         console.log(
-                            `[Quo] Cleaned up orphaned call-summary webhook: ${this.config.quoCallSummaryWebhookId}`,
+                            `[Quo] Cleaned up orphaned call-summary webhook: ${webhook.id}`,
                         );
                     } catch (cleanupError) {
                         console.warn(
@@ -1231,9 +1231,9 @@ class AttioIntegration extends BaseCRMIntegration {
 
             return {
                 status: 'configured',
-                messageWebhookId: messageWebhookId,
-                callWebhookId: callWebhookId,
-                callSummaryWebhookId: callSummaryWebhookId,
+                messageWebhooks: messageWebhooks,
+                callWebhooks: callWebhooks,
+                callSummaryWebhooks: callSummaryWebhooks,
                 webhookUrl: webhookUrl,
             };
         } catch (error) {

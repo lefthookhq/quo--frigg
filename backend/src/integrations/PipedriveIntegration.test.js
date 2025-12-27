@@ -517,12 +517,23 @@ describe('PipedriveIntegration (Refactored)', () => {
                 integration._createQuoWebhooksWithPhoneIds = jest
                     .fn()
                     .mockResolvedValue({
-                        messageWebhookId: 'msg-wh',
-                        messageWebhookKey: 'msg-key',
-                        callWebhookId: 'call-wh',
-                        callWebhookKey: 'call-key',
-                        callSummaryWebhookId: 'summary-wh',
-                        callSummaryWebhookKey: 'summary-key',
+                        messageWebhooks: [
+                            {
+                                id: 'msg-wh',
+                                key: 'msg-key',
+                                resourceIds: [],
+                            },
+                        ],
+                        callWebhooks: [
+                            { id: 'call-wh', key: 'call-key', resourceIds: [] },
+                        ],
+                        callSummaryWebhooks: [
+                            {
+                                id: 'summary-wh',
+                                key: 'summary-key',
+                                resourceIds: [],
+                            },
+                        ],
                     });
 
                 const result = await integration.setupWebhooks();

@@ -66,12 +66,27 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
                 { id: 'phone-1', number: '+15551111111', name: 'Phone 1' },
                 { id: 'phone-2', number: '+15552222222', name: 'Phone 2' },
             ],
-            quoMessageWebhookId: 'webhook-msg-123',
-            quoMessageWebhookKey: 'key-webhook-msg-123',
-            quoCallWebhookId: 'webhook-call-123',
-            quoCallWebhookKey: 'key-webhook-call-123',
-            quoCallSummaryWebhookId: 'webhook-summary-123',
-            quoCallSummaryWebhookKey: 'key-webhook-summary-123',
+            quoMessageWebhooks: [
+                {
+                    id: 'webhook-msg-123',
+                    key: 'key-webhook-msg-123',
+                    resourceIds: ['phone-1', 'phone-2'],
+                },
+            ],
+            quoCallWebhooks: [
+                {
+                    id: 'webhook-call-123',
+                    key: 'key-webhook-call-123',
+                    resourceIds: ['phone-1', 'phone-2'],
+                },
+            ],
+            quoCallSummaryWebhooks: [
+                {
+                    id: 'webhook-summary-123',
+                    key: 'key-webhook-summary-123',
+                    resourceIds: ['phone-1', 'phone-2'],
+                },
+            ],
         };
 
         integration.validateConfig = jest.fn().mockResolvedValue(true);
@@ -516,9 +531,21 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
                 expect.objectContaining({
                     existingField: 'should-be-preserved',
                     enabledPhoneIds: ['phone-1', 'phone-2'],
-                    quoMessageWebhookId: 'webhook-msg-123',
-                    quoCallWebhookId: 'webhook-call-123',
-                    quoCallSummaryWebhookId: 'webhook-summary-123',
+                    quoMessageWebhooks: expect.arrayContaining([
+                        expect.objectContaining({
+                            id: 'webhook-msg-123',
+                        }),
+                    ]),
+                    quoCallWebhooks: expect.arrayContaining([
+                        expect.objectContaining({
+                            id: 'webhook-call-123',
+                        }),
+                    ]),
+                    quoCallSummaryWebhooks: expect.arrayContaining([
+                        expect.objectContaining({
+                            id: 'webhook-summary-123',
+                        }),
+                    ]),
                 }),
             );
         });
@@ -601,9 +628,27 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
                     },
                 ],
                 phoneNumbersFetchedAt: '2024-01-01T00:00:00.000Z',
-                quoMessageWebhookId: 'webhook-msg-123',
-                quoCallWebhookId: 'webhook-call-123',
-                quoCallSummaryWebhookId: 'webhook-summary-123',
+                quoMessageWebhooks: [
+                    {
+                        id: 'webhook-msg-123',
+                        key: 'key-webhook-msg-123',
+                        resourceIds: ['phone-1', 'phone-2'],
+                    },
+                ],
+                quoCallWebhooks: [
+                    {
+                        id: 'webhook-call-123',
+                        key: 'key-webhook-call-123',
+                        resourceIds: ['phone-1', 'phone-2'],
+                    },
+                ],
+                quoCallSummaryWebhooks: [
+                    {
+                        id: 'webhook-summary-123',
+                        key: 'key-webhook-summary-123',
+                        resourceIds: ['phone-1', 'phone-2'],
+                    },
+                ],
             };
 
             mockQuoApi.getPhoneNumber = jest
@@ -884,9 +929,27 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
             // Arrange
             integration.config = {
                 enabledPhoneIds: ['phone-1'],
-                quoMessageWebhookId: 'webhook-msg-123',
-                quoCallWebhookId: 'webhook-call-123',
-                quoCallSummaryWebhookId: 'webhook-summary-123',
+                quoMessageWebhooks: [
+                    {
+                        id: 'webhook-msg-123',
+                        key: 'key-webhook-msg-123',
+                        resourceIds: ['phone-1'],
+                    },
+                ],
+                quoCallWebhooks: [
+                    {
+                        id: 'webhook-call-123',
+                        key: 'key-webhook-call-123',
+                        resourceIds: ['phone-1'],
+                    },
+                ],
+                quoCallSummaryWebhooks: [
+                    {
+                        id: 'webhook-summary-123',
+                        key: 'key-webhook-summary-123',
+                        resourceIds: ['phone-1'],
+                    },
+                ],
             };
 
             const updateParams = {

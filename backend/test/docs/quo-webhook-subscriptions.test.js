@@ -152,9 +152,15 @@ describe('Quo Webhook Subscriptions', () => {
         it('should preserve existing cleanup logic when using base class method', async () => {
             // Setup: Partial config (orphaned webhooks)
             integration.config = {
-                quoMessageWebhookId: 'old-msg-webhook',
-                // quoCallWebhookId is missing
-                // quoCallSummaryWebhookId is missing
+                quoMessageWebhooks: [
+                    {
+                        id: 'old-msg-webhook',
+                        key: 'old-key',
+                        resourceIds: [],
+                    },
+                ],
+                // quoCallWebhooks is missing
+                // quoCallSummaryWebhooks is missing
             };
 
             // Execute
@@ -182,24 +188,48 @@ describe('Quo Webhook Subscriptions', () => {
             expect(mockCommands.updateIntegrationConfig).toHaveBeenCalledWith({
                 integrationId: 'integration-123',
                 config: expect.objectContaining({
-                    quoMessageWebhookId: 'msg-webhook-123',
-                    quoMessageWebhookKey: 'msg-key-abc',
-                    quoCallWebhookId: 'call-webhook-456',
-                    quoCallWebhookKey: 'call-key-def',
-                    quoCallSummaryWebhookId: 'summary-webhook-789',
-                    quoCallSummaryWebhookKey: 'summary-key-ghi',
+                    quoMessageWebhooks: expect.arrayContaining([
+                        expect.objectContaining({
+                            id: 'msg-webhook-123',
+                            key: 'msg-key-abc',
+                        }),
+                    ]),
+                    quoCallWebhooks: expect.arrayContaining([
+                        expect.objectContaining({
+                            id: 'call-webhook-456',
+                            key: 'call-key-def',
+                        }),
+                    ]),
+                    quoCallSummaryWebhooks: expect.arrayContaining([
+                        expect.objectContaining({
+                            id: 'summary-webhook-789',
+                            key: 'summary-key-ghi',
+                        }),
+                    ]),
                     quoWebhooksUrl: expect.any(String),
                     quoWebhooksCreatedAt: expect.any(String),
                     enabledPhoneIds: ['PHmR5aU'], // Should preserve phone IDs
                 }),
             });
 
-            // Verify: Return value includes webhook IDs
+            // Verify: Return value includes webhook arrays
             expect(result).toEqual({
                 status: 'configured',
-                messageWebhookId: 'msg-webhook-123',
-                callWebhookId: 'call-webhook-456',
-                callSummaryWebhookId: 'summary-webhook-789',
+                messageWebhooks: expect.arrayContaining([
+                    expect.objectContaining({
+                        id: 'msg-webhook-123',
+                    }),
+                ]),
+                callWebhooks: expect.arrayContaining([
+                    expect.objectContaining({
+                        id: 'call-webhook-456',
+                    }),
+                ]),
+                callSummaryWebhooks: expect.arrayContaining([
+                    expect.objectContaining({
+                        id: 'summary-webhook-789',
+                    }),
+                ]),
                 webhookUrl: expect.any(String),
             });
         });
