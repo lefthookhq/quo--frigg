@@ -2,22 +2,9 @@ const { BaseCRMIntegration } = require('../base/BaseCRMIntegration');
 const { createFriggCommands } = require('@friggframework/core');
 const clio = require('../api-modules/clio');
 const quo = require('../api-modules/quo');
-// QUO_ANALYTICS_EVENTS will be used in future tasks for tracking sync operations
 // eslint-disable-next-line no-unused-vars
 const { QUO_ANALYTICS_EVENTS, QuoWebhookEvents } = require('../base/constants');
 
-/**
- * ClioIntegration - Legal practice management integration with Quo
- *
- * Clio-specific implementation for syncing contacts with Quo.
- * Supports Person and Company contact types with multi-region API support.
- *
- * Features:
- * - One-way contact sync (Clio → Quo)
- * - Activity logging (calls, messages) to Clio Communications/Notes
- * - Webhook-based real-time synchronization
- * - Multi-region support (US, EU, CA, AU)
- */
 class ClioIntegration extends BaseCRMIntegration {
     static Definition = {
         name: 'clio',
@@ -63,15 +50,7 @@ class ClioIntegration extends BaseCRMIntegration {
         ],
     };
 
-    /**
-     * CRM Configuration - Required by BaseCRMIntegration
-     *
-     * Clio uses cursor-based pagination with page_token
-     * Supports both Person and Company contact types
-     */
     static CRMConfig = {
-        // Clio contact types as returned by /contacts.json in the 'type' field
-        // 'Person' = individual contact, 'Company' = organization/business
         personObjectTypes: [
             { crmObjectName: 'Person', quoContactType: 'contact' },
             { crmObjectName: 'Company', quoContactType: 'company' },
@@ -94,20 +73,12 @@ class ClioIntegration extends BaseCRMIntegration {
         },
     };
 
-    /**
-     * Webhook configuration constants
-     * Used for webhook labels and identification in webhook processing
-     */
     static WEBHOOK_LABELS = {
         QUO_MESSAGES: 'Clio Integration - Messages',
         QUO_CALLS: 'Clio Integration - Calls',
         QUO_CALL_SUMMARIES: 'Clio Integration - Call Summaries',
     };
 
-    /**
-     * Webhook event subscriptions
-     * Defines which events each webhook type listens for
-     */
     static WEBHOOK_EVENTS = {
         CLIO: ['created', 'updated', 'deleted'],
         QUO_MESSAGES: [
@@ -143,72 +114,209 @@ class ClioIntegration extends BaseCRMIntegration {
         };
     }
 
-    // =========================================================================
-    // Abstract Methods from BaseCRMIntegration (to be implemented in future tasks)
-    // =========================================================================
+    static CONTACT_FIELDS =
+        'id,etag,name,first_name,middle_name,last_name,prefix,title,type,' +
+        'created_at,updated_at,is_client,primary_email_address,primary_phone_number,' +
+        'phone_numbers{id,number,name,default_number},' +
+        'email_addresses{id,address,name,default_email},' +
+        'company{id,name}';
 
-    /**
-     * Fetch a page of contacts from Clio
-     * @abstract
-     * @throws {Error} Not implemented - Task 2
-     */
-    async fetchPersonPage() {
-        throw new Error('ClioIntegration.fetchPersonPage() not implemented');
+    async fetchPersonPage({
+        objectType,
+        cursor = null,
+        limit,
+        modifiedSince,
+        sortDesc = true,
+    }) {
+        try {
+            const params = {
+                limit,
+                type: objectType,
+                fields: ClioIntegration.CONTACT_FIELDS,
+            };
+
+            if (cursor) {
+                if (cursor.startsWith('http')) {
+                    try {
+                        const cursorUrl = new URL(cursor);
+                        params.page_token = cursorUrl.searchParams.get('page_token');
+                    } catch {
+                        params.page_token = cursor;
+                    }
+                } else {
+                    params.page_token = cursor;
+                }
+            }
+
+            if (modifiedSince) {
+                params.updated_since = modifiedSince.toISOString();
+            }
+
+            params.order = sortDesc ? 'id(desc)' : 'id(asc)';
+
+            const response = await this.clio.api.listContacts(params);
+            const contacts = response.data || [];
+
+            let nextCursor = null;
+            if (response.meta?.paging?.next) {
+                try {
+                    const nextUrl = new URL(response.meta.paging.next);
+                    nextCursor = nextUrl.searchParams.get('page_token');
+                } catch {
+                    nextCursor = null;
+                }
+            }
+
+            console.log(
+                `[Clio] Fetched ${contacts.length} ${objectType}(s) at cursor ${cursor || 'start'}, ` +
+                    `hasMore=${!!nextCursor}`,
+            );
+
+            return {
+                data: contacts,
+                cursor: nextCursor,
+                hasMore: !!nextCursor,
+            };
+        } catch (error) {
+            console.error(
+                `[Clio] Error fetching ${objectType} at cursor ${cursor}:`,
+                error,
+            );
+            throw error;
+        }
     }
 
-    /**
-     * Transform a Clio contact to Quo format
-     * @abstract
-     * @throws {Error} Not implemented - Task 2
-     */
-    async transformPersonToQuo() {
-        throw new Error('ClioIntegration.transformPersonToQuo() not implemented');
+    async transformPersonToQuo(contact, companyMap = null) {
+        const isPerson = contact.type === 'Person';
+
+        let firstName;
+        let lastName;
+
+        if (isPerson) {
+            firstName = contact.middle_name
+                ? `${contact.first_name || ''} ${contact.middle_name}`.trim()
+                : contact.first_name || '';
+            lastName = contact.last_name || '';
+
+            if (!firstName && !lastName) {
+                firstName = 'Unknown';
+            }
+        } else {
+            firstName = contact.name || 'Unknown';
+            lastName = '';
+        }
+
+        const phoneNumbers = (contact.phone_numbers || [])
+            .filter((p) => p.number)
+            .map((p) => ({
+                name: this._capitalizeLabel(p.name) || 'Work',
+                value: p.number,
+                primary: p.default_number || false,
+            }));
+
+        const emails = (contact.email_addresses || [])
+            .filter((e) => e.address)
+            .map((e) => ({
+                name: this._capitalizeLabel(e.name) || 'Work',
+                value: e.address,
+                primary: e.default_email || false,
+            }));
+
+        let company = null;
+        if (isPerson && contact.company) {
+            if (contact.company.name) {
+                company = contact.company.name;
+            } else if (companyMap && companyMap.has(contact.company.id)) {
+                const companyData = companyMap.get(contact.company.id);
+                company = companyData?.name || null;
+            }
+        }
+
+        const sourceUrl = this._generateClioSourceUrl(contact.id);
+
+        return {
+            externalId: String(contact.id),
+            source: 'openphone-clio',
+            sourceUrl,
+            isEditable: false,
+            defaultFields: {
+                firstName,
+                lastName,
+                company,
+                role: contact.title || null,
+                phoneNumbers,
+                emails,
+            },
+            customFields: [],
+            sourceEntityType: isPerson ? 'person' : 'company',
+        };
     }
 
-    /**
-     * Log an SMS message to Clio as a Note
-     * @abstract
-     * @throws {Error} Not implemented - Task 5
-     */
+    async transformPersonsToQuo(contacts) {
+        if (!contacts || contacts.length === 0) {
+            return [];
+        }
+
+        const companyIds = new Set();
+        for (const contact of contacts) {
+            if (
+                contact.type === 'Person' &&
+                contact.company?.id &&
+                !contact.company?.name
+            ) {
+                companyIds.add(contact.company.id);
+            }
+        }
+
+        let companyMap = new Map();
+        if (companyIds.size > 0) {
+            console.log(
+                `[Clio] Pre-fetching ${companyIds.size} companies for batch transform`,
+            );
+
+            const companyPromises = [...companyIds].map(async (id) => {
+                try {
+                    const response = await this.clio.api.getContact(
+                        id,
+                        'id,name',
+                    );
+                    return { id, data: response.data };
+                } catch (error) {
+                    console.warn(
+                        `[Clio] Failed to fetch company ${id}:`,
+                        error.message,
+                    );
+                    return { id, data: null };
+                }
+            });
+
+            const companyResults = await Promise.all(companyPromises);
+            for (const { id, data } of companyResults) {
+                if (data) {
+                    companyMap.set(id, data);
+                }
+            }
+        }
+
+        return Promise.all(
+            contacts.map((contact) =>
+                this.transformPersonToQuo(contact, companyMap),
+            ),
+        );
+    }
+
     async logSMSToActivity() {
         throw new Error('ClioIntegration.logSMSToActivity() not implemented');
     }
 
-    /**
-     * Log a call to Clio as a Communication
-     * @abstract
-     * @throws {Error} Not implemented - Task 6
-     */
     async logCallToActivity() {
         throw new Error('ClioIntegration.logCallToActivity() not implemented');
     }
 
-    /**
-     * Set up webhooks for both Clio and Quo
-     * @abstract
-     * @throws {Error} Not implemented - Tasks 3/4
-     */
     async setupWebhooks() {
         throw new Error('ClioIntegration.setupWebhooks() not implemented');
     }
 
-    // =========================================================================
-    // Webhook Signature Verification
-    // =========================================================================
-
-    /**
-     * Verify Clio webhook signature
-     * Uses HMAC-SHA256 to verify the webhook payload against the stored secret
-     *
-     * Clio sends X-Hook-Signature header with HMAC-SHA256 signature
-     *
-     * @private
-     * @param {Object} params
-     * @param {string} params.signature - Signature from X-Hook-Signature header
-     * @param {string} params.payload - Raw webhook payload (stringified JSON)
-     * @param {string} params.secret - Stored webhook secret (shared during handshake)
-     * @returns {boolean} True if signature is valid
-     */
     _verifyWebhookSignature({ signature, payload, secret }) {
         if (!signature || !secret) {
             return false;
@@ -234,18 +342,6 @@ class ClioIntegration extends BaseCRMIntegration {
         }
     }
 
-    /**
-     * Verify Quo (OpenPhone) webhook signature
-     * Uses HMAC-SHA256 to verify the webhook payload
-     * Signature format: "hmac;version;timestamp;signature"
-     *
-     * @private
-     * @param {Object} headers - HTTP headers
-     * @param {Object} body - Webhook payload
-     * @param {string} eventType - Event type (e.g., "call.completed")
-     * @returns {Promise<void>}
-     * @throws {Error} If signature is invalid or missing
-     */
     async _verifyQuoWebhookSignature(headers, body, eventType) {
         const signatureHeader = headers['openphone-signature'];
 
@@ -330,18 +426,6 @@ class ClioIntegration extends BaseCRMIntegration {
         console.log('[Quo Webhook] Signature verified');
     }
 
-    // =========================================================================
-    // Route Handlers
-    // =========================================================================
-
-    /**
-     * List contacts from Clio
-     * Route: GET /clio/contacts
-     *
-     * @param {Object} params
-     * @param {Object} params.req - Express request
-     * @param {Object} params.res - Express response
-     */
     listContacts = async ({ req, res }) => {
         try {
             const { page_token } = req.query;
@@ -368,14 +452,6 @@ class ClioIntegration extends BaseCRMIntegration {
         }
     };
 
-    /**
-     * List matters from Clio
-     * Route: GET /clio/matters
-     *
-     * @param {Object} params
-     * @param {Object} params.req - Express request
-     * @param {Object} params.res - Express response
-     */
     listMatters = async ({ req, res }) => {
         try {
             const { page_token } = req.query;
@@ -402,65 +478,46 @@ class ClioIntegration extends BaseCRMIntegration {
         }
     };
 
-    // =========================================================================
-    // Webhook Handler
-    // =========================================================================
-
-    /**
-     * Main webhook handler
-     * Routes webhook events to appropriate handlers
-     *
-     * @param {Object} params
-     * @param {Object} params.data - Webhook payload
-     */
     onWebhook = async ({ data }) => {
-        // Log only event type and identifiers, not full payload (security)
         const eventType = data?.type || data?.event || 'unknown';
         const eventId = data?.id || data?.data?.id || 'unknown';
-        console.log(`[Clio] Webhook received: type=${eventType}, id=${eventId}`);
-
-        // TODO: Implement webhook routing in future tasks
-        // - Clio webhooks (contact created/updated/deleted)
-        // - Quo webhooks (calls, messages, call summaries)
+        console.log(
+            `[Clio] Webhook received: type=${eventType}, id=${eventId}`,
+        );
 
         throw new Error('ClioIntegration.onWebhook() not fully implemented');
     };
 
-    // =========================================================================
-    // Helper Methods
-    // =========================================================================
-
-    /**
-     * Normalize phone number for consistent matching
-     * Removes formatting characters while preserving E.164 format
-     *
-     * @private
-     * @param {string} phone - Phone number to normalize
-     * @returns {string} Normalized phone number
-     */
     _normalizePhoneNumber(phone) {
         if (!phone || typeof phone !== 'string') return phone;
         return phone.replace(/[\s\(\)\-]/g, '');
     }
 
-    /**
-     * Generate webhook URL with BASE_URL validation
-     *
-     * @private
-     * @param {string} path - Webhook path
-     * @returns {string} Complete webhook URL
-     * @throws {Error} If BASE_URL is not configured
-     */
     _generateWebhookUrl(path) {
         if (!process.env.BASE_URL) {
             throw new Error(
-                'BASE_URL environment variable is required for webhook setup. ' +
-                    'Please configure this in your deployment environment before enabling webhooks.',
+                'BASE_URL environment variable is required for webhook setup.',
             );
         }
 
         const integrationName = this.constructor.Definition.name;
         return `${process.env.BASE_URL}/api/${integrationName}-integration${path}`;
+    }
+
+    _capitalizeLabel(label) {
+        if (!label || typeof label !== 'string') {
+            return label;
+        }
+        return label.charAt(0).toUpperCase() + label.slice(1).toLowerCase();
+    }
+
+    _generateClioSourceUrl(contactId) {
+        const region = this.clio?.api?.region || 'us';
+        const baseUrl =
+            region === 'us'
+                ? 'https://app.clio.com'
+                : `https://${region}.app.clio.com`;
+        return `${baseUrl}/contacts/${contactId}`;
     }
 }
 
