@@ -293,7 +293,7 @@ export interface ClioWebhook {
     fields?: string;
     events: string[];
     model: string;
-    status: 'Active' | 'Suspended';
+    status: 'pending' | 'enabled' | 'suspended';
     expires_at: string;
     shared_secret?: string;
     created_at: string;
@@ -306,7 +306,7 @@ export interface CreateWebhookParams {
     events: string[];
     model: string;
     expires_at?: string;
-    status?: 'Active' | 'Suspended';
+    status?: 'pending' | 'enabled' | 'suspended';
 }
 
 export interface UpdateWebhookParams {
@@ -314,7 +314,7 @@ export interface UpdateWebhookParams {
     fields?: string;
     events?: string[];
     expires_at?: string;
-    status?: 'Active' | 'Suspended';
+    status?: 'pending' | 'enabled' | 'suspended';
 }
 
 // ==================== Custom Action Types (Click-to-Call) ====================

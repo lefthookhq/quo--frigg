@@ -19,6 +19,7 @@ declare module '@friggframework/core' {
 
         _get(options: any): Promise<any>;
         _post(options: any): Promise<any>;
+        _put(options: any): Promise<any>;
         _patch(options: any): Promise<any>;
         _delete(options: any): Promise<any>;
     }

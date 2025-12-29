@@ -687,16 +687,18 @@ describe('ClioIntegration', () => {
             );
         });
 
-        it('should throw NotImplemented for setupWebhooks', async () => {
-            await expect(integration.setupWebhooks()).rejects.toThrow(
-                'ClioIntegration.setupWebhooks() not implemented',
-            );
+        it('should throw error for unknown webhook source', async () => {
+            await expect(
+                integration.onWebhook({ data: { source: 'unknown' } }),
+            ).rejects.toThrow('Unknown webhook source: unknown');
         });
 
-        it('should throw NotImplemented for onWebhook', async () => {
-            await expect(
-                integration.onWebhook({ data: { type: 'test', id: '123' } }),
-            ).rejects.toThrow('ClioIntegration.onWebhook() not fully implemented');
+        it('should return pending status for Quo webhook source', async () => {
+            const result = await integration.onWebhook({
+                data: { source: 'quo' },
+            });
+            expect(result.success).toBe(false);
+            expect(result.reason).toBe('Quo webhooks pending implementation');
         });
     });
 
@@ -735,6 +737,462 @@ describe('ClioIntegration', () => {
             integration.clio = {};
             const result = await integration.transformPersonToQuo(mockClioContact.person);
             expect(result.sourceUrl).toBe('https://app.clio.com/contacts/123');
+        });
+    });
+
+    describe('Webhook Infrastructure', () => {
+        let mockCommands;
+        let mockUpdateIntegrationMessages;
+
+        beforeEach(() => {
+            mockCommands = {
+                updateIntegrationConfig: jest.fn().mockResolvedValue({}),
+            };
+            mockUpdateIntegrationMessages = {
+                execute: jest.fn().mockResolvedValue({}),
+            };
+            integration.commands = mockCommands;
+            integration.updateIntegrationMessages = mockUpdateIntegrationMessages;
+            integration.queueWebhook = jest.fn().mockResolvedValue({});
+        });
+
+        describe('setupWebhooks', () => {
+            it('should call setupClioWebhook and return pending_handshake status', async () => {
+                mockClioApi.api.createWebhook = jest.fn().mockResolvedValue({
+                    data: {
+                        id: 12345,
+                        etag: '"abc123"',
+                    },
+                });
+
+                const result = await integration.setupWebhooks();
+
+                expect(result.clio.status).toBe('pending_handshake');
+                expect(result.clio.webhookId).toBe(12345);
+                expect(result.quo.status).toBe('pending');
+                expect(result.overallStatus).toBe('success');
+            });
+
+            it('should handle setupClioWebhook failure gracefully', async () => {
+                mockClioApi.api.createWebhook = jest
+                    .fn()
+                    .mockRejectedValue(new Error('API Error'));
+
+                const result = await integration.setupWebhooks();
+
+                expect(result.clio.status).toBe('failed');
+                expect(result.clio.error).toBe('API Error');
+                expect(result.overallStatus).toBe('partial');
+                expect(mockUpdateIntegrationMessages.execute).toHaveBeenCalled();
+            });
+        });
+
+        describe('setupClioWebhook', () => {
+            it('should return already_configured when webhook exists', async () => {
+                integration.config = {
+                    clioWebhookId: 12345,
+                    clioWebhookSecret: 'secret',
+                    clioWebhookUrl: 'https://test.com/webhook',
+                    clioWebhookExpiresAt: new Date(
+                        Date.now() + 20 * 24 * 60 * 60 * 1000,
+                    ).toISOString(),
+                };
+
+                const result = await integration.setupClioWebhook();
+
+                expect(result.status).toBe('already_configured');
+                expect(result.webhookId).toBe(12345);
+            });
+
+            it('should trigger renewal when webhook expires in < 7 days', async () => {
+                const expiresIn5Days = new Date(
+                    Date.now() + 5 * 24 * 60 * 60 * 1000,
+                ).toISOString();
+                integration.config = {
+                    clioWebhookId: 12345,
+                    clioWebhookSecret: 'secret',
+                    clioWebhookUrl: 'https://test.com/webhook',
+                    clioWebhookExpiresAt: expiresIn5Days,
+                };
+
+                mockClioApi.api.updateWebhook = jest.fn().mockResolvedValue({
+                    data: { id: 12345 },
+                });
+
+                const result = await integration.setupClioWebhook();
+
+                expect(result.status).toBe('renewed');
+                expect(mockClioApi.api.updateWebhook).toHaveBeenCalled();
+            });
+
+            it('should create webhook and wait for handshake when not configured', async () => {
+                integration.config = {};
+                mockClioApi.api.createWebhook = jest.fn().mockResolvedValue({
+                    data: {
+                        id: 12345,
+                        etag: '"abc123"',
+                    },
+                });
+                mockClioApi.api.activateWebhook = jest.fn();
+
+                const result = await integration.setupClioWebhook();
+
+                expect(result.status).toBe('pending_handshake');
+                expect(result.webhookId).toBe(12345);
+                expect(mockClioApi.api.createWebhook).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        model: 'contact',
+                        events: ['created', 'updated', 'deleted'],
+                    }),
+                );
+                // activateWebhook should NOT be called here - it happens in handshake
+                expect(mockClioApi.api.activateWebhook).not.toHaveBeenCalled();
+                expect(mockCommands.updateIntegrationConfig).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        config: expect.objectContaining({
+                            clioWebhookId: 12345,
+                            clioWebhookSecret: null, // Will be set during handshake
+                            clioWebhookStatus: 'pending_handshake',
+                        }),
+                    }),
+                );
+            });
+
+            it('should clean up orphaned webhook before creating new one', async () => {
+                integration.config = {
+                    clioWebhookId: 99999,
+                };
+                mockClioApi.api.deleteWebhook = jest.fn().mockResolvedValue({});
+                mockClioApi.api.createWebhook = jest.fn().mockResolvedValue({
+                    data: {
+                        id: 12345,
+                        etag: '"abc123"',
+                    },
+                });
+
+                await integration.setupClioWebhook();
+
+                expect(mockClioApi.api.deleteWebhook).toHaveBeenCalledWith(99999);
+            });
+        });
+
+        describe('onWebhookReceived', () => {
+            it('should queue handshake POST with X-Hook-Secret header for processing', async () => {
+                integration.config = {
+                    clioWebhookId: 12345,
+                    clioWebhookStatus: 'pending_handshake',
+                };
+
+                const mockReq = {
+                    headers: { 'x-hook-secret': 'the-secret-from-clio' },
+                    body: { data: { webhook_id: 12345 } },
+                    params: { integrationId: 'test-id' },
+                };
+                const mockRes = {
+                    set: jest.fn(),
+                    status: jest.fn().mockReturnThis(),
+                    json: jest.fn(),
+                };
+
+                await integration.onWebhookReceived({ req: mockReq, res: mockRes });
+
+                // Should queue the handshake for processing in onWebhook
+                expect(integration.queueWebhook).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        body: mockReq.body,
+                        source: 'clio',
+                        isHandshake: true,
+                        hookSecret: 'the-secret-from-clio',
+                    }),
+                );
+                expect(mockRes.status).toHaveBeenCalledWith(200);
+                expect(mockRes.json).toHaveBeenCalledWith({
+                    received: true,
+                    handshake: true,
+                });
+            });
+
+            it('should reject webhooks without signature or secret', async () => {
+                const mockReq = {
+                    headers: {},
+                    body: { data: {} },
+                    params: { integrationId: 'test-id' },
+                };
+                const mockRes = {
+                    set: jest.fn(),
+                    status: jest.fn().mockReturnThis(),
+                    json: jest.fn(),
+                };
+
+                await integration.onWebhookReceived({ req: mockReq, res: mockRes });
+
+                expect(mockRes.status).toHaveBeenCalledWith(401);
+                expect(mockRes.json).toHaveBeenCalledWith({
+                    error: 'Signature required',
+                });
+            });
+
+            it('should queue webhook data with signature', async () => {
+                const mockReq = {
+                    headers: { 'x-hook-signature': 'valid-signature' },
+                    body: { data: { id: 123 }, meta: { event: 'created' } },
+                    params: { integrationId: 'test-id' },
+                };
+                const mockRes = {
+                    set: jest.fn(),
+                    status: jest.fn().mockReturnThis(),
+                    json: jest.fn(),
+                };
+
+                await integration.onWebhookReceived({ req: mockReq, res: mockRes });
+
+                expect(integration.queueWebhook).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        body: mockReq.body,
+                        source: 'clio',
+                        signature: 'valid-signature',
+                    }),
+                );
+                expect(mockRes.status).toHaveBeenCalledWith(200);
+            });
+        });
+
+        describe('_handleClioWebhook', () => {
+            beforeEach(() => {
+                mockQuoApi.api.createFriggContact = jest.fn().mockResolvedValue({});
+                mockQuoApi.api.updateFriggContact = jest.fn().mockResolvedValue({});
+                mockQuoApi.api.listContacts = jest
+                    .fn()
+                    .mockResolvedValue({ data: [{ id: 'quo-contact-123' }] });
+                mockQuoApi.api.deleteContact = jest.fn().mockResolvedValue({});
+            });
+
+            it('should process handshake and activate webhook', async () => {
+                integration.config = {
+                    clioWebhookId: 12345,
+                    clioWebhookStatus: 'pending_handshake',
+                };
+                mockClioApi.api.activateWebhook = jest.fn().mockResolvedValue({
+                    data: { id: 12345, status: 'enabled' },
+                });
+
+                const webhookData = {
+                    body: { data: { webhook_id: 12345 } },
+                    headers: {},
+                    isHandshake: true,
+                    hookSecret: 'the-secret-from-clio',
+                };
+
+                const result = await integration._handleClioWebhook(webhookData);
+
+                expect(result.success).toBe(true);
+                expect(result.type).toBe('handshake');
+                expect(mockClioApi.api.activateWebhook).toHaveBeenCalledWith(
+                    12345,
+                    'the-secret-from-clio',
+                );
+                expect(mockCommands.updateIntegrationConfig).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        config: expect.objectContaining({
+                            clioWebhookSecret: 'the-secret-from-clio',
+                            clioWebhookStatus: 'enabled',
+                        }),
+                    }),
+                );
+            });
+
+            it('should process created event', async () => {
+                integration.config = {};
+                const webhookData = {
+                    body: {
+                        data: mockClioContact.person,
+                        meta: { event: 'created', webhook_id: 12345 },
+                    },
+                    headers: {},
+                };
+
+                const result = await integration._handleClioWebhook(webhookData);
+
+                expect(result.success).toBe(true);
+                expect(result.event).toBe('created');
+                expect(mockQuoApi.api.createFriggContact).toHaveBeenCalled();
+            });
+
+            it('should process updated event', async () => {
+                integration.config = {};
+                const webhookData = {
+                    body: {
+                        data: mockClioContact.person,
+                        meta: { event: 'updated', webhook_id: 12345 },
+                    },
+                    headers: {},
+                };
+
+                const result = await integration._handleClioWebhook(webhookData);
+
+                expect(result.success).toBe(true);
+                expect(result.event).toBe('updated');
+                expect(mockQuoApi.api.listContacts).toHaveBeenCalled();
+                expect(mockQuoApi.api.updateFriggContact).toHaveBeenCalledWith(
+                    'quo-contact-123',
+                    expect.any(Object),
+                );
+            });
+
+            it('should process deleted event', async () => {
+                integration.config = {};
+                const webhookData = {
+                    body: {
+                        data: { id: 123 },
+                        meta: { event: 'deleted', webhook_id: 12345 },
+                    },
+                    headers: {},
+                };
+
+                const result = await integration._handleClioWebhook(webhookData);
+
+                expect(result.success).toBe(true);
+                expect(result.event).toBe('deleted');
+                expect(mockQuoApi.api.listContacts).toHaveBeenCalledWith({
+                    externalIds: ['123'],
+                });
+                expect(mockQuoApi.api.deleteContact).toHaveBeenCalledWith(
+                    'quo-contact-123',
+                );
+            });
+
+            it('should skip unhandled event types', async () => {
+                integration.config = {};
+                const webhookData = {
+                    body: {
+                        data: { id: 123 },
+                        meta: { event: 'unknown_event', webhook_id: 12345 },
+                    },
+                    headers: {},
+                };
+
+                const result = await integration._handleClioWebhook(webhookData);
+
+                expect(result.success).toBe(true);
+                expect(result.skipped).toBe(true);
+            });
+
+            it('should verify signature when secret is configured', async () => {
+                integration.config = {
+                    clioWebhookSecret: 'test-secret',
+                };
+                const webhookData = {
+                    body: {
+                        data: mockClioContact.person,
+                        meta: { event: 'created', webhook_id: 12345 },
+                    },
+                    headers: { 'x-hook-signature': 'invalid-sig' },
+                };
+
+                await expect(
+                    integration._handleClioWebhook(webhookData),
+                ).rejects.toThrow('Webhook signature verification failed');
+            });
+
+            it('should trigger renewal during processing when < 7 days remaining', async () => {
+                const expiresIn3Days = new Date(
+                    Date.now() + 3 * 24 * 60 * 60 * 1000,
+                ).toISOString();
+                integration.config = {
+                    clioWebhookId: 12345,
+                    clioWebhookExpiresAt: expiresIn3Days,
+                };
+                mockClioApi.api.updateWebhook = jest.fn().mockResolvedValue({
+                    data: { id: 12345 },
+                });
+
+                const webhookData = {
+                    body: {
+                        data: mockClioContact.person,
+                        meta: { event: 'created', webhook_id: 12345 },
+                    },
+                    headers: {},
+                };
+
+                await integration._handleClioWebhook(webhookData);
+
+                expect(mockClioApi.api.updateWebhook).toHaveBeenCalled();
+            });
+        });
+
+        describe('_handleContactDeleted', () => {
+            beforeEach(() => {
+                mockQuoApi.api.listContacts = jest
+                    .fn()
+                    .mockResolvedValue({ data: [{ id: 'quo-123' }] });
+                mockQuoApi.api.deleteContact = jest.fn().mockResolvedValue({});
+            });
+
+            it('should handle contact not found gracefully', async () => {
+                mockQuoApi.api.listContacts = jest
+                    .fn()
+                    .mockResolvedValue({ data: [] });
+
+                await expect(
+                    integration._handleContactDeleted(123),
+                ).resolves.not.toThrow();
+                expect(mockQuoApi.api.deleteContact).not.toHaveBeenCalled();
+            });
+
+            it('should handle 404 on delete gracefully', async () => {
+                mockQuoApi.api.listContacts = jest
+                    .fn()
+                    .mockResolvedValue({ data: [{ id: 'quo-123' }] });
+                const error = new Error('Contact not found');
+                error.status = 404;
+                mockQuoApi.api.deleteContact = jest.fn().mockRejectedValue(error);
+
+                await expect(
+                    integration._handleContactDeleted(123),
+                ).resolves.not.toThrow();
+            });
+
+            it('should rethrow non-404 errors', async () => {
+                mockQuoApi.api.listContacts = jest
+                    .fn()
+                    .mockResolvedValue({ data: [{ id: 'quo-123' }] });
+                const error = new Error('Server error');
+                error.status = 500;
+                mockQuoApi.api.deleteContact = jest.fn().mockRejectedValue(error);
+
+                await expect(integration._handleContactDeleted(123)).rejects.toThrow(
+                    'Server error',
+                );
+            });
+        });
+
+        describe('onDelete', () => {
+            it('should delete Clio webhook on integration deletion', async () => {
+                integration.config = { clioWebhookId: 12345 };
+                mockClioApi.api.deleteWebhook = jest.fn().mockResolvedValue({});
+
+                await integration.onDelete();
+
+                expect(mockClioApi.api.deleteWebhook).toHaveBeenCalledWith(12345);
+            });
+
+            it('should handle webhook deletion error gracefully', async () => {
+                integration.config = { clioWebhookId: 12345 };
+                mockClioApi.api.deleteWebhook = jest
+                    .fn()
+                    .mockRejectedValue(new Error('API Error'));
+
+                await expect(integration.onDelete()).resolves.not.toThrow();
+            });
+
+            it('should skip deletion when no webhook configured', async () => {
+                integration.config = {};
+                mockClioApi.api.deleteWebhook = jest.fn();
+
+                await integration.onDelete();
+
+                expect(mockClioApi.api.deleteWebhook).not.toHaveBeenCalled();
+            });
         });
     });
 });
