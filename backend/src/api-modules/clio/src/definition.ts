@@ -44,18 +44,13 @@ const Definition: FriggModuleAuthDefinition = {
             };
         },
 
-        getToken: async (
-            api: Api,
-            params: { data: { code: string; region?: ClioRegion } },
-        ) => {
-            const code = get(params.data, 'code');
-            const region = get(params.data, 'region', 'us') as ClioRegion;
+        getToken: async (api: Api, params: { code: string }) => {
+            const code = get(params, 'code');
 
             if (!code) {
                 throw new Error('Authorization code is required');
             }
 
-            api.setRegion(region);
             try {
                 return await api.getTokenFromCode(code);
             } catch (error: any) {

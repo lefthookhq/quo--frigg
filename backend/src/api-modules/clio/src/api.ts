@@ -46,12 +46,14 @@ const REGION_AUTH_URLS: Record<ClioRegion, string> = {
 
 const API_VERSION = '4.0.12';
 
-interface RequestOptions {
-    url: string;
-    headers?: Record<string, string>;
-    query?: Record<string, any>;
-    body?: any;
-}
+const CLIO_HEADERS = {
+    'X-API-VERSION': API_VERSION,
+};
+
+const CLIO_HEADERS_JSON = {
+    ...CLIO_HEADERS,
+    'Content-Type': 'application/json',
+};
 
 export class Api extends OAuth2Requester {
     region: ClioRegion;
@@ -137,45 +139,16 @@ export class Api extends OAuth2Requester {
         this.tokenUri = `${authUrl}/oauth/token`;
     }
 
-    /**
-     * Override to add Clio-specific headers
-     */
-    private addClioHeaders(options: RequestOptions): RequestOptions {
-        const headers = {
-            'X-API-VERSION': API_VERSION,
-            Accept: 'application/json',
-            'Content-Type': 'application/json',
-            ...(options.headers || {}),
-        };
-        return { ...options, headers };
-    }
-
-    async _get(options: RequestOptions): Promise<any> {
-        return super._get(this.addClioHeaders(options));
-    }
-
-    async _post(options: RequestOptions): Promise<any> {
-        return super._post(this.addClioHeaders(options));
-    }
-
-    async _patch(options: RequestOptions): Promise<any> {
-        return super._patch(this.addClioHeaders(options));
-    }
-
-    async _delete(options: RequestOptions): Promise<any> {
-        return super._delete(this.addClioHeaders(options));
-    }
-
     // ==================== User ====================
 
     /**
      * Get current authenticated user info
      */
     async getUser(): Promise<ClioResponse<ClioUser>> {
-        const options: RequestOptions = {
+        return this._get({
             url: this.baseUrl + this.URLs.whoAmI,
-        };
-        return this._get(options);
+            headers: CLIO_HEADERS,
+        });
     }
 
     // ==================== Contacts ====================
@@ -186,13 +159,11 @@ export class Api extends OAuth2Requester {
     async listContacts(
         params?: ListContactsParams,
     ): Promise<ClioResponse<ClioContact[]>> {
-        const options: RequestOptions = {
+        return this._get({
             url: this.baseUrl + this.URLs.contacts,
-        };
-        if (params && Object.keys(params).length > 0) {
-            options.query = params;
-        }
-        return this._get(options);
+            headers: CLIO_HEADERS,
+            ...(params && Object.keys(params).length > 0 && { query: params }),
+        });
     }
 
     /**
@@ -202,13 +173,11 @@ export class Api extends OAuth2Requester {
         contactId: number | string,
         fields?: string,
     ): Promise<ClioResponse<ClioContact>> {
-        const options: RequestOptions = {
+        return this._get({
             url: this.baseUrl + this.URLs.contactById(contactId),
-        };
-        if (fields) {
-            options.query = { fields };
-        }
-        return this._get(options);
+            headers: CLIO_HEADERS,
+            ...(fields && { query: { fields } }),
+        });
     }
 
     /**
@@ -218,13 +187,11 @@ export class Api extends OAuth2Requester {
         contactId: number | string,
         params?: ListPhoneNumbersParams,
     ): Promise<ClioResponse<ClioPhoneNumber[]>> {
-        const options: RequestOptions = {
+        return this._get({
             url: this.baseUrl + this.URLs.contactPhoneNumbers(contactId),
-        };
-        if (params && Object.keys(params).length > 0) {
-            options.query = params;
-        }
-        return this._get(options);
+            headers: CLIO_HEADERS,
+            ...(params && Object.keys(params).length > 0 && { query: params }),
+        });
     }
 
     /**
@@ -234,13 +201,11 @@ export class Api extends OAuth2Requester {
         contactId: number | string,
         params?: ListEmailAddressesParams,
     ): Promise<ClioResponse<ClioEmailAddress[]>> {
-        const options: RequestOptions = {
+        return this._get({
             url: this.baseUrl + this.URLs.contactEmailAddresses(contactId),
-        };
-        if (params && Object.keys(params).length > 0) {
-            options.query = params;
-        }
-        return this._get(options);
+            headers: CLIO_HEADERS,
+            ...(params && Object.keys(params).length > 0 && { query: params }),
+        });
     }
 
     // ==================== Notes ====================
@@ -251,13 +216,11 @@ export class Api extends OAuth2Requester {
     async listNotes(
         params?: ListNotesParams,
     ): Promise<ClioResponse<ClioNote[]>> {
-        const options: RequestOptions = {
+        return this._get({
             url: this.baseUrl + this.URLs.notes,
-        };
-        if (params && Object.keys(params).length > 0) {
-            options.query = params;
-        }
-        return this._get(options);
+            headers: CLIO_HEADERS,
+            ...(params && Object.keys(params).length > 0 && { query: params }),
+        });
     }
 
     /**
@@ -267,13 +230,11 @@ export class Api extends OAuth2Requester {
         noteId: number | string,
         fields?: string,
     ): Promise<ClioResponse<ClioNote>> {
-        const options: RequestOptions = {
+        return this._get({
             url: this.baseUrl + this.URLs.noteById(noteId),
-        };
-        if (fields) {
-            options.query = { fields };
-        }
-        return this._get(options);
+            headers: CLIO_HEADERS,
+            ...(fields && { query: { fields } }),
+        });
     }
 
     /**
@@ -282,11 +243,11 @@ export class Api extends OAuth2Requester {
     async createNote(
         params: CreateNoteParams,
     ): Promise<ClioResponse<ClioNote>> {
-        const options: RequestOptions = {
+        return this._post({
             url: this.baseUrl + this.URLs.notes,
+            headers: CLIO_HEADERS_JSON,
             body: { data: params },
-        };
-        return this._post(options);
+        });
     }
 
     /**
@@ -296,21 +257,21 @@ export class Api extends OAuth2Requester {
         noteId: number | string,
         params: UpdateNoteParams,
     ): Promise<ClioResponse<ClioNote>> {
-        const options: RequestOptions = {
+        return this._patch({
             url: this.baseUrl + this.URLs.noteById(noteId),
+            headers: CLIO_HEADERS_JSON,
             body: { data: params },
-        };
-        return this._patch(options);
+        });
     }
 
     /**
      * Delete a note
      */
     async deleteNote(noteId: number | string): Promise<void> {
-        const options: RequestOptions = {
+        return this._delete({
             url: this.baseUrl + this.URLs.noteById(noteId),
-        };
-        return this._delete(options);
+            headers: CLIO_HEADERS,
+        });
     }
 
     // ==================== Communications (Call Logging) ====================
@@ -321,13 +282,11 @@ export class Api extends OAuth2Requester {
     async listCommunications(
         params?: ListCommunicationsParams,
     ): Promise<ClioResponse<ClioCommunication[]>> {
-        const options: RequestOptions = {
+        return this._get({
             url: this.baseUrl + this.URLs.communications,
-        };
-        if (params && Object.keys(params).length > 0) {
-            options.query = params;
-        }
-        return this._get(options);
+            headers: CLIO_HEADERS,
+            ...(params && Object.keys(params).length > 0 && { query: params }),
+        });
     }
 
     /**
@@ -337,13 +296,11 @@ export class Api extends OAuth2Requester {
         communicationId: number | string,
         fields?: string,
     ): Promise<ClioResponse<ClioCommunication>> {
-        const options: RequestOptions = {
+        return this._get({
             url: this.baseUrl + this.URLs.communicationById(communicationId),
-        };
-        if (fields) {
-            options.query = { fields };
-        }
-        return this._get(options);
+            headers: CLIO_HEADERS,
+            ...(fields && { query: { fields } }),
+        });
     }
 
     /**
@@ -352,11 +309,11 @@ export class Api extends OAuth2Requester {
     async createCommunication(
         params: CreateCommunicationParams,
     ): Promise<ClioResponse<ClioCommunication>> {
-        const options: RequestOptions = {
+        return this._post({
             url: this.baseUrl + this.URLs.communications,
+            headers: CLIO_HEADERS_JSON,
             body: { data: params },
-        };
-        return this._post(options);
+        });
     }
 
     /**
@@ -366,21 +323,21 @@ export class Api extends OAuth2Requester {
         communicationId: number | string,
         params: UpdateCommunicationParams,
     ): Promise<ClioResponse<ClioCommunication>> {
-        const options: RequestOptions = {
+        return this._patch({
             url: this.baseUrl + this.URLs.communicationById(communicationId),
+            headers: CLIO_HEADERS_JSON,
             body: { data: params },
-        };
-        return this._patch(options);
+        });
     }
 
     /**
      * Delete a communication
      */
     async deleteCommunication(communicationId: number | string): Promise<void> {
-        const options: RequestOptions = {
+        return this._delete({
             url: this.baseUrl + this.URLs.communicationById(communicationId),
-        };
-        return this._delete(options);
+            headers: CLIO_HEADERS,
+        });
     }
 
     // ==================== Webhooks ====================
@@ -391,13 +348,11 @@ export class Api extends OAuth2Requester {
     async listWebhooks(
         params?: ListWebhooksParams,
     ): Promise<ClioResponse<ClioWebhook[]>> {
-        const options: RequestOptions = {
+        return this._get({
             url: this.baseUrl + this.URLs.webhooks,
-        };
-        if (params && Object.keys(params).length > 0) {
-            options.query = params;
-        }
-        return this._get(options);
+            headers: CLIO_HEADERS,
+            ...(params && Object.keys(params).length > 0 && { query: params }),
+        });
     }
 
     /**
@@ -407,13 +362,11 @@ export class Api extends OAuth2Requester {
         webhookId: number | string,
         fields?: string,
     ): Promise<ClioResponse<ClioWebhook>> {
-        const options: RequestOptions = {
+        return this._get({
             url: this.baseUrl + this.URLs.webhookById(webhookId),
-        };
-        if (fields) {
-            options.query = { fields };
-        }
-        return this._get(options);
+            headers: CLIO_HEADERS,
+            ...(fields && { query: { fields } }),
+        });
     }
 
     /**
@@ -422,11 +375,11 @@ export class Api extends OAuth2Requester {
     async createWebhook(
         params: CreateWebhookParams,
     ): Promise<ClioResponse<ClioWebhook>> {
-        const options: RequestOptions = {
+        return this._post({
             url: this.baseUrl + this.URLs.webhooks,
+            headers: CLIO_HEADERS_JSON,
             body: { data: params },
-        };
-        return this._post(options);
+        });
     }
 
     /**
@@ -436,21 +389,21 @@ export class Api extends OAuth2Requester {
         webhookId: number | string,
         params: UpdateWebhookParams,
     ): Promise<ClioResponse<ClioWebhook>> {
-        const options: RequestOptions = {
+        return this._patch({
             url: this.baseUrl + this.URLs.webhookById(webhookId),
+            headers: CLIO_HEADERS_JSON,
             body: { data: params },
-        };
-        return this._patch(options);
+        });
     }
 
     /**
      * Delete a webhook
      */
     async deleteWebhook(webhookId: number | string): Promise<void> {
-        const options: RequestOptions = {
+        return this._delete({
             url: this.baseUrl + this.URLs.webhookById(webhookId),
-        };
-        return this._delete(options);
+            headers: CLIO_HEADERS,
+        });
     }
 
     /**
@@ -493,13 +446,11 @@ export class Api extends OAuth2Requester {
     async listCustomActions(
         params?: ListCustomActionsParams,
     ): Promise<ClioResponse<ClioCustomAction[]>> {
-        const options: RequestOptions = {
+        return this._get({
             url: this.baseUrl + this.URLs.customActions,
-        };
-        if (params && Object.keys(params).length > 0) {
-            options.query = params;
-        }
-        return this._get(options);
+            headers: CLIO_HEADERS,
+            ...(params && Object.keys(params).length > 0 && { query: params }),
+        });
     }
 
     /**
@@ -509,13 +460,11 @@ export class Api extends OAuth2Requester {
         customActionId: number | string,
         fields?: string,
     ): Promise<ClioResponse<ClioCustomAction>> {
-        const options: RequestOptions = {
+        return this._get({
             url: this.baseUrl + this.URLs.customActionById(customActionId),
-        };
-        if (fields) {
-            options.query = { fields };
-        }
-        return this._get(options);
+            headers: CLIO_HEADERS,
+            ...(fields && { query: { fields } }),
+        });
     }
 
     /**
@@ -524,21 +473,21 @@ export class Api extends OAuth2Requester {
     async createCustomAction(
         params: CreateCustomActionParams,
     ): Promise<ClioResponse<ClioCustomAction>> {
-        const options: RequestOptions = {
+        return this._post({
             url: this.baseUrl + this.URLs.customActions,
+            headers: CLIO_HEADERS_JSON,
             body: { data: params },
-        };
-        return this._post(options);
+        });
     }
 
     /**
      * Delete a custom action
      */
     async deleteCustomAction(customActionId: number | string): Promise<void> {
-        const options: RequestOptions = {
+        return this._delete({
             url: this.baseUrl + this.URLs.customActionById(customActionId),
-        };
-        return this._delete(options);
+            headers: CLIO_HEADERS,
+        });
     }
 
     /**
@@ -571,13 +520,11 @@ export class Api extends OAuth2Requester {
     async listMatters(
         params?: ListMattersParams,
     ): Promise<ClioResponse<ClioMatter[]>> {
-        const options: RequestOptions = {
+        return this._get({
             url: this.baseUrl + this.URLs.matters,
-        };
-        if (params && Object.keys(params).length > 0) {
-            options.query = params;
-        }
-        return this._get(options);
+            headers: CLIO_HEADERS,
+            ...(params && Object.keys(params).length > 0 && { query: params }),
+        });
     }
 
     /**
@@ -587,13 +534,11 @@ export class Api extends OAuth2Requester {
         matterId: number | string,
         fields?: string,
     ): Promise<ClioResponse<ClioMatter>> {
-        const options: RequestOptions = {
+        return this._get({
             url: this.baseUrl + this.URLs.matterById(matterId),
-        };
-        if (fields) {
-            options.query = { fields };
-        }
-        return this._get(options);
+            headers: CLIO_HEADERS,
+            ...(fields && { query: { fields } }),
+        });
     }
 
     /**
@@ -603,13 +548,11 @@ export class Api extends OAuth2Requester {
         matterId: number | string,
         params?: ListContactsParams,
     ): Promise<ClioResponse<ClioContact[]>> {
-        const options: RequestOptions = {
+        return this._get({
             url: this.baseUrl + this.URLs.matterContacts(matterId),
-        };
-        if (params && Object.keys(params).length > 0) {
-            options.query = params;
-        }
-        return this._get(options);
+            headers: CLIO_HEADERS,
+            ...(params && Object.keys(params).length > 0 && { query: params }),
+        });
     }
 
     // ==================== Pagination Helpers ====================
