@@ -481,7 +481,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 done: 1,
                 note: activity.summary || 'Phone call',
                 participants: [{ person_id: person.data.id, primary: true }],
-                duration: Math.floor(activity.duration / 60),
+                duration: activity.duration
+                    ? Math.floor(activity.duration / 60) || undefined
+                    : undefined,
             };
 
             await this.pipedrive.api.createActivity(activityData);

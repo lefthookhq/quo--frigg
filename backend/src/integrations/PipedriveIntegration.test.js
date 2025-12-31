@@ -471,6 +471,37 @@ describe('PipedriveIntegration (Refactored)', () => {
                     duration: 5,
                 });
             });
+
+            it('should set duration to undefined for calls under 60 seconds', async () => {
+                const mockPerson = {
+                    data: { id: 123, first_name: 'John', last_name: 'Doe' },
+                };
+                mockPipedriveApi.api.getPerson.mockResolvedValue(mockPerson);
+                mockPipedriveApi.api.createActivity.mockResolvedValue({
+                    data: { id: 456 },
+                });
+
+                const activity = {
+                    contactExternalId: '123',
+                    direction: 'outbound',
+                    duration: 13,
+                    summary: 'Quick call',
+                    timestamp: '2025-01-10T15:30:00Z',
+                };
+
+                await integration.logCallToActivity(activity);
+
+                expect(
+                    mockPipedriveApi.api.createActivity,
+                ).toHaveBeenCalledWith({
+                    subject: 'Call: outbound (13s)',
+                    type: 'call',
+                    done: 1,
+                    note: 'Quick call',
+                    participants: [{ person_id: 123, primary: true }],
+                    duration: undefined,
+                });
+            });
         });
 
         describe('setupWebhooks', () => {
