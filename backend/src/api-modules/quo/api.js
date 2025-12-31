@@ -13,13 +13,24 @@ class Api extends ApiKeyRequester {
             process.env.QUO_ANALYTICS_BASE_URL ||
             'https://integration.openphone.dev';
 
-        // Set the API key header name (parent class uses api_key_name)
         this.api_key_name = 'Authorization';
+        this._initializeUrls();
 
         if (params.api_key) {
             this.setApiKey(params.api_key);
         }
+    }
 
+    /**
+     * Override setApiKey to store the API key
+     * @param {string} apiKey - The API key
+     */
+    setApiKey(apiKey) {
+        // Store the key (ApiKeyRequester uses this.api_key for requests)
+        this.api_key = apiKey;
+    }
+
+    _initializeUrls() {
         this.URLs = {
             // Call endpoints
             calls: '/v1/calls',
@@ -69,8 +80,7 @@ class Api extends ApiKeyRequester {
 
     /**
      * Backward compatibility getter for API_KEY_VALUE
-     * The frigg framework's ApiKeyRequester uses api_key (snake_case),
-     * but definition.js expects API_KEY_VALUE for getCredentialDetails
+     * Returns the API key for getCredentialDetails
      * @returns {string|null} The API key value
      */
     get API_KEY_VALUE() {
