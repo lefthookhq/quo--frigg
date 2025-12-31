@@ -69,6 +69,7 @@ export class Api extends OAuth2Requester {
         communicationById: (id: number | string) => string;
         webhooks: string;
         webhookById: (id: number | string) => string;
+        webhookActivate: (id: number | string) => string;
         customActions: string;
         customActionById: (id: number | string) => string;
         matters: string;
@@ -97,6 +98,8 @@ export class Api extends OAuth2Requester {
                 `/communications/${id}.json`,
             webhooks: '/webhooks.json',
             webhookById: (id: number | string) => `/webhooks/${id}.json`,
+            webhookActivate: (id: number | string) =>
+                `/webhooks/${id}/activate`,
             customActions: '/custom_actions.json',
             customActionById: (id: number | string) =>
                 `/custom_actions/${id}.json`,
@@ -370,7 +373,9 @@ export class Api extends OAuth2Requester {
     }
 
     /**
-     * Create a new webhook
+     * Create a new webhook.
+     * Note: The shared_secret is NOT returned in this response.
+     * Clio will POST the secret to the webhook URL with X-Hook-Secret header.
      */
     async createWebhook(
         params: CreateWebhookParams,
@@ -393,6 +398,26 @@ export class Api extends OAuth2Requester {
             url: this.baseUrl + this.URLs.webhookById(webhookId),
             headers: CLIO_HEADERS_JSON,
             body: { data: params },
+        });
+    }
+
+    /**
+     * Activate a webhook using the shared secret
+     * Must be called after createWebhook to complete the handshake
+     * @param webhookId - The webhook ID from createWebhook response
+     * @param sharedSecret - The shared_secret from createWebhook response
+     */
+    async activateWebhook(
+        webhookId: number | string,
+        sharedSecret: string,
+    ): Promise<ClioResponse<ClioWebhook>> {
+        return this._put({
+            url: this.baseUrl + this.URLs.webhookActivate(webhookId),
+            headers: {
+                ...CLIO_HEADERS_JSON,
+                'X-Hook-Secret': sharedSecret,
+            },
+            body: { data: {} },
         });
     }
 
