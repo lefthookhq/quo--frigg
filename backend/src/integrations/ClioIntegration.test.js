@@ -764,12 +764,13 @@ describe('ClioIntegration', () => {
             ).rejects.toThrow('Unknown webhook source: unknown');
         });
 
-        it('should return pending status for Quo webhook source', async () => {
+        it('should return skipped status for Quo webhook source (stub)', async () => {
             const result = await integration.onWebhook({
-                data: { source: 'quo' },
+                data: { source: 'quo', body: { type: 'call.completed' } },
             });
-            expect(result.success).toBe(false);
-            expect(result.reason).toBe('Quo webhooks pending implementation');
+            expect(result.success).toBe(true);
+            expect(result.skipped).toBe(true);
+            expect(result.reason).toBe('Quo webhook processing pending implementation');
         });
     });
 
@@ -847,7 +848,7 @@ describe('ClioIntegration', () => {
         });
 
         describe('setupWebhooks', () => {
-            it('should call setupClioWebhook and return pending_handshake status', async () => {
+            it('should call setupClioWebhook and setupQuoWebhook', async () => {
                 mockClioApi.api.createWebhook = jest.fn().mockResolvedValue({
                     data: {
                         id: 12345,
@@ -855,12 +856,21 @@ describe('ClioIntegration', () => {
                     },
                 });
 
+                // Mock setupQuoWebhook to return configured status
+                integration.setupQuoWebhook = jest.fn().mockResolvedValue({
+                    status: 'configured',
+                    messageWebhookId: 'msg-wh-123',
+                    callWebhookId: 'call-wh-123',
+                    callSummaryWebhookId: 'summary-wh-123',
+                });
+
                 const result = await integration.setupWebhooks();
 
                 expect(result.clio.status).toBe('pending_handshake');
                 expect(result.clio.webhookId).toBe(12345);
-                expect(result.quo.status).toBe('pending');
+                expect(result.quo.status).toBe('configured');
                 expect(result.overallStatus).toBe('success');
+                expect(integration.setupQuoWebhook).toHaveBeenCalled();
             });
 
             it('should handle setupClioWebhook failure gracefully', async () => {
