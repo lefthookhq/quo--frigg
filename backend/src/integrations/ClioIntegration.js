@@ -343,11 +343,27 @@ class ClioIntegration extends BaseCRMIntegration {
             results.overallStatus = 'partial';
         }
 
-        // TODO: Add Quo webhook setup in ticket 86ae3cum3
-        results.quo = {
-            status: 'pending',
-            note: 'Quo webhooks implementation in separate ticket',
-        };
+        try {
+            results.quo = await this.setupQuoWebhook();
+            console.log('[Webhook Setup] ✓ Quo webhooks configured');
+        } catch (error) {
+            results.quo = { status: 'failed', error: error.message };
+            console.error(
+                '[Webhook Setup] ✗ Quo webhook setup failed:',
+                error.message,
+            );
+
+            if (this.id) {
+                await this.updateIntegrationMessages.execute(
+                    this.id,
+                    'warnings',
+                    'Quo Webhook Setup Failed',
+                    `Could not register webhooks with Quo: ${error.message}. Call and message logging will not work.`,
+                    Date.now(),
+                );
+            }
+            results.overallStatus = 'partial';
+        }
 
         return results;
     }
@@ -480,12 +496,197 @@ class ClioIntegration extends BaseCRMIntegration {
         };
     }
 
+    async setupQuoWebhook() {
+        const createdWebhooks = [];
+
+        try {
+            // Check if already configured
+            if (
+                this.config?.quoMessageWebhookId &&
+                this.config?.quoCallWebhookId &&
+                this.config?.quoCallSummaryWebhookId
+            ) {
+                console.log(
+                    `[Quo] Webhooks already registered: message=${this.config.quoMessageWebhookId}, call=${this.config.quoCallWebhookId}, callSummary=${this.config.quoCallSummaryWebhookId}`,
+                );
+                return {
+                    status: 'already_configured',
+                    messageWebhookId: this.config.quoMessageWebhookId,
+                    callWebhookId: this.config.quoCallWebhookId,
+                    callSummaryWebhookId: this.config.quoCallSummaryWebhookId,
+                    webhookUrl: this.config.quoWebhooksUrl,
+                };
+            }
+
+            // Check for partial configuration (recovery scenario)
+            const hasPartialConfig =
+                this.config?.quoMessageWebhookId ||
+                this.config?.quoCallWebhookId ||
+                this.config?.quoCallSummaryWebhookId;
+
+            if (hasPartialConfig) {
+                console.warn(
+                    '[Quo] Partial webhook configuration detected - cleaning up before retry',
+                );
+
+                // Clean up orphaned message webhook
+                if (this.config?.quoMessageWebhookId) {
+                    try {
+                        await this.quo.api.deleteWebhook(
+                            this.config.quoMessageWebhookId,
+                        );
+                        console.log(
+                            `[Quo] Cleaned up orphaned message webhook: ${this.config.quoMessageWebhookId}`,
+                        );
+                    } catch (cleanupError) {
+                        console.warn(
+                            `[Quo] Could not clean up message webhook (may have been deleted): ${cleanupError.message}`,
+                        );
+                    }
+                }
+
+                // Clean up orphaned call webhook
+                if (this.config?.quoCallWebhookId) {
+                    try {
+                        await this.quo.api.deleteWebhook(
+                            this.config.quoCallWebhookId,
+                        );
+                        console.log(
+                            `[Quo] Cleaned up orphaned call webhook: ${this.config.quoCallWebhookId}`,
+                        );
+                    } catch (cleanupError) {
+                        console.warn(
+                            `[Quo] Could not clean up call webhook (may have been deleted): ${cleanupError.message}`,
+                        );
+                    }
+                }
+
+                // Clean up orphaned call summary webhook
+                if (this.config?.quoCallSummaryWebhookId) {
+                    try {
+                        await this.quo.api.deleteWebhook(
+                            this.config.quoCallSummaryWebhookId,
+                        );
+                        console.log(
+                            `[Quo] Cleaned up orphaned call-summary webhook: ${this.config.quoCallSummaryWebhookId}`,
+                        );
+                    } catch (cleanupError) {
+                        console.warn(
+                            `[Quo] Could not clean up call-summary webhook (may have been deleted): ${cleanupError.message}`,
+                        );
+                    }
+                }
+            }
+
+            const webhookUrl = this._generateWebhookUrl(`/webhooks/${this.id}`);
+
+            console.log(
+                `[Quo] Registering message and call webhooks at: ${webhookUrl}`,
+            );
+
+            // STEP 1: Fetch phone numbers and store IDs in config
+            console.log('[Quo] Fetching phone numbers for webhook filtering');
+            await this._fetchAndStoreEnabledPhoneIds();
+
+            // STEP 2: Create webhooks with phone number IDs as resourceIds
+            const {
+                messageWebhookId,
+                messageWebhookKey,
+                callWebhookId,
+                callWebhookKey,
+                callSummaryWebhookId,
+                callSummaryWebhookKey,
+            } = await this._createQuoWebhooksWithPhoneIds(webhookUrl);
+
+            // Track created webhooks for rollback
+            createdWebhooks.push(
+                { type: 'message', id: messageWebhookId },
+                { type: 'call', id: callWebhookId },
+                { type: 'callSummary', id: callSummaryWebhookId },
+            );
+
+            console.log(
+                `[Quo] ✓ All webhooks registered with phone number filtering`,
+            );
+
+            // STEP 3: Save config atomically (only after all webhooks created)
+            const updatedConfig = {
+                ...this.config,
+                quoMessageWebhookId: messageWebhookId,
+                quoMessageWebhookKey: messageWebhookKey,
+                quoCallWebhookId: callWebhookId,
+                quoCallWebhookKey: callWebhookKey,
+                quoCallSummaryWebhookId: callSummaryWebhookId,
+                quoCallSummaryWebhookKey: callSummaryWebhookKey,
+                quoWebhooksUrl: webhookUrl,
+                quoWebhooksCreatedAt: new Date().toISOString(),
+            };
+
+            await this.commands.updateIntegrationConfig({
+                integrationId: this.id,
+                config: updatedConfig,
+            });
+
+            this.config = updatedConfig;
+
+            console.log(`[Quo] ✓ Keys stored securely (encrypted at rest)`);
+
+            return {
+                status: 'configured',
+                messageWebhookId,
+                callWebhookId,
+                callSummaryWebhookId,
+                webhookUrl,
+            };
+        } catch (error) {
+            console.error('[Quo] Failed to setup webhooks:', error);
+
+            // Rollback: Delete any webhooks that were created
+            if (createdWebhooks.length > 0) {
+                console.warn(
+                    `[Quo] Rolling back ${createdWebhooks.length} created webhook(s)`,
+                );
+
+                for (const webhook of createdWebhooks) {
+                    try {
+                        await this.quo.api.deleteWebhook(webhook.id);
+                        console.log(
+                            `[Quo] ✓ Rolled back ${webhook.type} webhook ${webhook.id}`,
+                        );
+                    } catch (rollbackError) {
+                        console.error(
+                            `[Quo] Failed to rollback ${webhook.type} webhook ${webhook.id}:`,
+                            rollbackError.message,
+                        );
+                    }
+                }
+            }
+
+            // Log error to integration messages for user visibility
+            if (this.id) {
+                await this.updateIntegrationMessages.execute(
+                    this.id,
+                    'errors',
+                    'Quo Webhook Setup Failed',
+                    `Failed to register Quo webhooks: ${error.message}`,
+                    Date.now(),
+                );
+            }
+
+            return {
+                status: 'failed',
+                error: error.message,
+            };
+        }
+    }
+
     async onWebhookReceived({ req, res }) {
         try {
             const hookSecret = req.headers['x-hook-secret'];
             const clioSignature = req.headers['x-hook-signature'];
+            const quoSignature = req.headers['openphone-signature'];
 
-            // Handle handshake POST from Clio (delayed option)
+            // Handle Clio handshake POST (delayed option)
             // Clio sends X-Hook-Secret header when setting up webhook
             // Queue it for processing in onWebhook where we have full context
             if (hookSecret) {
@@ -508,10 +709,14 @@ class ClioIntegration extends BaseCRMIntegration {
                 return;
             }
 
-            // Regular webhook - verify signature exists
-            if (!clioSignature) {
+            // Determine webhook source based on signature header
+            const source = quoSignature ? 'quo' : 'clio';
+            const signature = quoSignature || clioSignature;
+
+            // Verify signature exists (except for Quo which doesn't support signatures yet)
+            if (!signature && source !== 'quo') {
                 console.error(
-                    '[Clio Webhook] Missing signature header - rejecting',
+                    `[${source === 'quo' ? 'Quo' : 'Clio'} Webhook] Missing signature header - rejecting`,
                 );
                 res.status(401).json({ error: 'Signature required' });
                 return;
@@ -521,8 +726,8 @@ class ClioIntegration extends BaseCRMIntegration {
                 body: req.body,
                 headers: req.headers,
                 integrationId: req.params.integrationId,
-                signature: clioSignature,
-                source: 'clio',
+                signature: signature,
+                source: source,
                 receivedAt: new Date().toISOString(),
             };
 
@@ -530,7 +735,7 @@ class ClioIntegration extends BaseCRMIntegration {
 
             res.status(200).json({ received: true });
         } catch (error) {
-            console.error('[Clio Webhook] Receive error:', error);
+            console.error('[Webhook] Receive error:', error);
             throw error;
         }
     }
@@ -741,12 +946,7 @@ class ClioIntegration extends BaseCRMIntegration {
         if (source === 'clio') {
             return await this._handleClioWebhook(data);
         } else if (source === 'quo') {
-            // TODO: Implement in ticket 86ae3cum3
-            console.log('[Webhook] Quo webhook processing not yet implemented');
-            return {
-                success: false,
-                reason: 'Quo webhooks pending implementation',
-            };
+            return await this._handleQuoWebhook(data);
         }
 
         throw new Error(`Unknown webhook source: ${source}`);
@@ -933,9 +1133,72 @@ class ClioIntegration extends BaseCRMIntegration {
         }
     }
 
+    /**
+     * Handle Quo webhook events
+     * Stub for future implementation - will process call and message events
+     *
+     * @private
+     * @param {Object} data - Webhook data from queue
+     * @returns {Promise<Object>} Processing result
+     */
+    async _handleQuoWebhook(data) {
+        console.log('[Quo Webhook] Received webhook event');
+        console.log('[Quo Webhook] Event type:', data.body?.type);
+
+        // TODO: Implement Quo webhook processing in future ticket
+        // This will handle:
+        // - call.completed
+        // - call.recording.completed
+        // - call.summary.completed
+        // - message.received
+        // - message.delivered
+
+        return {
+            success: true,
+            skipped: true,
+            reason: 'Quo webhook processing pending implementation',
+        };
+    }
+
     async onDelete() {
         console.log('[Clio] Integration being deleted - cleaning up webhooks');
 
+        // Check if API modules are loaded
+        if (!this.clio?.api || !this.quo?.api) {
+            const missingModules = [];
+            if (!this.clio?.api) missingModules.push('clio');
+            if (!this.quo?.api) missingModules.push('quo');
+
+            console.error(
+                `[Webhook Cleanup] Cannot delete webhooks: Missing API modules: ${missingModules.join(', ')}`,
+            );
+            console.warn(
+                '[Webhook Cleanup] Webhook IDs preserved in config for manual cleanup:',
+            );
+
+            if (this.config?.clioWebhookId) {
+                console.warn(`  - Clio webhook: ${this.config.clioWebhookId}`);
+            }
+            if (this.config?.quoMessageWebhookId) {
+                console.warn(
+                    `  - Quo message webhook: ${this.config.quoMessageWebhookId}`,
+                );
+            }
+            if (this.config?.quoCallWebhookId) {
+                console.warn(
+                    `  - Quo call webhook: ${this.config.quoCallWebhookId}`,
+                );
+            }
+            if (this.config?.quoCallSummaryWebhookId) {
+                console.warn(
+                    `  - Quo call-summary webhook: ${this.config.quoCallSummaryWebhookId}`,
+                );
+            }
+
+            return;
+        }
+
+        // Delete Clio webhook
         if (this.config?.clioWebhookId) {
             try {
                 await this.clio.api.deleteWebhook(this.config.clioWebhookId);
@@ -949,7 +1212,63 @@ class ClioIntegration extends BaseCRMIntegration {
             }
         }
 
-        // TODO: Clean up Quo webhooks in ticket 86ae3cum3
+        // Delete Quo message webhook
+        if (this.config?.quoMessageWebhookId) {
+            console.log(
+                `[Quo] Deleting message webhook: ${this.config.quoMessageWebhookId}`,
+            );
+            try {
+                await this.quo.api.deleteWebhook(
+                    this.config.quoMessageWebhookId,
+                );
+                console.log(
+                    `[Quo] ✓ Message webhook ${this.config.quoMessageWebhookId} deleted`,
+                );
+            } catch (error) {
+                console.error(
+                    `[Quo] Failed to delete message webhook:`,
+                    error.message,
+                );
+            }
+        }
+
+        // Delete Quo call webhook
+        if (this.config?.quoCallWebhookId) {
+            console.log(
+                `[Quo] Deleting call webhook: ${this.config.quoCallWebhookId}`,
+            );
+            try {
+                await this.quo.api.deleteWebhook(this.config.quoCallWebhookId);
+                console.log(
+                    `[Quo] ✓ Call webhook ${this.config.quoCallWebhookId} deleted`,
+                );
+            } catch (error) {
+                console.error(
+                    `[Quo] Failed to delete call webhook:`,
+                    error.message,
+                );
+            }
+        }
+
+        // Delete Quo call-summary webhook
+        if (this.config?.quoCallSummaryWebhookId) {
+            console.log(
+                `[Quo] Deleting call-summary webhook: ${this.config.quoCallSummaryWebhookId}`,
+            );
+            try {
+                await this.quo.api.deleteWebhook(
+                    this.config.quoCallSummaryWebhookId,
+                );
+                console.log(
+                    `[Quo] ✓ Call-summary webhook ${this.config.quoCallSummaryWebhookId} deleted`,
+                );
+            } catch (error) {
+                console.error(
+                    `[Quo] Failed to delete call-summary webhook:`,
+                    error.message,
+                );
+            }
+        }
     }
 
     _normalizePhoneNumber(phone) {
