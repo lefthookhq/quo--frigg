@@ -306,8 +306,64 @@ class ClioIntegration extends BaseCRMIntegration {
         );
     }
 
-    async logSMSToActivity() {
-        throw new Error('ClioIntegration.logSMSToActivity() not implemented');
+    /**
+     * Log an SMS message as a Note in Clio
+     *
+     * @param {Object} activity - Message activity details
+     * @param {string} activity.contactExternalId - Clio contact ID
+     * @param {string} activity.title - Message title
+     * @param {string} activity.content - Message content (rich text/markdown)
+     * @param {string} activity.timestamp - ISO timestamp
+     * @param {string} activity.direction - 'inbound' or 'outbound'
+     * @returns {Promise<number>} Note ID
+     */
+    async logSMSToActivity(activity) {
+        const {
+            contactExternalId,
+            title,
+            content,
+            timestamp,
+        } = activity;
+
+        if (!contactExternalId) {
+            throw new Error('contactExternalId is required to log SMS');
+        }
+
+        console.log(
+            `[Clio] Creating Note for SMS to contact ${contactExternalId}`,
+        );
+
+        try {
+            const noteParams = {
+                subject: title,
+                detail: content,
+                detail_text_type: 'rich_text',
+                date: timestamp,
+                regarding: {
+                    type: 'Contact',
+                    id: parseInt(contactExternalId, 10),
+                },
+            };
+
+            const response = await this.clio.api.createNote(noteParams);
+
+            if (!response?.data?.id) {
+                throw new Error(
+                    'Invalid Clio Note response: missing note ID',
+                );
+            }
+
+            const noteId = response.data.id;
+            console.log(`[Clio] ✓ Created Note ${noteId} for SMS message`);
+
+            return noteId;
+        } catch (error) {
+            console.error(
+                `[Clio] Error creating Note for SMS:`,
+                error.message,
+            );
+            throw error;
+        }
     }
 
     async logCallToActivity() {
@@ -1135,29 +1191,247 @@ class ClioIntegration extends BaseCRMIntegration {
 
     /**
      * Handle Quo webhook events
-     * Stub for future implementation - will process call and message events
+     * Routes events to appropriate processors based on event type
      *
      * @private
      * @param {Object} data - Webhook data from queue
      * @returns {Promise<Object>} Processing result
      */
     async _handleQuoWebhook(data) {
-        console.log('[Quo Webhook] Received webhook event');
-        console.log('[Quo Webhook] Event type:', data.body?.type);
+        const { body } = data;
+        const eventType = body.type;
 
-        // TODO: Implement Quo webhook processing in future ticket
-        // This will handle:
-        // - call.completed
-        // - call.recording.completed
-        // - call.summary.completed
-        // - message.received
-        // - message.delivered
+        console.log(`[Quo Webhook] Processing event: ${eventType}`);
 
-        return {
-            success: true,
-            skipped: true,
-            reason: 'Quo webhook processing pending implementation',
-        };
+        try {
+            let result;
+
+            // Route message events
+            if (
+                eventType === 'message.received' ||
+                eventType === 'message.delivered'
+            ) {
+                result = await this._handleQuoMessageEvent(body);
+            }
+            // Call events - TODO: Implement in future ticket
+            else if (eventType === 'call.completed') {
+                console.log('[Quo Webhook] call.completed - pending implementation');
+                return {
+                    success: true,
+                    skipped: true,
+                    reason: 'Call event processing pending implementation',
+                };
+            } else if (eventType === 'call.recording.completed') {
+                console.log('[Quo Webhook] call.recording.completed - pending implementation');
+                return {
+                    success: true,
+                    skipped: true,
+                    reason: 'Call recording event processing pending implementation',
+                };
+            } else if (eventType === 'call.summary.completed') {
+                console.log('[Quo Webhook] call.summary.completed - pending implementation');
+                return {
+                    success: true,
+                    skipped: true,
+                    reason: 'Call summary event processing pending implementation',
+                };
+            } else {
+                console.warn(`[Quo Webhook] Unknown event type: ${eventType}`);
+                return { success: true, skipped: true, eventType };
+            }
+
+            return {
+                success: true,
+                processedAt: new Date().toISOString(),
+                eventType,
+                result,
+            };
+        } catch (error) {
+            console.error('[Quo Webhook] Processing error:', error);
+
+            if (this.id) {
+                await this.updateIntegrationMessages.execute(
+                    this.id,
+                    'errors',
+                    'Quo Webhook Processing Error',
+                    `Failed to process ${eventType}: ${error.message}`,
+                    Date.now(),
+                );
+            }
+
+            throw error;
+        }
+    }
+
+    /**
+     * Handle Quo message.received and message.delivered webhook events
+     * Finds Clio contact by phone number and logs SMS as a Note
+     *
+     * @private
+     * @param {Object} webhookData - Quo webhook payload
+     * @returns {Promise<Object>} Processing result
+     */
+    async _handleQuoMessageEvent(webhookData) {
+        const QuoWebhookEventProcessor = require('../base/services/QuoWebhookEventProcessor');
+        const { trackAnalyticsEvent } = require('../utils/trackAnalyticsEvent');
+        const { QUO_ANALYTICS_EVENTS } = require('../base/constants');
+
+        const result = await QuoWebhookEventProcessor.processMessageEvent({
+            webhookData,
+            quoApi: this.quo.api,
+            crmAdapter: {
+                formatMethod: 'markdown',
+                useEmoji: true,
+                findContactByPhone: (phone) =>
+                    this._findClioContactFromQuoWebhook(phone),
+                createMessageActivity: async (contactId, activity) => {
+                    return this.logSMSToActivity({
+                        contactExternalId: contactId,
+                        ...activity,
+                    });
+                },
+            },
+            mappingRepo: {
+                get: (id) => this.getMapping(id),
+                upsert: (id, data) => this.upsertMapping(id, data),
+            },
+            onActivityCreated: ({ messageId }) => {
+                trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.MESSAGE_LOGGED, {
+                    messageId,
+                });
+            },
+        });
+
+        return result;
+    }
+
+    /**
+     * Find Clio contact by phone number (with mapping optimization)
+     * Uses two-strategy approach: mapping lookup first, then API search
+     *
+     * @private
+     * @param {string} phoneNumber - Phone number to search for
+     * @returns {Promise<number|null>} Clio contact ID or null if not found
+     */
+    async _findClioContactFromQuoWebhook(phoneNumber) {
+        if (!phoneNumber) {
+            throw new Error('Phone number is required for webhook lookup');
+        }
+
+        const normalizedPhone = this._normalizePhoneNumber(phoneNumber);
+        console.log(
+            `[Webhook Lookup] Searching for Clio contact with phone: ${phoneNumber} (normalized: ${normalizedPhone})`,
+        );
+
+        // STRATEGY 1: Try mapping lookup by phone number (O(1) - fast!)
+        const externalId =
+            await this._getExternalIdFromMappingByPhone(normalizedPhone);
+        if (externalId) {
+            console.log(
+                `[Webhook Lookup] ✓ Found via mapping cache: ${externalId}`,
+            );
+            return externalId;
+        }
+
+        // STRATEGY 2: Fallback to Clio API search (slower)
+        console.log(
+            `[Webhook Lookup] ✗ No mapping found, searching Clio API`,
+        );
+
+        try {
+            const contactId = await this._findContactByPhone(normalizedPhone);
+
+            if (contactId) {
+                // Cache the mapping for future lookups
+                console.log(
+                    `[Webhook Lookup] Creating phone mapping for future lookups: ${normalizedPhone} → ${contactId}`,
+                );
+                await this.upsertMapping(normalizedPhone, {
+                    externalId: contactId,
+                    phoneNumber: normalizedPhone,
+                    entityType: 'contact',
+                    lastSyncedAt: new Date().toISOString(),
+                    syncMethod: 'webhook',
+                });
+            }
+
+            return contactId;
+        } catch (error) {
+            console.error(
+                `[Webhook Lookup] Error searching Clio for phone ${normalizedPhone}:`,
+                error.message,
+            );
+            return null;
+        }
+    }
+
+    /**
+     * Search Clio for contact by phone number
+     * Note: Clio doesn't have a direct phone search API, so we use query parameter
+     *
+     * @private
+     * @param {string} phone - Normalized phone number
+     * @returns {Promise<number|null>} Clio contact ID or null
+     */
+    async _findContactByPhone(phone) {
+        try {
+            // Try searching with the phone number as query
+            // Clio's query parameter searches across multiple fields
+            const response = await this.clio.api.listContacts({
+                query: phone,
+                limit: 50,
+            });
+
+            if (!response?.data || response.data.length === 0) {
+                console.log(`[Clio] No contacts found for phone: ${phone}`);
+                return null;
+            }
+
+            // Check each contact's phone numbers for a match
+            for (const contact of response.data) {
+                // Check primary phone
+                if (contact.primary_phone_number) {
+                    const normalizedPrimary = this._normalizePhoneNumber(
+                        contact.primary_phone_number,
+                    );
+                    if (normalizedPrimary === phone) {
+                        console.log(
+                            `[Clio] ✓ Found contact ${contact.id} via primary phone`,
+                        );
+                        return contact.id;
+                    }
+                }
+
+                // Fetch full contact details to check all phone numbers
+                if (contact.id) {
+                    const phoneNumbersResponse =
+                        await this.clio.api.getContactPhoneNumbers(contact.id);
+                    const phoneNumbers = phoneNumbersResponse?.data || [];
+
+                    for (const phoneObj of phoneNumbers) {
+                        const normalizedPhoneNumber =
+                            this._normalizePhoneNumber(phoneObj.number);
+                        if (normalizedPhoneNumber === phone) {
+                            console.log(
+                                `[Clio] ✓ Found contact ${contact.id} via phone number ${phoneObj.name}`,
+                            );
+                            return contact.id;
+                        }
+                    }
+                }
+            }
+
+            console.log(
+                `[Clio] No exact phone match found among ${response.data.length} contacts`,
+            );
+            return null;
+        } catch (error) {
+            console.error(
+                `[Clio] Error searching for contact by phone:`,
+                error.message,
+            );
+            throw error;
+        }
     }
 
     async onDelete() {

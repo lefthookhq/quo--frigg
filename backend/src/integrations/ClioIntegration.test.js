@@ -746,10 +746,36 @@ describe('ClioIntegration', () => {
     });
 
     describe('Abstract Method Stubs', () => {
-        it('should throw NotImplemented for logSMSToActivity', async () => {
-            await expect(integration.logSMSToActivity()).rejects.toThrow(
-                'ClioIntegration.logSMSToActivity() not implemented',
-            );
+        it('should create Clio Note for logSMSToActivity', async () => {
+            const mockNoteResponse = {
+                data: {
+                    id: 999,
+                    subject: 'SMS: +15551234567',
+                    detail: 'Message content',
+                },
+            };
+            mockClioApi.api.createNote = jest.fn().mockResolvedValue(mockNoteResponse);
+
+            const activity = {
+                contactExternalId: '123',
+                title: 'SMS: +15551234567',
+                content: 'Message content',
+                timestamp: '2024-01-05T10:30:00Z',
+            };
+
+            const noteId = await integration.logSMSToActivity(activity);
+
+            expect(noteId).toBe(999);
+            expect(mockClioApi.api.createNote).toHaveBeenCalledWith({
+                subject: 'SMS: +15551234567',
+                detail: 'Message content',
+                detail_text_type: 'rich_text',
+                date: '2024-01-05T10:30:00Z',
+                regarding: {
+                    type: 'Contact',
+                    id: 123,
+                },
+            });
         });
 
         it('should throw NotImplemented for logCallToActivity', async () => {
