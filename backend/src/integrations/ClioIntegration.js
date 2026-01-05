@@ -366,8 +366,113 @@ class ClioIntegration extends BaseCRMIntegration {
         }
     }
 
-    async logCallToActivity() {
-        throw new Error('ClioIntegration.logCallToActivity() not implemented');
+    /**
+     * Log a phone call as a Communication in Clio
+     *
+     * @param {Object} activity - Call activity details
+     * @param {string} activity.contactExternalId - Clio contact ID
+     * @param {string} activity.title - Call title
+     * @param {string} activity.content - Call content (rich text/markdown)
+     * @param {string} activity.timestamp - ISO timestamp
+     * @param {number} activity.duration - Call duration in seconds
+     * @param {string} activity.direction - 'inbound' or 'outbound'
+     * @param {string} [activity.quoCallId] - Quo call ID for external_properties
+     * @returns {Promise<number>} Communication ID
+     */
+    async logCallToActivity(activity) {
+        const {
+            contactExternalId,
+            title,
+            content,
+            timestamp,
+            duration,
+            direction,
+            quoCallId,
+        } = activity;
+
+        if (!contactExternalId) {
+            throw new Error('contactExternalId is required to log call');
+        }
+
+        console.log(
+            `[Clio] Creating PhoneCommunication for contact ${contactExternalId}`,
+        );
+
+        try {
+            const contactId = parseInt(contactExternalId, 10);
+
+            // Build senders and receivers based on call direction
+            const senders = [];
+            const receivers = [];
+
+            if (direction === 'inbound') {
+                // Incoming call: external contact → user
+                senders.push({
+                    type: 'Contact',
+                    id: contactId,
+                });
+                // Receiver would be a User, but we don't have userId in this context
+                // Clio will handle this via the API user's context
+            } else {
+                // Outgoing call: user → external contact
+                receivers.push({
+                    type: 'Contact',
+                    id: contactId,
+                });
+            }
+
+            // Build external_properties for metadata
+            const externalProperties = [];
+            if (quoCallId) {
+                externalProperties.push({
+                    name: 'quo_call_id',
+                    value: quoCallId,
+                });
+            }
+            if (duration !== undefined) {
+                externalProperties.push({
+                    name: 'duration',
+                    value: String(duration),
+                });
+            }
+
+            const communicationParams = {
+                type: 'PhoneCommunication',
+                subject: title,
+                body: content,
+                date: timestamp,
+                received_at: timestamp,
+                ...(senders.length > 0 && { senders }),
+                ...(receivers.length > 0 && { receivers }),
+                ...(externalProperties.length > 0 && { external_properties: externalProperties }),
+            };
+
+            // TODO: Optional Matter association if contact is linked to a matter
+            // This requires checking if contact has an associated matter
+            // Will be implemented based on config setting
+
+            const response =
+                await this.clio.api.createCommunication(communicationParams);
+
+            if (!response?.data?.id) {
+                throw new Error(
+                    'Invalid Clio Communication response: missing communication ID',
+                );
+            }
+
+            const communicationId = response.data.id;
+            console.log(
+                `[Clio] ✓ Created PhoneCommunication ${communicationId} for call`,
+            );
+
+            return communicationId;
+        } catch (error) {
+            console.error(
+                `[Clio] Error creating PhoneCommunication:`,
+                error.message,
+            );
+            throw error;
+        }
     }
 
     async setupWebhooks() {
@@ -1212,28 +1317,13 @@ class ClioIntegration extends BaseCRMIntegration {
             ) {
                 result = await this._handleQuoMessageEvent(body);
             }
-            // Call events - TODO: Implement in future ticket
+            // Route call events
             else if (eventType === 'call.completed') {
-                console.log('[Quo Webhook] call.completed - pending implementation');
-                return {
-                    success: true,
-                    skipped: true,
-                    reason: 'Call event processing pending implementation',
-                };
-            } else if (eventType === 'call.recording.completed') {
-                console.log('[Quo Webhook] call.recording.completed - pending implementation');
-                return {
-                    success: true,
-                    skipped: true,
-                    reason: 'Call recording event processing pending implementation',
-                };
+                result = await this._handleQuoCallEvent(body);
             } else if (eventType === 'call.summary.completed') {
-                console.log('[Quo Webhook] call.summary.completed - pending implementation');
-                return {
-                    success: true,
-                    skipped: true,
-                    reason: 'Call summary event processing pending implementation',
-                };
+                result = await this._handleCallSummaryCompleted(body);
+            } else if (eventType === 'call.recording.completed') {
+                result = await this._handleCallRecordingCompleted(body);
             } else {
                 console.warn(`[Quo Webhook] Unknown event type: ${eventType}`);
                 return { success: true, skipped: true, eventType };
@@ -1302,6 +1392,238 @@ class ClioIntegration extends BaseCRMIntegration {
         });
 
         return result;
+    }
+
+    /**
+     * Handle Quo call.completed webhook events
+     * Finds Clio contact by phone number and logs call as PhoneCommunication
+     *
+     * @private
+     * @param {Object} webhookData - Quo webhook payload
+     * @returns {Promise<Object>} Processing result
+     */
+    async _handleQuoCallEvent(webhookData) {
+        const QuoWebhookEventProcessor = require('../base/services/QuoWebhookEventProcessor');
+        const { trackAnalyticsEvent } = require('../utils/trackAnalyticsEvent');
+        const { QUO_ANALYTICS_EVENTS } = require('../base/constants');
+
+        // Fetch Quo phone numbers for participant filtering
+        const phoneNumbersResponse = await this.quo.api.listPhoneNumbers();
+        const phoneNumbersMetadata = phoneNumbersResponse?.data || [];
+
+        const callId = webhookData.data?.object?.id;
+
+        const result = await QuoWebhookEventProcessor.processCallEvent({
+            webhookData,
+            quoApi: this.quo.api,
+            phoneNumbersMetadata,
+            crmAdapter: {
+                formatMethod: 'markdown',
+                useEmoji: true,
+                findContactByPhone: (phone) =>
+                    this._findClioContactFromQuoWebhook(phone),
+                createCallActivity: async (contactId, activity) => {
+                    return this.logCallToActivity({
+                        contactExternalId: contactId,
+                        quoCallId: callId,
+                        ...activity,
+                    });
+                },
+            },
+            mappingRepo: {
+                get: (id) => this.getMapping(id),
+                upsert: (id, data) => this.upsertMapping(id, data),
+            },
+            onActivityCreated: ({ callId, activityId }) => {
+                trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.CALL_LOGGED, {
+                    callId,
+                    communicationId: activityId,
+                });
+            },
+        });
+
+        return result;
+    }
+
+    /**
+     * Handle Quo call.summary.completed webhook events
+     * Enriches existing Communication with AI summary, recordings, and voicemails
+     *
+     * @private
+     * @param {Object} webhookData - Quo webhook payload
+     * @returns {Promise<Object>} Enrichment result
+     */
+    async _handleCallSummaryCompleted(webhookData) {
+        const CallSummaryEnrichmentService = require('../base/services/CallSummaryEnrichmentService');
+        const QuoCallContentBuilder = require('../base/services/QuoCallContentBuilder');
+
+        const callId = webhookData.data?.object?.id;
+        const summaryData = webhookData.data?.object?.data || {};
+
+        console.log(
+            `[Clio] Enriching call ${callId} with summary and recordings`,
+        );
+
+        // Fetch full call details from Quo API
+        const callResponse = await this.quo.api.getCall(callId);
+        const callDetails = callResponse?.data;
+
+        if (!callDetails) {
+            throw new Error(`Call ${callId} not found in Quo API`);
+        }
+
+        // Fetch Quo phone numbers for inbox metadata
+        const phoneNumbersResponse = await this.quo.api.listPhoneNumbers();
+        const phoneNumbersMetadata = phoneNumbersResponse?.data || [];
+
+        // Find inbox details
+        const inboxPhone = phoneNumbersMetadata.find(
+            (p) => p.id === callDetails.phoneNumberId,
+        );
+        const inboxName = inboxPhone?.name || 'Unknown Inbox';
+        const inboxNumber = inboxPhone?.number || '';
+
+        // Build formatters for content generation
+        const formatOptions = QuoCallContentBuilder.getFormatOptions('markdown');
+        const formatters = {
+            formatCallHeader: (call, recordings, voicemail) =>
+                QuoCallContentBuilder.buildCallTitle({
+                    call,
+                    inboxName,
+                    inboxNumber,
+                    contactPhone: '', // Will be filled by service
+                    formatOptions,
+                    useEmoji: true,
+                }),
+            formatDeepLink: (deepLink) => {
+                return formatOptions.link('View in Quo', deepLink);
+            },
+        };
+
+        // Look up existing mapping to find contactId
+        const existingMapping = await this.getMapping(callId);
+        const contactId =
+            existingMapping?.mapping?.contactId ||
+            existingMapping?.contactId;
+
+        if (!contactId) {
+            console.warn(
+                `[Clio] No contact mapping found for call ${callId}, cannot enrich`,
+            );
+            return {
+                success: false,
+                error: 'No contact mapping found',
+                callId,
+            };
+        }
+
+        // Configure CRM adapter for enrichment
+        const crmAdapter = {
+            canUpdateNote: () => true, // Clio supports PATCH for Communications
+            updateNote: async (communicationId, { content, title }) => {
+                await this.clio.api.updateCommunication(communicationId, {
+                    body: content,
+                    subject: title,
+                });
+            },
+            createNote: async ({ contactId, content, title, timestamp }) => {
+                return this.logCallToActivity({
+                    contactExternalId: contactId,
+                    title,
+                    content,
+                    timestamp,
+                    duration: callDetails.duration,
+                    direction: callDetails.direction,
+                    quoCallId: callId,
+                });
+            },
+            deleteNote: async (communicationId) => {
+                await this.clio.api.deleteCommunication(communicationId);
+            },
+        };
+
+        const result = await CallSummaryEnrichmentService.enrichCallNote({
+            callId,
+            summaryData,
+            callDetails,
+            quoApi: this.quo.api,
+            crmAdapter,
+            mappingRepo: {
+                get: (id) => this.getMapping(id),
+                upsert: (id, data) => this.upsertMapping(id, data),
+            },
+            contactId,
+            formatters,
+        });
+
+        console.log(
+            `[Clio] ✓ Enriched Communication ${result.noteId} with summary`,
+        );
+
+        return result;
+    }
+
+    /**
+     * Handle Quo call.recording.completed webhook events
+     * Updates existing Communication with recording link
+     *
+     * @private
+     * @param {Object} webhookData - Quo webhook payload
+     * @returns {Promise<Object>} Update result
+     */
+    async _handleCallRecordingCompleted(webhookData) {
+        const callId = webhookData.data?.object?.callId;
+        const recordingUrl = webhookData.data?.object?.url;
+
+        if (!callId || !recordingUrl) {
+            throw new Error(
+                'Invalid recording webhook: missing callId or url',
+            );
+        }
+
+        console.log(
+            `[Clio] Adding recording link to Communication for call ${callId}`,
+        );
+
+        // Find existing Communication via mapping
+        const existingMapping = await this.getMapping(callId);
+        const communicationId =
+            existingMapping?.mapping?.noteId || existingMapping?.noteId;
+
+        if (!communicationId) {
+            console.warn(
+                `[Clio] No Communication found for call ${callId}, cannot add recording`,
+            );
+            return {
+                success: false,
+                error: 'No Communication mapping found',
+                callId,
+            };
+        }
+
+        // Fetch existing Communication to preserve content
+        const commResponse =
+            await this.clio.api.getCommunication(communicationId);
+        const existingBody = commResponse?.data?.body || '';
+
+        // Append recording link to body
+        const recordingLink = `\n\n▶️ [Recording](${recordingUrl})`;
+        const updatedBody = existingBody + recordingLink;
+
+        await this.clio.api.updateCommunication(communicationId, {
+            body: updatedBody,
+        });
+
+        console.log(
+            `[Clio] ✓ Added recording link to Communication ${communicationId}`,
+        );
+
+        return {
+            success: true,
+            communicationId,
+            callId,
+            recordingUrl,
+        };
     }
 
     /**

@@ -776,10 +776,44 @@ describe('ClioIntegration', () => {
             });
         });
 
-        it('should throw NotImplemented for logCallToActivity', async () => {
-            await expect(integration.logCallToActivity()).rejects.toThrow(
-                'ClioIntegration.logCallToActivity() not implemented',
-            );
+        it('should create Clio PhoneCommunication for logCallToActivity', async () => {
+            const mockCommunicationResponse = {
+                data: {
+                    id: 888,
+                    type: 'PhoneCommunication',
+                    subject: 'Call: +15551234567',
+                    body: 'Call content',
+                },
+            };
+            mockClioApi.api.createCommunication = jest
+                .fn()
+                .mockResolvedValue(mockCommunicationResponse);
+
+            const activity = {
+                contactExternalId: '456',
+                title: 'Call: +15551234567',
+                content: 'Call content',
+                timestamp: '2024-01-05T11:00:00Z',
+                duration: 120,
+                direction: 'inbound',
+                quoCallId: 'call-123',
+            };
+
+            const communicationId = await integration.logCallToActivity(activity);
+
+            expect(communicationId).toBe(888);
+            expect(mockClioApi.api.createCommunication).toHaveBeenCalledWith({
+                type: 'PhoneCommunication',
+                subject: 'Call: +15551234567',
+                body: 'Call content',
+                date: '2024-01-05T11:00:00Z',
+                received_at: '2024-01-05T11:00:00Z',
+                senders: [{ type: 'Contact', id: 456 }],
+                external_properties: [
+                    { name: 'quo_call_id', value: 'call-123' },
+                    { name: 'duration', value: '120' },
+                ],
+            });
         });
 
         it('should throw error for unknown webhook source', async () => {
