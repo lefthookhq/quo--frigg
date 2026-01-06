@@ -526,7 +526,96 @@ class ClioIntegration extends BaseCRMIntegration {
             results.overallStatus = 'partial';
         }
 
+        // Setup Click-to-Call custom action
+        try {
+            results.clickToCall = await this.setupClickToCall();
+            console.log('[Click-to-Call] ✓ Custom Action configured');
+        } catch (error) {
+            results.clickToCall = { status: 'failed', error: error.message };
+            console.error(
+                '[Click-to-Call] ✗ Custom Action setup failed:',
+                error.message,
+            );
+
+            if (this.id) {
+                await this.updateIntegrationMessages.execute(
+                    this.id,
+                    'warnings',
+                    'Click-to-Call Setup Failed',
+                    `Could not register Click-to-Call action with Clio: ${error.message}. Click-to-call from Clio will not work.`,
+                    Date.now(),
+                );
+            }
+            // Non-fatal - don't change overallStatus
+        }
+
         return results;
+    }
+
+    /**
+     * Setup Click-to-Call custom action in Clio
+     * Creates a custom action that appears on contact pages
+     * Allows users to click to call contacts via tel: URL scheme
+     *
+     * @returns {Promise<Object>} Setup result
+     */
+    async setupClickToCall() {
+        // Check if custom action already configured
+        if (this.config?.clioCustomActionId) {
+            console.log(
+                `[Click-to-Call] Custom Action already configured: ${this.config.clioCustomActionId}`,
+            );
+            return {
+                status: 'already_configured',
+                customActionId: this.config.clioCustomActionId,
+            };
+        }
+
+        console.log('[Click-to-Call] Creating Custom Action in Clio');
+
+        try {
+            const customActionParams = {
+                label: 'Call with Quo',
+                url: 'tel:{{contact.primary_phone_number}}',
+                ui_reference: 'contacts/show',
+            };
+
+            const response =
+                await this.clio.api.createCustomAction(customActionParams);
+
+            if (!response?.data?.id) {
+                throw new Error(
+                    'Invalid Clio Custom Action response: missing ID',
+                );
+            }
+
+            const customActionId = response.data.id;
+            console.log(
+                `[Click-to-Call] ✓ Created Custom Action: ${customActionId}`,
+            );
+
+            // Store custom action ID in config
+            await this.commands.updateIntegrationConfig({
+                integrationId: this.id,
+                config: {
+                    ...this.config,
+                    clioCustomActionId: customActionId,
+                },
+            });
+
+            console.log('[Click-to-Call] ✓ Custom Action ID saved to config');
+
+            return {
+                status: 'configured',
+                customActionId,
+            };
+        } catch (error) {
+            console.error(
+                '[Click-to-Call] Failed to create Custom Action:',
+                error.message,
+            );
+            throw error;
+        }
     }
 
     async setupClioWebhook() {
@@ -1785,6 +1874,11 @@ class ClioIntegration extends BaseCRMIntegration {
             if (this.config?.clioWebhookId) {
                 console.warn(`  - Clio webhook: ${this.config.clioWebhookId}`);
             }
+            if (this.config?.clioCustomActionId) {
+                console.warn(
+                    `  - Clio Custom Action: ${this.config.clioCustomActionId}`,
+                );
+            }
             if (this.config?.quoMessageWebhookId) {
                 console.warn(
                     `  - Quo message webhook: ${this.config.quoMessageWebhookId}`,
@@ -1814,6 +1908,25 @@ class ClioIntegration extends BaseCRMIntegration {
             } catch (error) {
                 console.warn(
                     `[Clio] Could not delete webhook: ${error.message}`,
+                );
+            }
+        }
+
+        // Delete Clio Custom Action (Click-to-Call)
+        if (this.config?.clioCustomActionId) {
+            console.log(
+                `[Click-to-Call] Deleting Custom Action: ${this.config.clioCustomActionId}`,
+            );
+            try {
+                await this.clio.api.deleteCustomAction(
+                    this.config.clioCustomActionId,
+                );
+                console.log(
+                    `[Click-to-Call] ✓ Custom Action ${this.config.clioCustomActionId} deleted`,
+                );
+            } catch (error) {
+                console.warn(
+                    `[Click-to-Call] Could not delete Custom Action: ${error.message}`,
                 );
             }
         }
