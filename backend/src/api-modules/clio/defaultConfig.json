@@ -1,5 +1,5 @@
 {
-  "name": "clio",
-  "authType": "oauth2",
-  "description": "Clio legal practice management API"
+    "name": "clio",
+    "authType": "oauth2",
+    "description": "Clio legal practice management API"
 }
