@@ -767,14 +767,12 @@ describe('ClioIntegration', () => {
 
             expect(noteId).toBe(999);
             expect(mockClioApi.api.createNote).toHaveBeenCalledWith({
+                type: 'Contact',
+                contact: { id: 123 },
                 subject: 'SMS: +15551234567',
                 detail: 'Message content',
                 detail_text_type: 'rich_text',
                 date: '2024-01-05T10:30:00Z',
-                regarding: {
-                    type: 'Contact',
-                    id: 123,
-                },
             });
         });
 

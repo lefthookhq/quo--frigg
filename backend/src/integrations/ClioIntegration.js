@@ -334,15 +334,15 @@ class ClioIntegration extends BaseCRMIntegration {
         );
 
         try {
+            const contactId = parseInt(contactExternalId, 10);
+
             const noteParams = {
+                type: 'Contact',
+                contact: { id: contactId },
                 subject: title,
                 detail: content,
                 detail_text_type: 'rich_text',
                 date: timestamp,
-                regarding: {
-                    type: 'Contact',
-                    id: parseInt(contactExternalId, 10),
-                },
             };
 
             const response = await this.clio.api.createNote(noteParams);
@@ -354,7 +354,7 @@ class ClioIntegration extends BaseCRMIntegration {
             }
 
             const noteId = response.data.id;
-            console.log(`[Clio] ✓ Created Note ${noteId} for SMS message`);
+            console.log(`[Clio] ✓ Created Note ${noteId} for SMS`);
 
             return noteId;
         } catch (error) {
@@ -741,10 +741,9 @@ class ClioIntegration extends BaseCRMIntegration {
             const hookSecret = req.headers['x-hook-secret'];
             const clioSignature = req.headers['x-hook-signature'];
             const quoSignature = req.headers['openphone-signature'];
+            const svixSignature = req.headers['svix-signature'];
 
-            // Handle Clio handshake POST (delayed option)
-            // Clio sends X-Hook-Secret header when setting up webhook
-            // Queue it for processing in onWebhook where we have full context
+            // Handle Clio handshake
             if (hookSecret) {
                 console.log(
                     '[Clio Webhook] Received handshake request - queueing for processing',
@@ -765,12 +764,12 @@ class ClioIntegration extends BaseCRMIntegration {
                 return;
             }
 
-            // Determine webhook source based on signature header
-            const source = quoSignature ? 'quo' : 'clio';
-            const signature = quoSignature || clioSignature;
+            // Determine webhook source (Quo uses Svix for delivery)
+            const isQuoWebhook = !!(quoSignature || svixSignature);
+            const source = isQuoWebhook ? 'quo' : 'clio';
+            const signature = quoSignature || svixSignature || clioSignature;
 
-            // Verify signature exists (except for Quo which doesn't support signatures yet)
-            if (!signature && source !== 'quo') {
+            if (!signature) {
                 console.error(
                     `[${source === 'quo' ? 'Quo' : 'Clio'} Webhook] Missing signature header - rejecting`,
                 );
@@ -1387,9 +1386,7 @@ class ClioIntegration extends BaseCRMIntegration {
                 return null;
             }
 
-            // Check each contact's phone numbers for a match
             for (const contact of response.data) {
-                // Check primary phone
                 if (contact.primary_phone_number) {
                     const normalizedPrimary = this._normalizePhoneNumber(
                         contact.primary_phone_number,
@@ -1402,10 +1399,11 @@ class ClioIntegration extends BaseCRMIntegration {
                     }
                 }
 
-                // Fetch full contact details to check all phone numbers
                 if (contact.id) {
                     const phoneNumbersResponse =
-                        await this.clio.api.getContactPhoneNumbers(contact.id);
+                        await this.clio.api.getContactPhoneNumbers(contact.id, {
+                            fields: 'id,name,number,default_number',
+                        });
                     const phoneNumbers = phoneNumbersResponse?.data || [];
 
                     for (const phoneObj of phoneNumbers) {
@@ -1547,7 +1545,7 @@ class ClioIntegration extends BaseCRMIntegration {
 
     _normalizePhoneNumber(phone) {
         if (!phone || typeof phone !== 'string') return phone;
-        return phone.replace(/[\s\(\)\-]/g, '');
+        return phone.replace(/\D/g, '');
     }
 
     _generateWebhookUrl(path) {
