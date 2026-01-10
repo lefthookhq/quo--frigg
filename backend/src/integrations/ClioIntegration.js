@@ -1457,8 +1457,9 @@ class ClioIntegration extends BaseCRMIntegration {
         const CallSummaryEnrichmentService = require('../base/services/CallSummaryEnrichmentService');
         const QuoCallContentBuilder = require('../base/services/QuoCallContentBuilder');
 
-        const callId = webhookData.data?.object?.id;
-        const summaryData = webhookData.data?.object?.data || {};
+        const callId = webhookData.data?.object?.callId;
+        const summaryData = webhookData.data?.object || {};
+        const deepLink = webhookData.data?.deepLink || '#';
 
         console.log(
             `[Clio] Enriching call ${callId} with summary and recordings`,
@@ -1495,9 +1496,19 @@ class ClioIntegration extends BaseCRMIntegration {
                     formatOptions,
                     useEmoji: true,
                 }),
-            formatDeepLink: (deepLink) => {
+            formatTitle: (call) =>
+                QuoCallContentBuilder.buildCallTitle({
+                    call,
+                    inboxName,
+                    inboxNumber,
+                    contactPhone: '',
+                    formatOptions,
+                    useEmoji: true,
+                }),
+            formatDeepLink: () => {
                 return formatOptions.link('View in Quo', deepLink);
             },
+            formatMethod: 'markdown',
         };
 
         // Look up existing mapping to find contactId
@@ -1572,8 +1583,9 @@ class ClioIntegration extends BaseCRMIntegration {
      * @returns {Promise<Object>} Update result
      */
     async _handleCallRecordingCompleted(webhookData) {
-        const callId = webhookData.data?.object?.callId;
-        const recordingUrl = webhookData.data?.object?.url;
+        const callId = webhookData.data?.object?.id;
+        const recordings = webhookData.data?.object?.recordings || [];
+        const recordingUrl = recordings[0]?.url;
 
         if (!callId || !recordingUrl) {
             throw new Error(

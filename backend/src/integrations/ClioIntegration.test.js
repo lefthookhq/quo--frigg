@@ -821,15 +821,6 @@ describe('ClioIntegration', () => {
                 integration.onWebhook({ data: { source: 'unknown' } }),
             ).rejects.toThrow('Unknown webhook source: unknown');
         });
-
-        it('should return skipped status for Quo webhook source (stub)', async () => {
-            const result = await integration.onWebhook({
-                data: { source: 'quo', body: { type: 'call.completed' } },
-            });
-            expect(result.success).toBe(true);
-            expect(result.skipped).toBe(true);
-            expect(result.reason).toBe('Quo webhook processing pending implementation');
-        });
     });
 
     describe('Region URL Generation', () => {
