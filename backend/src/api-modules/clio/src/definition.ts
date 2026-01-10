@@ -9,9 +9,22 @@ const Definition: FriggModuleAuthDefinition = {
     moduleName: config.name,
     modelName: 'Clio',
     requiredAuthMethods: {
-        getAuthorizationRequirements: (_api: Api) => {
+        getAuthorizationRequirements: (api: Api) => {
+            // Note: api parameter is undefined when called by framework
+            // Query parameters (e.g., ?region=us) are not passed to this method
+            // For manual testing via curl: defaults to US region
+            // For UI flow: user selects region in form, calls setAuthParams, then redirects
+            const clientId = process.env.CLIO_CLIENT_ID;
+            const redirectUri = `${process.env.REDIRECT_URI}/clio`;
+            const authUrl = 'https://app.clio.com'; // Default to US region
+
+            const url = encodeURI(
+                `${authUrl}/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code`
+            );
+
             return {
                 type: 'oauth2',
+                url,
                 data: {
                     jsonSchema: {
                         title: 'Clio Authorization',
