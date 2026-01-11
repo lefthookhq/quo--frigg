@@ -4,6 +4,7 @@ const clio = require('../api-modules/clio');
 const quo = require('../api-modules/quo');
 // eslint-disable-next-line no-unused-vars
 const { QUO_ANALYTICS_EVENTS, QuoWebhookEvents } = require('../base/constants');
+const { trackAnalyticsEvent } = require('../utils/trackAnalyticsEvent');
 
 class ClioIntegration extends BaseCRMIntegration {
     static Definition = {
@@ -1289,6 +1290,11 @@ class ClioIntegration extends BaseCRMIntegration {
                     </html>
                 `);
             }
+
+            // Track analytics event
+            trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.CLICK_TO_CALL_INITIATED, {
+                contactId,
+            });
 
             // Redirect to tel: URL which will trigger OS to open Quo app
             const telUrl = `tel:${phoneNumber}`;
