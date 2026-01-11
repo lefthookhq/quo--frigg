@@ -47,6 +47,11 @@ class ClioIntegration extends BaseCRMIntegration {
                 method: 'GET',
                 event: 'LIST_CLIO_MATTERS',
             },
+            {
+                path: '/click-to-call/:integrationId',
+                method: 'GET',
+                event: 'CLICK_TO_CALL_REDIRECT',
+            },
         ],
     };
 
@@ -107,6 +112,9 @@ class ClioIntegration extends BaseCRMIntegration {
             },
             LIST_CLIO_MATTERS: {
                 handler: this.listMatters,
+            },
+            CLICK_TO_CALL_REDIRECT: {
+                handler: this.handleClickToCallRedirect,
             },
             ON_WEBHOOK: {
                 handler: this.onWebhook,
@@ -574,9 +582,13 @@ class ClioIntegration extends BaseCRMIntegration {
         console.log('[Click-to-Call] Creating Custom Action in Clio');
 
         try {
+            const clickToCallUrl = this._generateWebhookUrl(
+                `/click-to-call/${this.id}`,
+            );
+
             const customActionParams = {
                 label: 'Call with Quo',
-                url: 'tel:{{contact.primary_phone_number}}',
+                target_url: clickToCallUrl,
                 ui_reference: 'contacts/show',
             };
 
@@ -1183,6 +1195,111 @@ class ClioIntegration extends BaseCRMIntegration {
             console.error('[Clio] listMatters error:', error.message);
             res.status(500).json({
                 error: error.message,
+            });
+        }
+    };
+
+    handleClickToCallRedirect = async ({ req, res }) => {
+        try {
+            const { integrationId } = req.params;
+            const { subject_url, custom_action_id, user_id } = req.query;
+
+            console.log(
+                `[Click-to-Call] Redirect request from user ${user_id}, subject: ${subject_url}`,
+            );
+
+            if (!subject_url) {
+                return res.status(400).json({
+                    error: 'Missing subject_url parameter',
+                });
+            }
+
+            // Load integration context to get credentials
+            const result = await this.commands.loadIntegrationContextById(
+                integrationId,
+            );
+            if (result.error) {
+                console.error(
+                    `[Click-to-Call] Failed to load integration ${integrationId}`,
+                );
+                return res.status(result.error).json({
+                    error: result.reason || 'Integration not found',
+                });
+            }
+
+            const { record } = result.context;
+
+            // Find Clio entity and instantiate API
+            const clioEntity = record.entities.find(
+                (e) => e.moduleName === 'clio',
+            );
+
+            if (!clioEntity || !clioEntity.credential) {
+                console.error('[Click-to-Call] No Clio credentials found');
+                return res.status(500).json({
+                    error: 'Clio credentials not configured',
+                });
+            }
+
+            console.log(
+                `[Click-to-Call] Found Clio entity for user: ${clioEntity.name}`,
+            );
+
+            // Directly instantiate Clio API class with credentials
+            const { Api: ClioApi } = require('../api-modules/clio/dist/api');
+            const clioApi = new ClioApi({
+                access_token: clioEntity.credential.data.access_token,
+                refresh_token: clioEntity.credential.data.refresh_token,
+                region: clioEntity.credential.data.region || 'us',
+            });
+
+            // Extract contact ID from subject_url (e.g., /api/v4/contacts/2486979490)
+            const contactIdMatch = subject_url.match(/\/contacts\/(\d+)/);
+            if (!contactIdMatch) {
+                return res.status(400).json({
+                    error: 'Invalid subject_url format',
+                });
+            }
+
+            const contactId = contactIdMatch[1];
+            console.log(
+                `[Click-to-Call] Fetching phone number for contact ${contactId}`,
+            );
+
+            // Get phone numbers for the contact
+            const phoneNumbers = await clioApi.getContactPhoneNumbers(contactId, {
+                fields: 'id,name,number,default_number',
+            });
+            const phoneNumbersList = phoneNumbers?.data || [];
+
+            // Find default phone number or use first one
+            const primaryPhone = phoneNumbersList.find((p) => p.default_number);
+            const phoneNumber = primaryPhone?.number || phoneNumbersList[0]?.number;
+
+            if (!phoneNumber) {
+                console.error(
+                    `[Click-to-Call] No phone number found for contact ${contactId}`,
+                );
+                return res.status(404).send(`
+                    <html>
+                        <body>
+                            <h1>No Phone Number Found</h1>
+                            <p>This contact does not have a phone number in Clio.</p>
+                        </body>
+                    </html>
+                `);
+            }
+
+            // Redirect to tel: URL which will trigger OS to open Quo app
+            const telUrl = `tel:${phoneNumber}`;
+            console.log(`[Click-to-Call] Redirecting to: ${telUrl}`);
+
+            res.redirect(302, telUrl);
+        } catch (error) {
+            console.error('[Click-to-Call] Error:', error.message);
+            res.status(500).json({
+                error: 'Failed to initiate call',
+                message: error.message,
             });
         }
     };
