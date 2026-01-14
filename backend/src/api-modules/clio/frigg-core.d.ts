@@ -32,7 +32,7 @@ declare module '@friggframework/core' {
         moduleName: string;
         modelName: string;
         requiredAuthMethods: {
-            getAuthorizationRequirements: (api: any) => any;
+            getAuthorizationRequirements?: (api: any) => any;
             getToken: (api: any, params: any) => Promise<any>;
             getEntityDetails: (
                 api: any,
@@ -48,6 +48,11 @@ declare module '@friggframework/core' {
             testAuthRequest: (api: any) => Promise<any>;
             setAuthParams?: (api: any, params: any) => Promise<any>;
         };
+        getEntityOptions?: () => {
+            jsonSchema: any;
+            uiSchema?: any;
+        };
+        refreshEntityOptions?: (api: any, options: any) => Promise<void>;
         env: Record<string, string | undefined>;
     }
 }

@@ -37,12 +37,9 @@ const REGION_BASE_URLS: Record<ClioRegion, string> = {
     au: 'https://au.app.clio.com/api/v4',
 };
 
-const REGION_AUTH_URLS: Record<ClioRegion, string> = {
-    us: 'https://app.clio.com',
-    eu: 'https://eu.app.clio.com',
-    ca: 'https://ca.app.clio.com',
-    au: 'https://au.app.clio.com',
-};
+// OAuth always uses US domain regardless of region
+// Only the API base URL changes per region
+const OAUTH_BASE_URL = 'https://app.clio.com';
 
 const API_VERSION = '4.0.12';
 
@@ -80,8 +77,15 @@ export class Api extends OAuth2Requester {
     constructor(params: ClioOAuth2Options = {}) {
         super(params);
 
+        // Set region for API calls (defaults to 'us')
         this.region = get(params, 'region', 'us') as ClioRegion;
-        this.setRegion(this.region);
+        this.baseUrl = REGION_BASE_URLS[this.region];
+
+        // OAuth URLs - ALWAYS use US domain regardless of region
+        this.authorizationUri = encodeURI(
+            `${OAUTH_BASE_URL}/oauth/authorize?client_id=${this.client_id}&redirect_uri=${this.redirect_uri}&response_type=code`,
+        );
+        this.tokenUri = `${OAUTH_BASE_URL}/oauth/token`;
 
         this.URLs = {
             whoAmI: '/users/who_am_i.json',
@@ -111,19 +115,8 @@ export class Api extends OAuth2Requester {
     }
 
     /**
-     * Override setTokens to preserve region during token refresh
-     */
-    async setTokens(params: any): Promise<any> {
-        const currentRegion = this.region;
-        const result = await super.setTokens(params);
-        if (currentRegion && currentRegion !== this.region) {
-            this.setRegion(currentRegion);
-        }
-        return result;
-    }
-
-    /**
-     * Sets the region and updates all OAuth URLs accordingly
+     * Sets the region and updates the API base URL.
+     * Note: OAuth URLs remain fixed to US domain (app.clio.com).
      */
     setRegion(region: ClioRegion): void {
         if (!REGION_BASE_URLS[region]) {
@@ -134,12 +127,6 @@ export class Api extends OAuth2Requester {
 
         this.region = region;
         this.baseUrl = REGION_BASE_URLS[region];
-
-        const authUrl = REGION_AUTH_URLS[region];
-        this.authorizationUri = encodeURI(
-            `${authUrl}/oauth/authorize?client_id=${this.client_id}&redirect_uri=${this.redirect_uri}&response_type=code`,
-        );
-        this.tokenUri = `${authUrl}/oauth/token`;
     }
 
     // ==================== User ====================

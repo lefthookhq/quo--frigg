@@ -9,41 +9,6 @@ const Definition: FriggModuleAuthDefinition = {
     moduleName: config.name,
     modelName: 'Clio',
     requiredAuthMethods: {
-        getAuthorizationRequirements: (_api: Api) => {
-            return {
-                type: 'oauth2',
-                data: {
-                    jsonSchema: {
-                        title: 'Clio Authorization',
-                        type: 'object',
-                        required: ['region'],
-                        properties: {
-                            region: {
-                                type: 'string',
-                                title: 'Region',
-                                enum: ['us', 'eu', 'ca', 'au'],
-                                enumNames: [
-                                    'United States',
-                                    'Europe',
-                                    'Canada',
-                                    'Australia',
-                                ],
-                                default: 'us',
-                            },
-                        },
-                    },
-                    uiSchema: {
-                        region: {
-                            'ui:widget': 'select',
-                            'ui:help':
-                                'Select the Clio region where your account is located',
-                            'ui:placeholder': 'Select your region...',
-                        },
-                    },
-                },
-            };
-        },
-
         getToken: async (api: Api, params: { code: string }) => {
             const code = get(params, 'code');
 
@@ -86,7 +51,10 @@ const Definition: FriggModuleAuthDefinition = {
                     details: {
                         name:
                             userData.name ||
-                            `${userData.first_name} ${userData.last_name}`,
+                            [userData.first_name, userData.last_name]
+                                .filter(Boolean)
+                                .join(' ') ||
+                            'Unknown User',
                         email: userData.email,
                         region: api.region,
                     },
@@ -99,8 +67,8 @@ const Definition: FriggModuleAuthDefinition = {
         },
 
         apiPropertiesToPersist: {
-            credential: ['access_token', 'refresh_token', 'region'],
-            entity: [],
+            credential: ['access_token', 'refresh_token'],
+            entity: ['region'],
         },
 
         getCredentialDetails: async (api: Api, userId: string) => {
@@ -130,13 +98,40 @@ const Definition: FriggModuleAuthDefinition = {
         },
 
         testAuthRequest: async (api: Api) => api.getUser(),
+    },
 
-        setAuthParams: async (api: Api, params: { region?: ClioRegion }) => {
-            if (params.region) {
-                api.setRegion(params.region);
-            }
-            return { region: api.region };
+    getEntityOptions: () => ({
+        jsonSchema: {
+            title: 'Clio Configuration',
+            type: 'object',
+            properties: {
+                region: {
+                    type: 'string',
+                    title: 'Region',
+                    enum: ['us', 'eu', 'ca', 'au'],
+                    enumNames: [
+                        'United States',
+                        'Europe',
+                        'Canada',
+                        'Australia',
+                    ],
+                    default: 'us',
+                    description:
+                        'Select the Clio region where your account is located',
+                },
+            },
         },
+        uiSchema: {
+            region: {
+                'ui:widget': 'select',
+            },
+        },
+    }),
+
+    refreshEntityOptions: async (api: Api, options: { region?: ClioRegion }) => {
+        if (options.region) {
+            api.setRegion(options.region);
+        }
     },
 
     env: {
