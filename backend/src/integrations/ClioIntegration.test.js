@@ -26,10 +26,20 @@ const mockClioContact = {
         is_client: true,
         phone_numbers: [
             { id: 1, number: '555-1234', name: 'work', default_number: true },
-            { id: 2, number: '555-5678', name: 'mobile', default_number: false },
+            {
+                id: 2,
+                number: '555-5678',
+                name: 'mobile',
+                default_number: false,
+            },
         ],
         email_addresses: [
-            { id: 1, address: 'john@example.com', name: 'work', default_email: true },
+            {
+                id: 1,
+                address: 'john@example.com',
+                name: 'work',
+                default_email: true,
+            },
         ],
         company: { id: 999, name: 'Acme Law Firm' },
     },
@@ -58,7 +68,12 @@ const mockClioContact = {
             { id: 3, number: '555-0000', name: 'main', default_number: true },
         ],
         email_addresses: [
-            { id: 2, address: 'info@acmelaw.com', name: 'main', default_email: true },
+            {
+                id: 2,
+                address: 'info@acmelaw.com',
+                name: 'main',
+                default_email: true,
+            },
         ],
     },
     minimal: {
@@ -142,7 +157,9 @@ describe('ClioIntegration', () => {
         });
 
         it('should have quo module with correct name override', () => {
-            expect(ClioIntegration.Definition.modules.quo.definition.getName()).toBe('quo-clio');
+            expect(
+                ClioIntegration.Definition.modules.quo.definition.getName(),
+            ).toBe('quo-clio');
         });
 
         it('should have CRMConfig with Person and Company object types', () => {
@@ -160,13 +177,17 @@ describe('ClioIntegration', () => {
         });
 
         it('should have cursor-based pagination configured', () => {
-            expect(ClioIntegration.CRMConfig.syncConfig.paginationType).toBe('CURSOR_BASED');
+            expect(ClioIntegration.CRMConfig.syncConfig.paginationType).toBe(
+                'CURSOR_BASED',
+            );
         });
     });
 
     describe('fetchPersonPage', () => {
         it('should fetch contacts and return correct format', async () => {
-            mockClioApi.api.listContacts.mockResolvedValue(mockClioResponse.lastPage);
+            mockClioApi.api.listContacts.mockResolvedValue(
+                mockClioResponse.lastPage,
+            );
 
             const result = await integration.fetchPersonPage({
                 objectType: 'Person',
@@ -183,7 +204,9 @@ describe('ClioIntegration', () => {
         });
 
         it('should pass cursor as page_token', async () => {
-            mockClioApi.api.listContacts.mockResolvedValue(mockClioResponse.lastPage);
+            mockClioApi.api.listContacts.mockResolvedValue(
+                mockClioResponse.lastPage,
+            );
 
             await integration.fetchPersonPage({
                 objectType: 'Person',
@@ -200,7 +223,9 @@ describe('ClioIntegration', () => {
 
         it('should convert modifiedSince to ISO string for updated_since', async () => {
             const testDate = new Date('2025-01-15T10:30:00Z');
-            mockClioApi.api.listContacts.mockResolvedValue(mockClioResponse.empty);
+            mockClioApi.api.listContacts.mockResolvedValue(
+                mockClioResponse.empty,
+            );
 
             await integration.fetchPersonPage({
                 objectType: 'Person',
@@ -217,7 +242,9 @@ describe('ClioIntegration', () => {
         });
 
         it('should set order to id(desc) when sortDesc is true', async () => {
-            mockClioApi.api.listContacts.mockResolvedValue(mockClioResponse.empty);
+            mockClioApi.api.listContacts.mockResolvedValue(
+                mockClioResponse.empty,
+            );
 
             await integration.fetchPersonPage({
                 objectType: 'Person',
@@ -234,7 +261,9 @@ describe('ClioIntegration', () => {
         });
 
         it('should set order to id(asc) when sortDesc is false', async () => {
-            mockClioApi.api.listContacts.mockResolvedValue(mockClioResponse.empty);
+            mockClioApi.api.listContacts.mockResolvedValue(
+                mockClioResponse.empty,
+            );
 
             await integration.fetchPersonPage({
                 objectType: 'Person',
@@ -251,7 +280,9 @@ describe('ClioIntegration', () => {
         });
 
         it('should return hasMore=true when next cursor exists', async () => {
-            mockClioApi.api.listContacts.mockResolvedValue(mockClioResponse.withPaging);
+            mockClioApi.api.listContacts.mockResolvedValue(
+                mockClioResponse.withPaging,
+            );
 
             const result = await integration.fetchPersonPage({
                 objectType: 'Person',
@@ -264,7 +295,9 @@ describe('ClioIntegration', () => {
         });
 
         it('should handle empty response correctly', async () => {
-            mockClioApi.api.listContacts.mockResolvedValue(mockClioResponse.empty);
+            mockClioApi.api.listContacts.mockResolvedValue(
+                mockClioResponse.empty,
+            );
 
             const result = await integration.fetchPersonPage({
                 objectType: 'Company',
@@ -280,7 +313,9 @@ describe('ClioIntegration', () => {
         });
 
         it('should pass objectType as type parameter', async () => {
-            mockClioApi.api.listContacts.mockResolvedValue(mockClioResponse.empty);
+            mockClioApi.api.listContacts.mockResolvedValue(
+                mockClioResponse.empty,
+            );
 
             await integration.fetchPersonPage({
                 objectType: 'Company',
@@ -297,7 +332,9 @@ describe('ClioIntegration', () => {
         });
 
         it('should include CONTACT_FIELDS in request', async () => {
-            mockClioApi.api.listContacts.mockResolvedValue(mockClioResponse.empty);
+            mockClioApi.api.listContacts.mockResolvedValue(
+                mockClioResponse.empty,
+            );
 
             await integration.fetchPersonPage({
                 objectType: 'Person',
@@ -314,7 +351,9 @@ describe('ClioIntegration', () => {
 
         describe('Error Handling', () => {
             it('should propagate API errors', async () => {
-                mockClioApi.api.listContacts.mockRejectedValue(new Error('Rate limited'));
+                mockClioApi.api.listContacts.mockRejectedValue(
+                    new Error('Rate limited'),
+                );
 
                 await expect(
                     integration.fetchPersonPage({
@@ -326,7 +365,9 @@ describe('ClioIntegration', () => {
             });
 
             it('should propagate network errors', async () => {
-                mockClioApi.api.listContacts.mockRejectedValue(new Error('Network error'));
+                mockClioApi.api.listContacts.mockRejectedValue(
+                    new Error('Network error'),
+                );
 
                 await expect(
                     integration.fetchPersonPage({
@@ -341,7 +382,9 @@ describe('ClioIntegration', () => {
 
     describe('transformPersonToQuo', () => {
         it('should transform Person with all fields correctly', async () => {
-            const result = await integration.transformPersonToQuo(mockClioContact.person);
+            const result = await integration.transformPersonToQuo(
+                mockClioContact.person,
+            );
 
             expect(result).toEqual({
                 externalId: '123',
@@ -358,7 +401,11 @@ describe('ClioIntegration', () => {
                         { name: 'Mobile', value: '555-5678', primary: false },
                     ],
                     emails: [
-                        { name: 'Work', value: 'john@example.com', primary: true },
+                        {
+                            name: 'Work',
+                            value: 'john@example.com',
+                            primary: true,
+                        },
                     ],
                 },
                 customFields: [],
@@ -367,14 +414,18 @@ describe('ClioIntegration', () => {
         });
 
         it('should handle Person without middle_name', async () => {
-            const result = await integration.transformPersonToQuo(mockClioContact.personNoMiddleName);
+            const result = await integration.transformPersonToQuo(
+                mockClioContact.personNoMiddleName,
+            );
 
             expect(result.defaultFields.firstName).toBe('Jane');
             expect(result.defaultFields.lastName).toBe('Smith');
         });
 
         it('should transform Company type correctly', async () => {
-            const result = await integration.transformPersonToQuo(mockClioContact.company);
+            const result = await integration.transformPersonToQuo(
+                mockClioContact.company,
+            );
 
             expect(result.externalId).toBe('456');
             expect(result.defaultFields.firstName).toBe('Acme Law Firm');
@@ -384,7 +435,9 @@ describe('ClioIntegration', () => {
         });
 
         it('should handle minimal Person data', async () => {
-            const result = await integration.transformPersonToQuo(mockClioContact.minimal);
+            const result = await integration.transformPersonToQuo(
+                mockClioContact.minimal,
+            );
 
             expect(result.externalId).toBe('789');
             expect(result.defaultFields.firstName).toBe('Test');
@@ -395,14 +448,18 @@ describe('ClioIntegration', () => {
         });
 
         it('should capitalize phone number labels', async () => {
-            const result = await integration.transformPersonToQuo(mockClioContact.person);
+            const result = await integration.transformPersonToQuo(
+                mockClioContact.person,
+            );
 
             expect(result.defaultFields.phoneNumbers[0].name).toBe('Work');
             expect(result.defaultFields.phoneNumbers[1].name).toBe('Mobile');
         });
 
         it('should capitalize email labels', async () => {
-            const result = await integration.transformPersonToQuo(mockClioContact.person);
+            const result = await integration.transformPersonToQuo(
+                mockClioContact.person,
+            );
 
             expect(result.defaultFields.emails[0].name).toBe('Work');
         });
@@ -431,12 +488,16 @@ describe('ClioIntegration', () => {
         });
 
         it('should always set isEditable to false', async () => {
-            const result = await integration.transformPersonToQuo(mockClioContact.person);
+            const result = await integration.transformPersonToQuo(
+                mockClioContact.person,
+            );
             expect(result.isEditable).toBe(false);
         });
 
         it('should always set source to openphone-clio', async () => {
-            const result = await integration.transformPersonToQuo(mockClioContact.person);
+            const result = await integration.transformPersonToQuo(
+                mockClioContact.person,
+            );
             expect(result.source).toBe('openphone-clio');
         });
 
@@ -460,7 +521,8 @@ describe('ClioIntegration', () => {
                 updated_at: '2025-01-01T00:00:00Z',
             };
 
-            const result = await integration.transformPersonToQuo(noNameCompany);
+            const result =
+                await integration.transformPersonToQuo(noNameCompany);
             expect(result.defaultFields.firstName).toBe('Unknown');
         });
     });
@@ -503,12 +565,17 @@ describe('ClioIntegration', () => {
 
             const result = await integration.transformPersonsToQuo(contacts);
 
-            expect(mockClioApi.api.getContact).toHaveBeenCalledWith(999, 'id,name');
+            expect(mockClioApi.api.getContact).toHaveBeenCalledWith(
+                999,
+                'id,name',
+            );
             expect(result[0].defaultFields.company).toBe('Fetched Company');
         });
 
         it('should handle company fetch error gracefully', async () => {
-            mockClioApi.api.getContact.mockRejectedValue(new Error('API Error'));
+            mockClioApi.api.getContact.mockRejectedValue(
+                new Error('API Error'),
+            );
 
             const contacts = [mockClioContact.personWithCompanyRef];
 
@@ -612,7 +679,9 @@ describe('ClioIntegration', () => {
             });
 
             it('should return 500 on API error', async () => {
-                mockClioApi.api.listContacts.mockRejectedValue(new Error('API Error'));
+                mockClioApi.api.listContacts.mockRejectedValue(
+                    new Error('API Error'),
+                );
 
                 await integration.listContacts({ req: mockReq, res: mockRes });
 
@@ -662,7 +731,9 @@ describe('ClioIntegration', () => {
             });
 
             it('should return 500 on API error', async () => {
-                mockClioApi.api.listMatters.mockRejectedValue(new Error('Matters API Error'));
+                mockClioApi.api.listMatters.mockRejectedValue(
+                    new Error('Matters API Error'),
+                );
 
                 await integration.listMatters({ req: mockReq, res: mockRes });
 
@@ -705,37 +776,55 @@ describe('ClioIntegration', () => {
     describe('Region URL Generation', () => {
         it('should generate US region URL without prefix', async () => {
             mockClioApi.api.region = 'us';
-            const result = await integration.transformPersonToQuo(mockClioContact.person);
+            const result = await integration.transformPersonToQuo(
+                mockClioContact.person,
+            );
             expect(result.sourceUrl).toBe('https://app.clio.com/contacts/123');
         });
 
         it('should generate EU region URL with eu prefix', async () => {
             mockClioApi.api.region = 'eu';
-            const result = await integration.transformPersonToQuo(mockClioContact.person);
-            expect(result.sourceUrl).toBe('https://eu.app.clio.com/contacts/123');
+            const result = await integration.transformPersonToQuo(
+                mockClioContact.person,
+            );
+            expect(result.sourceUrl).toBe(
+                'https://eu.app.clio.com/contacts/123',
+            );
         });
 
         it('should generate CA region URL with ca prefix', async () => {
             mockClioApi.api.region = 'ca';
-            const result = await integration.transformPersonToQuo(mockClioContact.person);
-            expect(result.sourceUrl).toBe('https://ca.app.clio.com/contacts/123');
+            const result = await integration.transformPersonToQuo(
+                mockClioContact.person,
+            );
+            expect(result.sourceUrl).toBe(
+                'https://ca.app.clio.com/contacts/123',
+            );
         });
 
         it('should generate AU region URL with au prefix', async () => {
             mockClioApi.api.region = 'au';
-            const result = await integration.transformPersonToQuo(mockClioContact.person);
-            expect(result.sourceUrl).toBe('https://au.app.clio.com/contacts/123');
+            const result = await integration.transformPersonToQuo(
+                mockClioContact.person,
+            );
+            expect(result.sourceUrl).toBe(
+                'https://au.app.clio.com/contacts/123',
+            );
         });
 
         it('should default to US region when region is undefined', async () => {
             mockClioApi.api.region = undefined;
-            const result = await integration.transformPersonToQuo(mockClioContact.person);
+            const result = await integration.transformPersonToQuo(
+                mockClioContact.person,
+            );
             expect(result.sourceUrl).toBe('https://app.clio.com/contacts/123');
         });
 
         it('should default to US when clio.api is undefined', async () => {
             integration.clio = {};
-            const result = await integration.transformPersonToQuo(mockClioContact.person);
+            const result = await integration.transformPersonToQuo(
+                mockClioContact.person,
+            );
             expect(result.sourceUrl).toBe('https://app.clio.com/contacts/123');
         });
     });
@@ -752,7 +841,8 @@ describe('ClioIntegration', () => {
                 execute: jest.fn().mockResolvedValue({}),
             };
             integration.commands = mockCommands;
-            integration.updateIntegrationMessages = mockUpdateIntegrationMessages;
+            integration.updateIntegrationMessages =
+                mockUpdateIntegrationMessages;
             integration.queueWebhook = jest.fn().mockResolvedValue({});
         });
 
@@ -783,7 +873,9 @@ describe('ClioIntegration', () => {
                 expect(result.clio.status).toBe('failed');
                 expect(result.clio.error).toBe('API Error');
                 expect(result.overallStatus).toBe('partial');
-                expect(mockUpdateIntegrationMessages.execute).toHaveBeenCalled();
+                expect(
+                    mockUpdateIntegrationMessages.execute,
+                ).toHaveBeenCalled();
             });
         });
 
@@ -847,7 +939,9 @@ describe('ClioIntegration', () => {
                 );
                 // activateWebhook should NOT be called here - it happens in handshake
                 expect(mockClioApi.api.activateWebhook).not.toHaveBeenCalled();
-                expect(mockCommands.updateIntegrationConfig).toHaveBeenCalledWith(
+                expect(
+                    mockCommands.updateIntegrationConfig,
+                ).toHaveBeenCalledWith(
                     expect.objectContaining({
                         config: expect.objectContaining({
                             clioWebhookId: 12345,
@@ -872,7 +966,9 @@ describe('ClioIntegration', () => {
 
                 await integration.setupClioWebhook();
 
-                expect(mockClioApi.api.deleteWebhook).toHaveBeenCalledWith(99999);
+                expect(mockClioApi.api.deleteWebhook).toHaveBeenCalledWith(
+                    99999,
+                );
             });
         });
 
@@ -894,7 +990,10 @@ describe('ClioIntegration', () => {
                     json: jest.fn(),
                 };
 
-                await integration.onWebhookReceived({ req: mockReq, res: mockRes });
+                await integration.onWebhookReceived({
+                    req: mockReq,
+                    res: mockRes,
+                });
 
                 // Should queue the handshake for processing in onWebhook
                 expect(integration.queueWebhook).toHaveBeenCalledWith(
@@ -924,7 +1023,10 @@ describe('ClioIntegration', () => {
                     json: jest.fn(),
                 };
 
-                await integration.onWebhookReceived({ req: mockReq, res: mockRes });
+                await integration.onWebhookReceived({
+                    req: mockReq,
+                    res: mockRes,
+                });
 
                 expect(mockRes.status).toHaveBeenCalledWith(401);
                 expect(mockRes.json).toHaveBeenCalledWith({
@@ -944,7 +1046,10 @@ describe('ClioIntegration', () => {
                     json: jest.fn(),
                 };
 
-                await integration.onWebhookReceived({ req: mockReq, res: mockRes });
+                await integration.onWebhookReceived({
+                    req: mockReq,
+                    res: mockRes,
+                });
 
                 expect(integration.queueWebhook).toHaveBeenCalledWith(
                     expect.objectContaining({
@@ -959,8 +1064,12 @@ describe('ClioIntegration', () => {
 
         describe('_handleClioWebhook', () => {
             beforeEach(() => {
-                mockQuoApi.api.createFriggContact = jest.fn().mockResolvedValue({});
-                mockQuoApi.api.updateFriggContact = jest.fn().mockResolvedValue({});
+                mockQuoApi.api.createFriggContact = jest
+                    .fn()
+                    .mockResolvedValue({});
+                mockQuoApi.api.updateFriggContact = jest
+                    .fn()
+                    .mockResolvedValue({});
                 mockQuoApi.api.listContacts = jest
                     .fn()
                     .mockResolvedValue({ data: [{ id: 'quo-contact-123' }] });
@@ -983,7 +1092,8 @@ describe('ClioIntegration', () => {
                     hookSecret: 'the-secret-from-clio',
                 };
 
-                const result = await integration._handleClioWebhook(webhookData);
+                const result =
+                    await integration._handleClioWebhook(webhookData);
 
                 expect(result.success).toBe(true);
                 expect(result.type).toBe('handshake');
@@ -991,7 +1101,9 @@ describe('ClioIntegration', () => {
                     12345,
                     'the-secret-from-clio',
                 );
-                expect(mockCommands.updateIntegrationConfig).toHaveBeenCalledWith(
+                expect(
+                    mockCommands.updateIntegrationConfig,
+                ).toHaveBeenCalledWith(
                     expect.objectContaining({
                         config: expect.objectContaining({
                             clioWebhookSecret: 'the-secret-from-clio',
@@ -1011,7 +1123,8 @@ describe('ClioIntegration', () => {
                     headers: {},
                 };
 
-                const result = await integration._handleClioWebhook(webhookData);
+                const result =
+                    await integration._handleClioWebhook(webhookData);
 
                 expect(result.success).toBe(true);
                 expect(result.event).toBe('created');
@@ -1028,7 +1141,8 @@ describe('ClioIntegration', () => {
                     headers: {},
                 };
 
-                const result = await integration._handleClioWebhook(webhookData);
+                const result =
+                    await integration._handleClioWebhook(webhookData);
 
                 expect(result.success).toBe(true);
                 expect(result.event).toBe('updated');
@@ -1049,7 +1163,8 @@ describe('ClioIntegration', () => {
                     headers: {},
                 };
 
-                const result = await integration._handleClioWebhook(webhookData);
+                const result =
+                    await integration._handleClioWebhook(webhookData);
 
                 expect(result.success).toBe(true);
                 expect(result.event).toBe('deleted');
@@ -1071,7 +1186,8 @@ describe('ClioIntegration', () => {
                     headers: {},
                 };
 
-                const result = await integration._handleClioWebhook(webhookData);
+                const result =
+                    await integration._handleClioWebhook(webhookData);
 
                 expect(result.success).toBe(true);
                 expect(result.skipped).toBe(true);
@@ -1145,7 +1261,9 @@ describe('ClioIntegration', () => {
                     .mockResolvedValue({ data: [{ id: 'quo-123' }] });
                 const error = new Error('Contact not found');
                 error.status = 404;
-                mockQuoApi.api.deleteContact = jest.fn().mockRejectedValue(error);
+                mockQuoApi.api.deleteContact = jest
+                    .fn()
+                    .mockRejectedValue(error);
 
                 await expect(
                     integration._handleContactDeleted(123),
@@ -1158,11 +1276,13 @@ describe('ClioIntegration', () => {
                     .mockResolvedValue({ data: [{ id: 'quo-123' }] });
                 const error = new Error('Server error');
                 error.status = 500;
-                mockQuoApi.api.deleteContact = jest.fn().mockRejectedValue(error);
+                mockQuoApi.api.deleteContact = jest
+                    .fn()
+                    .mockRejectedValue(error);
 
-                await expect(integration._handleContactDeleted(123)).rejects.toThrow(
-                    'Server error',
-                );
+                await expect(
+                    integration._handleContactDeleted(123),
+                ).rejects.toThrow('Server error');
             });
         });
 
@@ -1173,7 +1293,9 @@ describe('ClioIntegration', () => {
 
                 await integration.onDelete();
 
-                expect(mockClioApi.api.deleteWebhook).toHaveBeenCalledWith(12345);
+                expect(mockClioApi.api.deleteWebhook).toHaveBeenCalledWith(
+                    12345,
+                );
             });
 
             it('should handle webhook deletion error gracefully', async () => {

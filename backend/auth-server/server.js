@@ -36,7 +36,10 @@ app.get('/redirect/:appId', async (req, res) => {
         console.log(`POST ${BACKEND_URL}/api/authorize`);
         console.log(`Body:`, {
             entityType: appId,
-            data: { ...authParams, code: authParams.code.substring(0, 20) + '...' },
+            data: {
+                ...authParams,
+                code: authParams.code.substring(0, 20) + '...',
+            },
         });
 
         // Exchange code for tokens via backend using x-frigg-api-key authentication
