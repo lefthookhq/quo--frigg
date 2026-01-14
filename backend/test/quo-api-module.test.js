@@ -365,7 +365,9 @@ describe('Quo API Module - API Key Authentication', () => {
                 it('should call listContacts to validate API key', async () => {
                     const api = new Api({ api_key: 'test-key-123' });
                     const mockResponse = { data: [{ id: 'contact-1' }] };
-                    api.listContacts = jest.fn().mockResolvedValue(mockResponse);
+                    api.listContacts = jest
+                        .fn()
+                        .mockResolvedValue(mockResponse);
 
                     const result =
                         await Definition.requiredAuthMethods.testAuthRequest(
