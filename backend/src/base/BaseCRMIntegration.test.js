@@ -1565,12 +1565,107 @@ describe('BaseCRMIntegration', () => {
                 integration.config.quoMessageWebhooks = [];
                 integration.config.quoCallWebhooks = [];
                 integration.config.quoCallSummaryWebhooks = [];
+                // Also ensure no legacy webhook IDs
+                delete integration.config.quoMessageWebhookId;
+                delete integration.config.quoCallWebhookId;
+                delete integration.config.quoCallSummaryWebhookId;
 
                 await expect(
                     integration.onUpdate({
                         config: { resourceIds: ['PN-new-1'] },
                     }),
                 ).rejects.toThrow('Webhooks not configured');
+            });
+        });
+
+        describe('legacy webhook structure migration', () => {
+            beforeEach(() => {
+                // Set up legacy single-value webhook structure
+                integration.config = {
+                    enabledPhoneIds: ['PN-old-1', 'PN-old-2'],
+                    quoMessageWebhookId: 'legacy-msg-123',
+                    quoMessageWebhookKey: 'legacy-msg-key-123',
+                    quoCallWebhookId: 'legacy-call-123',
+                    quoCallWebhookKey: 'legacy-call-key-123',
+                    quoCallSummaryWebhookId: 'legacy-summary-123',
+                    quoCallSummaryWebhookKey: 'legacy-summary-key-123',
+                    someOtherConfig: 'should-be-preserved',
+                };
+            });
+
+            it('should migrate from legacy webhook structure when phone IDs change', async () => {
+                await integration.onUpdate({
+                    config: { resourceIds: ['PN-new-1', 'PN-new-2'] },
+                });
+
+                // Old legacy webhooks should be deleted
+                expect(integration.quo.api.deleteWebhook).toHaveBeenCalledWith(
+                    'legacy-msg-123',
+                );
+                expect(integration.quo.api.deleteWebhook).toHaveBeenCalledWith(
+                    'legacy-call-123',
+                );
+                expect(integration.quo.api.deleteWebhook).toHaveBeenCalledWith(
+                    'legacy-summary-123',
+                );
+
+                // New webhooks should be created with array structure
+                expect(
+                    integration.quo.api.createMessageWebhook,
+                ).toHaveBeenCalled();
+                expect(
+                    integration.quo.api.createCallWebhook,
+                ).toHaveBeenCalled();
+                expect(
+                    integration.quo.api.createCallSummaryWebhook,
+                ).toHaveBeenCalled();
+            });
+
+            it('should clean up legacy webhook fields after migration', async () => {
+                await integration.onUpdate({
+                    config: { resourceIds: ['PN-new-1'] },
+                });
+
+                // Legacy single-value fields should be removed
+                expect(integration.config.quoMessageWebhookId).toBeUndefined();
+                expect(integration.config.quoMessageWebhookKey).toBeUndefined();
+                expect(integration.config.quoCallWebhookId).toBeUndefined();
+                expect(integration.config.quoCallWebhookKey).toBeUndefined();
+                expect(
+                    integration.config.quoCallSummaryWebhookId,
+                ).toBeUndefined();
+                expect(
+                    integration.config.quoCallSummaryWebhookKey,
+                ).toBeUndefined();
+
+                // New array structure should be present
+                expect(integration.config.quoMessageWebhooks).toBeDefined();
+                expect(integration.config.quoCallWebhooks).toBeDefined();
+                expect(integration.config.quoCallSummaryWebhooks).toBeDefined();
+            });
+
+            it('should preserve other config fields during migration', async () => {
+                await integration.onUpdate({
+                    config: { resourceIds: ['PN-new-1'] },
+                });
+
+                expect(integration.config.someOtherConfig).toBe(
+                    'should-be-preserved',
+                );
+            });
+
+            it('should NOT throw error when only legacy structure exists', async () => {
+                // Ensure no new array structure
+                delete integration.config.quoMessageWebhooks;
+                delete integration.config.quoCallWebhooks;
+                delete integration.config.quoCallSummaryWebhooks;
+
+                // Should not throw - legacy structure is valid
+                await expect(
+                    integration.onUpdate({
+                        config: { resourceIds: ['PN-new-1'] },
+                    }),
+                ).resolves.not.toThrow();
             });
         });
 

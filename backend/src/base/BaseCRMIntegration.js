@@ -1657,18 +1657,31 @@ class BaseCRMIntegration extends IntegrationBase {
             );
         }
 
+        // Support both new array structure and old single-value structure
         const oldWebhooks = {
             message: this.config?.quoMessageWebhooks || [],
             call: this.config?.quoCallWebhooks || [],
             callSummary: this.config?.quoCallSummaryWebhooks || [],
         };
 
-        const hasOldWebhooks =
+        // Check for old single-value webhook IDs (legacy structure)
+        const legacyWebhookIds = {
+            message: this.config?.quoMessageWebhookId,
+            call: this.config?.quoCallWebhookId,
+            callSummary: this.config?.quoCallSummaryWebhookId,
+        };
+
+        const hasNewStructure =
             oldWebhooks.message.length > 0 ||
             oldWebhooks.call.length > 0 ||
             oldWebhooks.callSummary.length > 0;
 
-        if (!hasOldWebhooks) {
+        const hasLegacyStructure =
+            legacyWebhookIds.message ||
+            legacyWebhookIds.call ||
+            legacyWebhookIds.callSummary;
+
+        if (!hasNewStructure && !hasLegacyStructure) {
             throw new Error(
                 'Webhooks not configured - cannot recreate. Run initial webhook setup first.',
             );
@@ -1695,13 +1708,18 @@ class BaseCRMIntegration extends IntegrationBase {
 
             console.log('[Quo] ✓ New webhooks created successfully');
 
-            // Delete old webhooks (best effort - collect all IDs from arrays)
+            // Delete old webhooks (best effort - collect IDs from both new and legacy structures)
             console.log('[Quo] Deleting old webhooks...');
 
             const oldWebhookIds = [
+                // New array structure
                 ...oldWebhooks.message.map((wh) => wh.id),
                 ...oldWebhooks.call.map((wh) => wh.id),
                 ...oldWebhooks.callSummary.map((wh) => wh.id),
+                // Legacy single-value structure
+                ...(legacyWebhookIds.message ? [legacyWebhookIds.message] : []),
+                ...(legacyWebhookIds.call ? [legacyWebhookIds.call] : []),
+                ...(legacyWebhookIds.callSummary ? [legacyWebhookIds.callSummary] : []),
             ];
 
             const deletionResults = await Promise.allSettled(
@@ -1794,6 +1812,14 @@ class BaseCRMIntegration extends IntegrationBase {
                         newWebhooks.callSummaryWebhooks;
                     patchedConfig.quoWebhooksCreatedAt =
                         new Date().toISOString();
+
+                    // Clean up legacy single-value webhook fields after migration
+                    delete patchedConfig.quoMessageWebhookId;
+                    delete patchedConfig.quoMessageWebhookKey;
+                    delete patchedConfig.quoCallWebhookId;
+                    delete patchedConfig.quoCallWebhookKey;
+                    delete patchedConfig.quoCallSummaryWebhookId;
+                    delete patchedConfig.quoCallSummaryWebhookKey;
 
                     console.log(
                         '[Config Update] ✓ Webhooks recreated successfully',
