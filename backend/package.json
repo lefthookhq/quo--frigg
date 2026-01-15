@@ -3,6 +3,7 @@
     "prettier": "@friggframework/prettier-config",
     "private": true,
     "scripts": {
+        "postinstall": "cd src/api-modules/clio && npm install",
         "test": "jest --group=-interactive --group=-live-api",
         "test:full": "jest",
         "test:process": "jest --testPathPattern process-tests process.test",
@@ -52,8 +53,6 @@
         "@friggframework/test": "v2.0.0-next.64",
         "@prisma/client": "^6.17.0",
         "@types/node": "^22.1.0",
-        "@typescript-eslint/eslint-plugin": "^8.50.1",
-        "@typescript-eslint/parser": "^8.50.1",
         "chai": "^4.5.0",
         "chai-http": "^4.4.0",
         "dotenv": "^16.4.5",

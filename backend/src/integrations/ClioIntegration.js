@@ -489,7 +489,9 @@ class ClioIntegration extends BaseCRMIntegration {
             // Clio sends X-Hook-Secret header when setting up webhook
             // Queue it for processing in onWebhook where we have full context
             if (hookSecret) {
-                console.log('[Clio Webhook] Received handshake request - queueing for processing');
+                console.log(
+                    '[Clio Webhook] Received handshake request - queueing for processing',
+                );
 
                 const webhookData = {
                     body: req.body,

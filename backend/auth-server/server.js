@@ -11,14 +11,13 @@ const FRIGG_APP_ORG_ID = process.env.FRIGG_APP_ORG_ID || 'test-org-oauth';
 // Handle OAuth redirect callback
 app.get('/redirect/:appId', async (req, res) => {
     const { appId } = req.params;
-    const { code, state, error, error_description } = req.query;
+    const { error, error_description, ...authParams } = req.query;
 
     console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
     console.log(`🔐 OAuth Redirect Received`);
     console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
     console.log(`App ID: ${appId}`);
-    console.log(`Code: ${code?.substring(0, 20)}...`);
-    console.log(`State: ${state}`);
+    console.log(`Params:`, Object.keys(authParams));
 
     // Handle OAuth errors
     if (error) {
@@ -27,7 +26,7 @@ app.get('/redirect/:appId', async (req, res) => {
         return res.status(400).json({ error, error_description });
     }
 
-    if (!code) {
+    if (!authParams.code) {
         console.error(`\n❌ No authorization code received`);
         return res.status(400).json({ error: 'missing_code' });
     }
@@ -37,7 +36,10 @@ app.get('/redirect/:appId', async (req, res) => {
         console.log(`POST ${BACKEND_URL}/api/authorize`);
         console.log(`Body:`, {
             entityType: appId,
-            data: { code: code.substring(0, 20) + '...' },
+            data: {
+                ...authParams,
+                code: authParams.code.substring(0, 20) + '...',
+            },
         });
 
         // Exchange code for tokens via backend using x-frigg-api-key authentication
@@ -57,7 +59,7 @@ app.get('/redirect/:appId', async (req, res) => {
             headers,
             body: JSON.stringify({
                 entityType: appId,
-                data: { code },
+                data: authParams,
             }),
         });
 

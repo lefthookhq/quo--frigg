@@ -362,16 +362,22 @@ describe('Quo API Module - API Key Authentication', () => {
             });
 
             describe('testAuthRequest', () => {
-                it('should skip actual API test due to propagation delay', async () => {
+                it('should call listContacts to validate API key', async () => {
                     const api = new Api({ api_key: 'test-key-123' });
+                    const mockResponse = { data: [{ id: 'contact-1' }] };
+                    api.listContacts = jest
+                        .fn()
+                        .mockResolvedValue(mockResponse);
 
                     const result =
                         await Definition.requiredAuthMethods.testAuthRequest(
                             api,
                         );
 
-                    expect(result.status).toBe('success');
-                    expect(result.message).toContain('API key propagation');
+                    expect(api.listContacts).toHaveBeenCalledWith({
+                        maxResults: 1,
+                    });
+                    expect(result).toEqual(mockResponse);
                 });
             });
 
