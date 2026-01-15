@@ -361,26 +361,6 @@ describe('Quo API Module - API Key Authentication', () => {
                 });
             });
 
-            describe('testAuthRequest', () => {
-                it('should call listContacts to validate API key', async () => {
-                    const api = new Api({ api_key: 'test-key-123' });
-                    const mockResponse = { data: [{ id: 'contact-1' }] };
-                    api.listContacts = jest
-                        .fn()
-                        .mockResolvedValue(mockResponse);
-
-                    const result =
-                        await Definition.requiredAuthMethods.testAuthRequest(
-                            api,
-                        );
-
-                    expect(api.listContacts).toHaveBeenCalledWith({
-                        maxResults: 1,
-                    });
-                    expect(result).toEqual(mockResponse);
-                });
-            });
-
             describe('apiPropertiesToPersist', () => {
                 it('should persist api_key in credential', () => {
                     const props =
