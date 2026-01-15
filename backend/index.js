@@ -3,7 +3,7 @@ const ZohoCRMIntegration = require('./src/integrations/ZohoCRMIntegration');
 const PipedriveIntegration = require('./src/integrations/PipedriveIntegration');
 const AttioIntegration = require('./src/integrations/AttioIntegration');
 const AxisCareIntegration = require('./src/integrations/AxisCareIntegration');
-const ClioIntegration = require('./src/integrations/ClioIntegration');
+// const ClioIntegration = require('./src/integrations/ClioIntegration');
 
 const appDefinition = {
     label: 'Quo Integrations',
@@ -18,7 +18,7 @@ const appDefinition = {
         PipedriveIntegration,
         AttioIntegration,
         AxisCareIntegration,
-        ClioIntegration,
+        // ClioIntegration,
     ],
     user: {
         usePassword: true,
