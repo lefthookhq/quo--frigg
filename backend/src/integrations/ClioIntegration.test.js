@@ -913,19 +913,35 @@ describe('ClioIntegration', () => {
                     callSummaryWebhookId: 'summary-wh-123',
                 });
 
+                // Mock setupClickToCall
+                integration.setupClickToCall = jest.fn().mockResolvedValue({
+                    status: 'configured',
+                    customActionId: 'ca-123',
+                });
+
                 const result = await integration.setupWebhooks();
 
                 expect(result.clio.status).toBe('pending_handshake');
                 expect(result.clio.webhookId).toBe(12345);
                 expect(result.quo.status).toBe('configured');
+                expect(result.clickToCall.status).toBe('configured');
                 expect(result.overallStatus).toBe('success');
                 expect(integration.setupQuoWebhook).toHaveBeenCalled();
+                expect(integration.setupClickToCall).toHaveBeenCalled();
             });
 
             it('should handle setupClioWebhook failure gracefully', async () => {
                 mockClioApi.api.createWebhook = jest
                     .fn()
                     .mockRejectedValue(new Error('API Error'));
+
+                // Mock setupQuoWebhook and setupClickToCall
+                integration.setupQuoWebhook = jest.fn().mockResolvedValue({
+                    status: 'configured',
+                });
+                integration.setupClickToCall = jest.fn().mockResolvedValue({
+                    status: 'configured',
+                });
 
                 const result = await integration.setupWebhooks();
 
@@ -1028,6 +1044,51 @@ describe('ClioIntegration', () => {
                 expect(mockClioApi.api.deleteWebhook).toHaveBeenCalledWith(
                     99999,
                 );
+            });
+        });
+
+        describe('setupClickToCall', () => {
+            it('should return already_configured when custom action exists', async () => {
+                integration.config = {
+                    clioCustomActionId: 'ca-123',
+                };
+
+                const result = await integration.setupClickToCall();
+
+                expect(result.status).toBe('already_configured');
+                expect(result.customActionId).toBe('ca-123');
+            });
+
+            it('should create custom action when not configured', async () => {
+                integration.config = {};
+                integration.id = '10';
+                mockClioApi.api.createCustomAction = jest.fn().mockResolvedValue({
+                    data: { id: 'ca-456' },
+                });
+
+                const result = await integration.setupClickToCall();
+
+                expect(result.status).toBe('configured');
+                expect(result.customActionId).toBe('ca-456');
+                expect(mockClioApi.api.createCustomAction).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        label: 'Call with Quo',
+                        ui_reference: 'contacts/show',
+                    }),
+                );
+                expect(mockCommands.updateIntegrationConfig).toHaveBeenCalledWith({
+                    integrationId: '10',
+                    config: { clioCustomActionId: 'ca-456' },
+                });
+            });
+
+            it('should handle custom action creation failure', async () => {
+                integration.config = {};
+                mockClioApi.api.createCustomAction = jest
+                    .fn()
+                    .mockRejectedValue(new Error('API Error'));
+
+                await expect(integration.setupClickToCall()).rejects.toThrow('API Error');
             });
         });
 
