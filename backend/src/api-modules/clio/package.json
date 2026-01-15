@@ -16,7 +16,7 @@
         "defaultConfig.json"
     ],
     "dependencies": {
-        "@friggframework/core": "^2.0.0"
+        "@friggframework/core": "2.0.0-next.67"
     },
     "devDependencies": {
         "@types/node": "^20.8.0",
