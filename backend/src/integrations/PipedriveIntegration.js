@@ -10,6 +10,22 @@ const { QUO_ANALYTICS_EVENTS, QuoWebhookEvents } = require('../base/constants');
 const { trackAnalyticsEvent } = require('../utils/trackAnalyticsEvent');
 
 /**
+ * Format duration in seconds to Pipedrive's HH:MM format
+ * @param {number} seconds - Duration in seconds
+ * @returns {string|undefined} - Duration in HH:MM format, or undefined if less than 1 minute
+ */
+function formatDurationForPipedrive(seconds) {
+    if (!seconds) return undefined;
+    const totalMinutes = Math.floor(seconds / 60);
+    if (totalMinutes < 1) return undefined;
+    const hours = Math.floor(totalMinutes / 60)
+        .toString()
+        .padStart(2, '0');
+    const minutes = (totalMinutes % 60).toString().padStart(2, '0');
+    return `${hours}:${minutes}`;
+}
+
+/**
  * PipedriveIntegration - Refactored to extend BaseCRMIntegration
  *
  * Pipedrive-specific implementation for syncing persons/deals with Quo.
@@ -481,9 +497,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 done: 1,
                 note: activity.summary || 'Phone call',
                 participants: [{ person_id: person.data.id, primary: true }],
-                duration: activity.duration
-                    ? Math.floor(activity.duration / 60) || undefined
-                    : undefined,
+                duration: formatDurationForPipedrive(activity.duration),
             };
 
             await this.pipedrive.api.createActivity(activityData);
@@ -1344,9 +1358,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                         participants: [
                             { person_id: parseInt(contactId), primary: true },
                         ],
-                        duration: activity.duration
-                            ? Math.floor(activity.duration / 60)
-                            : undefined,
+                        duration: formatDurationForPipedrive(activity.duration),
                     };
                     const activityResponse =
                         await this.pipedrive.api.createActivity(activityData);

@@ -468,7 +468,7 @@ describe('PipedriveIntegration (Refactored)', () => {
                     done: 1,
                     note: 'Discussed project proposal',
                     participants: [{ person_id: 123, primary: true }],
-                    duration: 5,
+                    duration: '00:05',
                 });
             });
 
