@@ -729,7 +729,8 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                     '[Quo] Partial webhook configuration detected - cleaning up before retry',
                 );
 
-                const quoMessageWebhooks = this.config?.quoMessageWebhooks || [];
+                const quoMessageWebhooks =
+                    this.config?.quoMessageWebhooks || [];
                 for (const webhook of quoMessageWebhooks) {
                     try {
                         await this.quo.api.deleteWebhook(webhook.id);
@@ -757,7 +758,8 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                     }
                 }
 
-                const quoCallSummaryWebhooks = this.config?.quoCallSummaryWebhooks || [];
+                const quoCallSummaryWebhooks =
+                    this.config?.quoCallSummaryWebhooks || [];
                 for (const webhook of quoCallSummaryWebhooks) {
                     try {
                         await this.quo.api.deleteWebhook(webhook.id);
@@ -782,7 +784,10 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 await this._createQuoWebhooksWithPhoneIds(webhookUrl);
 
             createdWebhooks.push(
-                ...messageWebhooks.map((wh) => ({ type: 'message', id: wh.id })),
+                ...messageWebhooks.map((wh) => ({
+                    type: 'message',
+                    id: wh.id,
+                })),
                 ...callWebhooks.map((wh) => ({ type: 'call', id: wh.id })),
                 ...callSummaryWebhooks.map((wh) => ({
                     type: 'callSummary',
@@ -2188,7 +2193,9 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             }
 
             if (this.config?.quoCallSummaryWebhookId) {
-                console.log('[Quo] Deleting old call-summary webhook structure');
+                console.log(
+                    '[Quo] Deleting old call-summary webhook structure',
+                );
                 try {
                     await this.quo.api.deleteWebhook(
                         this.config.quoCallSummaryWebhookId,

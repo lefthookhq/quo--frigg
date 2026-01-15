@@ -48,24 +48,27 @@ describe('PipedriveIntegration - Backwards Compatibility', () => {
 
         integration._generateWebhookUrl = jest
             .fn()
-            .mockReturnValue('https://example.com/webhooks/test-integration-id');
+            .mockReturnValue(
+                'https://example.com/webhooks/test-integration-id',
+            );
 
         // Mock updateConfig method (used by _migrateOldWebhooksToNewStructure)
-        integration.updateConfig = jest.fn().mockImplementation(async (config) => {
-            integration.config = { ...integration.config, ...config };
-            // Also call commands.updateIntegrationConfig to match real behavior
-            await mockCommands.updateIntegrationConfig({
-                integrationId: integration.id,
-                config,
+        integration.updateConfig = jest
+            .fn()
+            .mockImplementation(async (config) => {
+                integration.config = { ...integration.config, ...config };
+                // Also call commands.updateIntegrationConfig to match real behavior
+                await mockCommands.updateIntegrationConfig({
+                    integrationId: integration.id,
+                    config,
+                });
+                return config;
             });
-            return config;
-        });
 
         // Mock IntegrationBase parent onDelete method
         // Since PipedriveIntegration calls super.onDelete(params) at the end
-        Object.getPrototypeOf(Object.getPrototypeOf(integration)).onDelete = jest
-            .fn()
-            .mockResolvedValue(undefined);
+        Object.getPrototypeOf(Object.getPrototypeOf(integration)).onDelete =
+            jest.fn().mockResolvedValue(undefined);
     });
 
     describe('_migrateOldWebhooksToNewStructure', () => {
@@ -83,7 +86,8 @@ describe('PipedriveIntegration - Backwards Compatibility', () => {
             };
 
             // Act
-            const migrated = await integration._migrateOldWebhooksToNewStructure();
+            const migrated =
+                await integration._migrateOldWebhooksToNewStructure();
 
             // Assert
             expect(migrated).toBe(true);
@@ -134,7 +138,8 @@ describe('PipedriveIntegration - Backwards Compatibility', () => {
             };
 
             // Act
-            const migrated = await integration._migrateOldWebhooksToNewStructure();
+            const migrated =
+                await integration._migrateOldWebhooksToNewStructure();
 
             // Assert
             expect(migrated).toBe(true);
@@ -165,7 +170,8 @@ describe('PipedriveIntegration - Backwards Compatibility', () => {
             };
 
             // Act
-            const migrated = await integration._migrateOldWebhooksToNewStructure();
+            const migrated =
+                await integration._migrateOldWebhooksToNewStructure();
 
             // Assert
             expect(migrated).toBe(false);
@@ -181,7 +187,8 @@ describe('PipedriveIntegration - Backwards Compatibility', () => {
             };
 
             // Act
-            const migrated = await integration._migrateOldWebhooksToNewStructure();
+            const migrated =
+                await integration._migrateOldWebhooksToNewStructure();
 
             // Assert
             expect(migrated).toBe(true);

@@ -128,7 +128,10 @@ const Definition: FriggModuleAuthDefinition = {
         },
     }),
 
-    refreshEntityOptions: async (api: Api, options: { region?: ClioRegion }) => {
+    refreshEntityOptions: async (
+        api: Api,
+        options: { region?: ClioRegion },
+    ) => {
         if (options.region) {
             api.setRegion(options.region);
         }

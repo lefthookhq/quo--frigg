@@ -1616,7 +1616,10 @@ class BaseCRMIntegration extends IntegrationBase {
                 callSummaryWebhooks: createdWebhooks.callSummary,
             };
         } catch (error) {
-            console.error('[Quo] Webhook creation failed, rolling back...', error);
+            console.error(
+                '[Quo] Webhook creation failed, rolling back...',
+                error,
+            );
 
             // Rollback: Delete all successfully created webhooks
             const allCreated = [
@@ -1626,12 +1629,16 @@ class BaseCRMIntegration extends IntegrationBase {
             ];
 
             if (allCreated.length > 0) {
-                console.warn(`[Quo] Rolling back ${allCreated.length} webhook(s)`);
+                console.warn(
+                    `[Quo] Rolling back ${allCreated.length} webhook(s)`,
+                );
 
                 for (const webhook of allCreated) {
                     try {
                         await this.quo.api.deleteWebhook(webhook.id);
-                        console.log(`[Quo] ✓ Rolled back webhook ${webhook.id}`);
+                        console.log(
+                            `[Quo] ✓ Rolled back webhook ${webhook.id}`,
+                        );
                     } catch (deleteError) {
                         console.error(
                             `[Quo] Failed to rollback webhook ${webhook.id}:`,
@@ -1703,8 +1710,7 @@ class BaseCRMIntegration extends IntegrationBase {
             // Create new webhooks FIRST to minimize downtime
             console.log('[Quo] Creating new webhooks...');
             const webhookUrl = this._generateWebhookUrl(`/webhooks/${this.id}`);
-            newWebhooks =
-                await this._createQuoWebhooksWithPhoneIds(webhookUrl);
+            newWebhooks = await this._createQuoWebhooksWithPhoneIds(webhookUrl);
 
             console.log('[Quo] ✓ New webhooks created successfully');
 
@@ -1719,7 +1725,9 @@ class BaseCRMIntegration extends IntegrationBase {
                 // Legacy single-value structure
                 ...(legacyWebhookIds.message ? [legacyWebhookIds.message] : []),
                 ...(legacyWebhookIds.call ? [legacyWebhookIds.call] : []),
-                ...(legacyWebhookIds.callSummary ? [legacyWebhookIds.callSummary] : []),
+                ...(legacyWebhookIds.callSummary
+                    ? [legacyWebhookIds.callSummary]
+                    : []),
             ];
 
             const deletionResults = await Promise.allSettled(
@@ -1732,7 +1740,9 @@ class BaseCRMIntegration extends IntegrationBase {
                         `[Quo] Could not delete old webhook ${oldWebhookIds[index]} (may already be deleted): ${result.reason?.message}`,
                     );
                 } else {
-                    console.log(`[Quo] ✓ Deleted old webhook ${oldWebhookIds[index]}`);
+                    console.log(
+                        `[Quo] ✓ Deleted old webhook ${oldWebhookIds[index]}`,
+                    );
                 }
             });
 
@@ -1746,9 +1756,7 @@ class BaseCRMIntegration extends IntegrationBase {
                 enabledPhoneIds: originalPhoneIds,
             };
 
-            console.error(
-                `[Quo] Webhook recreation failed: ${error.message}`,
-            );
+            console.error(`[Quo] Webhook recreation failed: ${error.message}`);
 
             throw error;
         }

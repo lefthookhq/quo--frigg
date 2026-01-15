@@ -204,7 +204,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
         }
 
         if (legacyWebhookKey) {
-            console.log('[Quo Webhook] Using old webhook structure for signature verification');
+            console.log(
+                '[Quo Webhook] Using old webhook structure for signature verification',
+            );
             this._verifySignatureWithKey(
                 legacyWebhookKey,
                 timestamp,
@@ -277,7 +279,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
             }
         }
 
-        throw new Error('Webhook signature verification failed with all configured webhooks');
+        throw new Error(
+            'Webhook signature verification failed with all configured webhooks',
+        );
     }
 
     /**
@@ -712,7 +716,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
      * This ensures backwards compatibility for existing integrations
      */
     async _migrateOldWebhooksToNewStructure() {
-        console.log('[Quo] Migrating old webhook structure to new array structure');
+        console.log(
+            '[Quo] Migrating old webhook structure to new array structure',
+        );
 
         const hasOldStructure =
             this.config?.quoMessageWebhookId ||
@@ -720,7 +726,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
             this.config?.quoCallSummaryWebhookId;
 
         if (!hasOldStructure) {
-            console.log('[Quo] No old webhook structure found, skipping migration');
+            console.log(
+                '[Quo] No old webhook structure found, skipping migration',
+            );
             return false;
         }
 
@@ -797,7 +805,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 this.config?.quoCallSummaryWebhookId;
 
             if (hasOldStructure) {
-                console.log('[Quo] Detected old webhook structure, migrating...');
+                console.log(
+                    '[Quo] Detected old webhook structure, migrating...',
+                );
                 await this._migrateOldWebhooksToNewStructure();
                 return {
                     status: 'migrated',
@@ -837,7 +847,8 @@ class PipedriveIntegration extends BaseCRMIntegration {
                     '[Quo] Partial webhook configuration detected - cleaning up before retry',
                 );
 
-                const quoMessageWebhooks = this.config?.quoMessageWebhooks || [];
+                const quoMessageWebhooks =
+                    this.config?.quoMessageWebhooks || [];
                 for (const webhook of quoMessageWebhooks) {
                     try {
                         await this.quo.api.deleteWebhook(webhook.id);
@@ -865,7 +876,8 @@ class PipedriveIntegration extends BaseCRMIntegration {
                     }
                 }
 
-                const quoCallSummaryWebhooks = this.config?.quoCallSummaryWebhooks || [];
+                const quoCallSummaryWebhooks =
+                    this.config?.quoCallSummaryWebhooks || [];
                 for (const webhook of quoCallSummaryWebhooks) {
                     try {
                         await this.quo.api.deleteWebhook(webhook.id);
@@ -895,7 +907,10 @@ class PipedriveIntegration extends BaseCRMIntegration {
 
             // Track created webhooks for rollback on error
             createdWebhooks.push(
-                ...messageWebhooks.map((wh) => ({ type: 'message', id: wh.id })),
+                ...messageWebhooks.map((wh) => ({
+                    type: 'message',
+                    id: wh.id,
+                })),
                 ...callWebhooks.map((wh) => ({ type: 'call', id: wh.id })),
                 ...callSummaryWebhooks.map((wh) => ({
                     type: 'callSummary',
@@ -2085,7 +2100,8 @@ class PipedriveIntegration extends BaseCRMIntegration {
                     }
                 }
 
-                const quoMessageWebhooks = this.config?.quoMessageWebhooks || [];
+                const quoMessageWebhooks =
+                    this.config?.quoMessageWebhooks || [];
                 const quoCallWebhooks = this.config?.quoCallWebhooks || [];
                 const quoCallSummaryWebhooks =
                     this.config?.quoCallSummaryWebhooks || [];
@@ -2102,13 +2118,19 @@ class PipedriveIntegration extends BaseCRMIntegration {
 
                 // Also log old structure if present
                 if (this.config?.quoMessageWebhookId) {
-                    console.warn(`  - Quo message webhook (old): ${this.config.quoMessageWebhookId}`);
+                    console.warn(
+                        `  - Quo message webhook (old): ${this.config.quoMessageWebhookId}`,
+                    );
                 }
                 if (this.config?.quoCallWebhookId) {
-                    console.warn(`  - Quo call webhook (old): ${this.config.quoCallWebhookId}`);
+                    console.warn(
+                        `  - Quo call webhook (old): ${this.config.quoCallWebhookId}`,
+                    );
                 }
                 if (this.config?.quoCallSummaryWebhookId) {
-                    console.warn(`  - Quo call-summary webhook (old): ${this.config.quoCallSummaryWebhookId}`);
+                    console.warn(
+                        `  - Quo call-summary webhook (old): ${this.config.quoCallSummaryWebhookId}`,
+                    );
                 }
 
                 console.warn(
@@ -2231,7 +2253,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
             if (this.config?.quoMessageWebhookId) {
                 console.log('[Quo] Deleting old message webhook structure');
                 try {
-                    await this.quo.api.deleteWebhook(this.config.quoMessageWebhookId);
+                    await this.quo.api.deleteWebhook(
+                        this.config.quoMessageWebhookId,
+                    );
                     console.log(
                         `[Quo] ✓ Old message webhook ${this.config.quoMessageWebhookId} deleted`,
                     );
@@ -2246,7 +2270,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
             if (this.config?.quoCallWebhookId) {
                 console.log('[Quo] Deleting old call webhook structure');
                 try {
-                    await this.quo.api.deleteWebhook(this.config.quoCallWebhookId);
+                    await this.quo.api.deleteWebhook(
+                        this.config.quoCallWebhookId,
+                    );
                     console.log(
                         `[Quo] ✓ Old call webhook ${this.config.quoCallWebhookId} deleted`,
                     );
@@ -2259,9 +2285,13 @@ class PipedriveIntegration extends BaseCRMIntegration {
             }
 
             if (this.config?.quoCallSummaryWebhookId) {
-                console.log('[Quo] Deleting old call-summary webhook structure');
+                console.log(
+                    '[Quo] Deleting old call-summary webhook structure',
+                );
                 try {
-                    await this.quo.api.deleteWebhook(this.config.quoCallSummaryWebhookId);
+                    await this.quo.api.deleteWebhook(
+                        this.config.quoCallSummaryWebhookId,
+                    );
                     console.log(
                         `[Quo] ✓ Old call-summary webhook ${this.config.quoCallSummaryWebhookId} deleted`,
                     );

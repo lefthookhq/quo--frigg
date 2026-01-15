@@ -1254,13 +1254,25 @@ describe('BaseCRMIntegration', () => {
             integration.config = {
                 enabledPhoneIds: ['PN-old-1', 'PN-old-2'],
                 quoMessageWebhooks: [
-                    { id: 'webhook-msg-123', key: 'key-msg-123', resourceIds: ['PN-old-1', 'PN-old-2'] }
+                    {
+                        id: 'webhook-msg-123',
+                        key: 'key-msg-123',
+                        resourceIds: ['PN-old-1', 'PN-old-2'],
+                    },
                 ],
                 quoCallWebhooks: [
-                    { id: 'webhook-call-123', key: 'key-call-123', resourceIds: ['PN-old-1', 'PN-old-2'] }
+                    {
+                        id: 'webhook-call-123',
+                        key: 'key-call-123',
+                        resourceIds: ['PN-old-1', 'PN-old-2'],
+                    },
                 ],
                 quoCallSummaryWebhooks: [
-                    { id: 'webhook-summary-123', key: 'key-summary-123', resourceIds: ['PN-old-1', 'PN-old-2'] }
+                    {
+                        id: 'webhook-summary-123',
+                        key: 'key-summary-123',
+                        resourceIds: ['PN-old-1', 'PN-old-2'],
+                    },
                 ],
                 someOtherConfig: 'should-be-preserved',
             };

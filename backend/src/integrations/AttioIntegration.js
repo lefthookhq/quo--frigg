@@ -246,7 +246,9 @@ class AttioIntegration extends BaseCRMIntegration {
         }
 
         if (legacyWebhookKey) {
-            console.log('[Quo Webhook] Using old webhook structure for signature verification');
+            console.log(
+                '[Quo Webhook] Using old webhook structure for signature verification',
+            );
             this._verifySignatureWithKey(
                 legacyWebhookKey,
                 timestamp,
@@ -1128,7 +1130,9 @@ class AttioIntegration extends BaseCRMIntegration {
      * This ensures backwards compatibility for existing integrations
      */
     async _migrateOldWebhooksToNewStructure() {
-        console.log('[Quo] Migrating old webhook structure to new array structure');
+        console.log(
+            '[Quo] Migrating old webhook structure to new array structure',
+        );
 
         const hasOldStructure =
             this.config?.quoMessageWebhookId ||
@@ -1136,7 +1140,9 @@ class AttioIntegration extends BaseCRMIntegration {
             this.config?.quoCallSummaryWebhookId;
 
         if (!hasOldStructure) {
-            console.log('[Quo] No old webhook structure found, skipping migration');
+            console.log(
+                '[Quo] No old webhook structure found, skipping migration',
+            );
             return false;
         }
 
@@ -1213,7 +1219,9 @@ class AttioIntegration extends BaseCRMIntegration {
                 this.config?.quoCallSummaryWebhookId;
 
             if (hasOldStructure) {
-                console.log('[Quo] Detected old webhook structure, migrating...');
+                console.log(
+                    '[Quo] Detected old webhook structure, migrating...',
+                );
                 await this._migrateOldWebhooksToNewStructure();
                 return {
                     status: 'migrated',
@@ -1253,7 +1261,8 @@ class AttioIntegration extends BaseCRMIntegration {
                     '[Quo] Partial webhook configuration detected - cleaning up before retry',
                 );
 
-                const quoMessageWebhooks = this.config?.quoMessageWebhooks || [];
+                const quoMessageWebhooks =
+                    this.config?.quoMessageWebhooks || [];
                 for (const webhook of quoMessageWebhooks) {
                     try {
                         await this.quo.api.deleteWebhook(webhook.id);
@@ -1312,7 +1321,10 @@ class AttioIntegration extends BaseCRMIntegration {
                 await this._createQuoWebhooksWithPhoneIds(webhookUrl);
 
             createdWebhooks.push(
-                ...messageWebhooks.map((wh) => ({ type: 'message', id: wh.id })),
+                ...messageWebhooks.map((wh) => ({
+                    type: 'message',
+                    id: wh.id,
+                })),
                 ...callWebhooks.map((wh) => ({ type: 'call', id: wh.id })),
                 ...callSummaryWebhooks.map((wh) => ({
                     type: 'callSummary',
@@ -2600,7 +2612,8 @@ class AttioIntegration extends BaseCRMIntegration {
                     );
                 }
 
-                const quoMessageWebhooks = this.config?.quoMessageWebhooks || [];
+                const quoMessageWebhooks =
+                    this.config?.quoMessageWebhooks || [];
                 const quoCallWebhooks = this.config?.quoCallWebhooks || [];
                 const quoCallSummaryWebhooks =
                     this.config?.quoCallSummaryWebhooks || [];
@@ -2789,7 +2802,9 @@ class AttioIntegration extends BaseCRMIntegration {
             }
 
             if (this.config?.quoCallSummaryWebhookId) {
-                console.log('[Quo] Deleting old call-summary webhook structure');
+                console.log(
+                    '[Quo] Deleting old call-summary webhook structure',
+                );
                 try {
                     await this.quo.api.deleteWebhook(
                         this.config.quoCallSummaryWebhookId,
