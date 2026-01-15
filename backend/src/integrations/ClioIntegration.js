@@ -53,6 +53,21 @@ class ClioIntegration extends BaseCRMIntegration {
                 method: 'GET',
                 event: 'CLICK_TO_CALL_REDIRECT',
             },
+            {
+                path: '/clio/settings',
+                method: 'GET',
+                event: 'GET_CLIO_SETTINGS',
+            },
+            {
+                path: '/clio/settings',
+                method: 'PUT',
+                event: 'UPDATE_CLIO_SETTINGS',
+            },
+            {
+                path: '/clio/phone-numbers',
+                method: 'GET',
+                event: 'LIST_QUO_PHONE_NUMBERS',
+            },
         ],
     };
 
@@ -116,6 +131,15 @@ class ClioIntegration extends BaseCRMIntegration {
             },
             CLICK_TO_CALL_REDIRECT: {
                 handler: this.handleClickToCallRedirect,
+            },
+            GET_CLIO_SETTINGS: {
+                handler: this.getSettings,
+            },
+            UPDATE_CLIO_SETTINGS: {
+                handler: this.updateSettings,
+            },
+            LIST_QUO_PHONE_NUMBERS: {
+                handler: this.listQuoPhoneNumbers,
             },
             ON_WEBHOOK: {
                 handler: this.onWebhook,
@@ -327,6 +351,12 @@ class ClioIntegration extends BaseCRMIntegration {
      * @returns {Promise<number>} Note ID
      */
     async logSMSToActivity(activity) {
+        // Check if message logging is enabled
+        if (this.config?.messageLoggingEnabled === false) {
+            console.log('[Clio] Message logging is disabled - skipping SMS Note creation');
+            return null;
+        }
+
         const {
             contactExternalId,
             title,
@@ -389,6 +419,12 @@ class ClioIntegration extends BaseCRMIntegration {
      * @returns {Promise<number>} Communication ID
      */
     async logCallToActivity(activity) {
+        // Check if call logging is enabled
+        if (this.config?.callLoggingEnabled === false) {
+            console.log('[Clio] Call logging is disabled - skipping PhoneCommunication creation');
+            return null;
+        }
+
         const {
             contactExternalId,
             title,
@@ -1306,6 +1342,163 @@ class ClioIntegration extends BaseCRMIntegration {
             res.status(500).json({
                 error: 'Failed to initiate call',
                 message: error.message,
+            });
+        }
+    };
+
+    /**
+     * Get integration settings
+     * Returns current configuration for call logging, message logging, enabled phones, etc.
+     */
+    getSettings = async ({ req, res }) => {
+        try {
+            const settings = {
+                callLoggingEnabled:
+                    this.config?.callLoggingEnabled !== false, // default true
+                messageLoggingEnabled:
+                    this.config?.messageLoggingEnabled !== false, // default true
+                enabledPhoneIds: this.config?.enabledPhoneIds || [],
+                phoneNumbersMetadata: this.config?.phoneNumbersMetadata || [],
+                phoneNumbersFetchedAt: this.config?.phoneNumbersFetchedAt || null,
+            };
+
+            res.json({ settings });
+        } catch (error) {
+            console.error('[Clio Settings] getSettings error:', error.message);
+            res.status(500).json({
+                error: error.message,
+            });
+        }
+    };
+
+    /**
+     * Update integration settings
+     * Allows toggling call/message logging and selecting enabled phone numbers
+     */
+    updateSettings = async ({ req, res }) => {
+        try {
+            const updates = req.body;
+
+            console.log('[Clio Settings] Updating settings:', updates);
+
+            const updatedConfig = {
+                ...this.config,
+            };
+
+            // Update call logging toggle
+            if (typeof updates.callLoggingEnabled === 'boolean') {
+                updatedConfig.callLoggingEnabled = updates.callLoggingEnabled;
+                console.log(
+                    `[Clio Settings] Call logging: ${updates.callLoggingEnabled ? 'enabled' : 'disabled'}`,
+                );
+            }
+
+            // Update message logging toggle
+            if (typeof updates.messageLoggingEnabled === 'boolean') {
+                updatedConfig.messageLoggingEnabled =
+                    updates.messageLoggingEnabled;
+                console.log(
+                    `[Clio Settings] Message logging: ${updates.messageLoggingEnabled ? 'enabled' : 'disabled'}`,
+                );
+            }
+
+            // Update enabled phone IDs
+            if (Array.isArray(updates.enabledPhoneIds)) {
+                updatedConfig.enabledPhoneIds = updates.enabledPhoneIds;
+                console.log(
+                    `[Clio Settings] Enabled phone IDs: ${updates.enabledPhoneIds.join(', ')}`,
+                );
+
+                // Re-fetch phone metadata if phone selection changed
+                if (
+                    JSON.stringify(updates.enabledPhoneIds) !==
+                    JSON.stringify(this.config?.enabledPhoneIds)
+                ) {
+                    const phoneNumbersResponse =
+                        await this.quo.api.listPhoneNumbers({
+                            maxResults: 100,
+                        });
+                    const allPhones = phoneNumbersResponse?.data || [];
+
+                    // Filter to only selected phones
+                    const selectedPhones = allPhones.filter((phone) =>
+                        updates.enabledPhoneIds.includes(phone.id),
+                    );
+
+                    updatedConfig.phoneNumbersMetadata = selectedPhones;
+                    updatedConfig.phoneNumbersFetchedAt =
+                        new Date().toISOString();
+
+                    console.log(
+                        `[Clio Settings] Updated phone metadata for ${selectedPhones.length} phone(s)`,
+                    );
+                }
+            }
+
+            // Save updated config
+            await this.commands.updateIntegrationConfig({
+                integrationId: this.id,
+                config: updatedConfig,
+            });
+
+            this.config = updatedConfig;
+
+            console.log('[Clio Settings] ✓ Settings updated successfully');
+
+            res.json({
+                success: true,
+                settings: {
+                    callLoggingEnabled:
+                        updatedConfig.callLoggingEnabled !== false,
+                    messageLoggingEnabled:
+                        updatedConfig.messageLoggingEnabled !== false,
+                    enabledPhoneIds: updatedConfig.enabledPhoneIds || [],
+                    phoneNumbersMetadata:
+                        updatedConfig.phoneNumbersMetadata || [],
+                },
+            });
+        } catch (error) {
+            console.error(
+                '[Clio Settings] updateSettings error:',
+                error.message,
+            );
+            res.status(500).json({
+                error: error.message,
+            });
+        }
+    };
+
+    /**
+     * List available Quo phone numbers
+     * Returns all phone numbers from Quo API for user selection
+     */
+    listQuoPhoneNumbers = async ({ req, res }) => {
+        try {
+            console.log('[Quo] Fetching available phone numbers');
+
+            const response = await this.quo.api.listPhoneNumbers({
+                maxResults: 100,
+            });
+
+            const phoneNumbers = response?.data || [];
+
+            console.log(`[Quo] Found ${phoneNumbers.length} phone number(s)`);
+
+            res.json({
+                phoneNumbers: phoneNumbers.map((phone) => ({
+                    id: phone.id,
+                    name: phone.name,
+                    number: phone.number,
+                    createdAt: phone.createdAt,
+                })),
+            });
+        } catch (error) {
+            console.error(
+                '[Quo] listPhoneNumbers error:',
+                error.message,
+            );
+            res.status(500).json({
+                error: error.message,
             });
         }
     };
