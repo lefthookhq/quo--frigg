@@ -277,12 +277,27 @@ describe('BaseCRMIntegration - Phone Number ID Webhook Subscriptions', () => {
 
             // Assert
             expect(result).toEqual({
-                messageWebhookId: 'webhook-msg-123',
-                messageWebhookKey: 'msg-key',
-                callWebhookId: 'webhook-call-456',
-                callWebhookKey: 'call-key',
-                callSummaryWebhookId: 'webhook-summary-789',
-                callSummaryWebhookKey: 'summary-key',
+                messageWebhooks: [
+                    {
+                        id: 'webhook-msg-123',
+                        key: 'msg-key',
+                        resourceIds: ['phone-id-1', 'phone-id-2'],
+                    },
+                ],
+                callWebhooks: [
+                    {
+                        id: 'webhook-call-456',
+                        key: 'call-key',
+                        resourceIds: ['phone-id-1', 'phone-id-2'],
+                    },
+                ],
+                callSummaryWebhooks: [
+                    {
+                        id: 'webhook-summary-789',
+                        key: 'summary-key',
+                        resourceIds: ['phone-id-1', 'phone-id-2'],
+                    },
+                ],
             });
         });
     });
