@@ -60,7 +60,7 @@ const Definition = {
             return {
                 identifiers: {
                     externalId,
-                    user: userId,
+                    userId: userId,
                 },
                 details: {
                     name: 'Quo Workspace (API Key Hash)',
@@ -88,7 +88,7 @@ const Definition = {
             return {
                 identifiers: {
                     externalId,
-                    user: userId,
+                    userId: userId,
                 },
                 details: {
                     api_key: apiKey, // Explicitly include api_key in details to be persisted

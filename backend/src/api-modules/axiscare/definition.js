@@ -77,7 +77,7 @@ const Definition = {
             return {
                 identifiers: {
                     externalId,
-                    user: userId,
+                    userId: userId,
                 },
                 details: {
                     name: 'AxisCare Account',
@@ -109,7 +109,7 @@ const Definition = {
                 return {
                     identifiers: {
                         externalId,
-                        user: userId,
+                        userId: userId,
                     },
                     details: {
                         api_key: apiKey, // Explicitly include api_key in details to be persisted
@@ -117,7 +117,7 @@ const Definition = {
                 };
             } catch (error) {
                 return {
-                    identifiers: { externalId, user: userId },
+                    identifiers: { externalId, userId: userId },
                     details: {},
                 };
             }
