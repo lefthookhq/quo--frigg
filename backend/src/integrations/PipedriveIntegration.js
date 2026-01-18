@@ -2210,7 +2210,66 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 // Continue with deletion even if onDelete has errors
             }
 
-            // Step 6: Delete the integration record from database
+            // Step 6: Delete credentials and entities for THIS integration only
+            // Get entity IDs from the integration record (not all user entities)
+            const entityRefs = context.record.entities || [];
+            const entityIds = entityRefs.map((e) =>
+                typeof e === 'object' ? e._id || e.id || e.toString() : e,
+            );
+
+            if (entityIds.length > 0) {
+                // Fetch full entity objects to get credentialId
+                const entities =
+                    await this.commands.findEntitiesByIds(entityIds);
+                console.log(
+                    `[Pipedrive Uninstall] Found ${entities?.length || 0} entities for this integration`,
+                );
+
+                // Delete credentials and entities
+                for (const entity of entities || []) {
+                    if (entity.credentialId) {
+                        const credId =
+                            typeof entity.credentialId === 'object'
+                                ? entity.credentialId._id ||
+                                  entity.credentialId.id ||
+                                  entity.credentialId.toString()
+                                : entity.credentialId;
+
+                        try {
+                            console.log(
+                                `[Pipedrive Uninstall] Deleting credential: ${credId}`,
+                            );
+                            await this.commands.deleteCredentialById(credId);
+                        } catch (credError) {
+                            console.error(
+                                `[Pipedrive Uninstall] Error deleting credential ${credId}:`,
+                                credError.message,
+                            );
+                        }
+                    }
+
+                    const entityId = entity.id || entity._id;
+                    try {
+                        console.log(
+                            `[Pipedrive Uninstall] Deleting entity: ${entityId}`,
+                        );
+                        await this.commands.deleteEntityById(entityId);
+                    } catch (entityError) {
+                        console.error(
+                            `[Pipedrive Uninstall] Error deleting entity ${entityId}:`,
+                            entityError.message,
+                        );
+                    }
+                }
+            } else {
+                console.log(
+                    `[Pipedrive Uninstall] No entities found in integration record`,
+                );
+            }
+
+            // Note: User is NOT deleted as they may have other integrations
+
+            // Step 7: Delete the integration record from database
             const deleteResult =
                 await this.commands.deleteIntegrationById(integrationId);
 
@@ -2226,7 +2285,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 );
             }
 
-            // Step 7: Track analytics event
+            // Step 8: Track analytics event
             trackAnalyticsEvent(
                 this,
                 QUO_ANALYTICS_EVENTS.INTEGRATION_DISCONNECTED ||

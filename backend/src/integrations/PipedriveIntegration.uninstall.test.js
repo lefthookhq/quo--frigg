@@ -28,6 +28,9 @@ describe('PipedriveIntegration - App Uninstall Handler', () => {
         mockCommands = {
             findIntegrationContextByExternalEntityId: jest.fn(),
             deleteIntegrationById: jest.fn(),
+            deleteCredentialById: jest.fn(),
+            deleteEntityById: jest.fn(),
+            findEntitiesByIds: jest.fn().mockResolvedValue([]),
             updateIntegrationConfig: jest.fn(),
         };
         integration.commands = mockCommands;
@@ -476,6 +479,239 @@ describe('PipedriveIntegration - App Uninstall Handler', () => {
             expect(mockCommands.deleteIntegrationById).toHaveBeenCalledWith(
                 'mongo-object-id',
             );
+        });
+    });
+
+    describe('Cascade Deletion', () => {
+        const validCredentials = Buffer.from(
+            'test-client-id:test-client-secret',
+        ).toString('base64');
+
+        beforeEach(() => {
+            mockReq = {
+                headers: {
+                    authorization: `Basic ${validCredentials}`,
+                },
+                body: { company_id: '12345', user_id: '67890' },
+            };
+        });
+
+        it('should delete credentials and entities for this integration only', async () => {
+            // Arrange
+            const mockContext = {
+                record: {
+                    id: 'integration-123',
+                    entities: ['entity-1', 'entity-2'],
+                    config: {},
+                },
+                modules: {},
+            };
+            const mockEntities = [
+                { id: 'entity-1', credentialId: 'cred-1' },
+                { id: 'entity-2', credentialId: 'cred-2' },
+            ];
+
+            mockCommands.findIntegrationContextByExternalEntityId.mockResolvedValue(
+                { context: mockContext },
+            );
+            mockCommands.findEntitiesByIds.mockResolvedValue(mockEntities);
+            mockCommands.deleteCredentialById.mockResolvedValue({
+                success: true,
+            });
+            mockCommands.deleteEntityById.mockResolvedValue({ success: true });
+            mockCommands.deleteIntegrationById.mockResolvedValue({
+                success: true,
+            });
+
+            // Act
+            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+
+            // Assert
+            expect(mockCommands.findEntitiesByIds).toHaveBeenCalledWith([
+                'entity-1',
+                'entity-2',
+            ]);
+            expect(mockCommands.deleteCredentialById).toHaveBeenCalledWith(
+                'cred-1',
+            );
+            expect(mockCommands.deleteCredentialById).toHaveBeenCalledWith(
+                'cred-2',
+            );
+            expect(mockCommands.deleteEntityById).toHaveBeenCalledWith(
+                'entity-1',
+            );
+            expect(mockCommands.deleteEntityById).toHaveBeenCalledWith(
+                'entity-2',
+            );
+        });
+
+        it('should handle entities without credentialId', async () => {
+            // Arrange
+            const mockContext = {
+                record: {
+                    id: 'integration-123',
+                    entities: ['entity-1'],
+                    config: {},
+                },
+                modules: {},
+            };
+            const mockEntities = [
+                { id: 'entity-1' }, // No credentialId
+            ];
+
+            mockCommands.findIntegrationContextByExternalEntityId.mockResolvedValue(
+                { context: mockContext },
+            );
+            mockCommands.findEntitiesByIds.mockResolvedValue(mockEntities);
+            mockCommands.deleteEntityById.mockResolvedValue({ success: true });
+            mockCommands.deleteIntegrationById.mockResolvedValue({
+                success: true,
+            });
+
+            // Act
+            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+
+            // Assert
+            expect(mockCommands.deleteCredentialById).not.toHaveBeenCalled();
+            expect(mockCommands.deleteEntityById).toHaveBeenCalledWith(
+                'entity-1',
+            );
+        });
+
+        it('should handle object-style credentialId', async () => {
+            // Arrange
+            const mockContext = {
+                record: {
+                    id: 'integration-123',
+                    entities: ['entity-1'],
+                    config: {},
+                },
+                modules: {},
+            };
+            const mockEntities = [
+                { id: 'entity-1', credentialId: { _id: 'cred-obj-id' } },
+            ];
+
+            mockCommands.findIntegrationContextByExternalEntityId.mockResolvedValue(
+                { context: mockContext },
+            );
+            mockCommands.findEntitiesByIds.mockResolvedValue(mockEntities);
+            mockCommands.deleteCredentialById.mockResolvedValue({
+                success: true,
+            });
+            mockCommands.deleteEntityById.mockResolvedValue({ success: true });
+            mockCommands.deleteIntegrationById.mockResolvedValue({
+                success: true,
+            });
+
+            // Act
+            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+
+            // Assert
+            expect(mockCommands.deleteCredentialById).toHaveBeenCalledWith(
+                'cred-obj-id',
+            );
+        });
+
+        it('should continue deletion if credential deletion fails', async () => {
+            // Arrange
+            const mockContext = {
+                record: {
+                    id: 'integration-123',
+                    entities: ['entity-1', 'entity-2'],
+                    config: {},
+                },
+                modules: {},
+            };
+            const mockEntities = [
+                { id: 'entity-1', credentialId: 'cred-1' },
+                { id: 'entity-2', credentialId: 'cred-2' },
+            ];
+
+            mockCommands.findIntegrationContextByExternalEntityId.mockResolvedValue(
+                { context: mockContext },
+            );
+            mockCommands.findEntitiesByIds.mockResolvedValue(mockEntities);
+            mockCommands.deleteCredentialById
+                .mockRejectedValueOnce(new Error('Credential delete failed'))
+                .mockResolvedValueOnce({ success: true });
+            mockCommands.deleteEntityById.mockResolvedValue({ success: true });
+            mockCommands.deleteIntegrationById.mockResolvedValue({
+                success: true,
+            });
+
+            // Act
+            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+
+            // Assert - Should still delete both entities
+            expect(mockCommands.deleteEntityById).toHaveBeenCalledTimes(2);
+            expect(mockRes.status).toHaveBeenCalledWith(200);
+        });
+
+        it('should skip cascade deletion if no entities in record', async () => {
+            // Arrange
+            const mockContext = {
+                record: {
+                    id: 'integration-123',
+                    config: {},
+                    // No entities
+                },
+                modules: {},
+            };
+
+            mockCommands.findIntegrationContextByExternalEntityId.mockResolvedValue(
+                { context: mockContext },
+            );
+            mockCommands.deleteIntegrationById.mockResolvedValue({
+                success: true,
+            });
+
+            // Act
+            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+
+            // Assert
+            expect(mockCommands.findEntitiesByIds).not.toHaveBeenCalled();
+            expect(mockCommands.deleteCredentialById).not.toHaveBeenCalled();
+            expect(console.log).toHaveBeenCalledWith(
+                '[Pipedrive Uninstall] No entities found in integration record',
+            );
+        });
+
+        it('should handle object-style entity references', async () => {
+            // Arrange
+            const mockContext = {
+                record: {
+                    id: 'integration-123',
+                    entities: [{ _id: 'entity-obj-1' }, { id: 'entity-obj-2' }],
+                    config: {},
+                },
+                modules: {},
+            };
+            const mockEntities = [
+                { id: 'entity-obj-1', credentialId: 'cred-1' },
+                { id: 'entity-obj-2', credentialId: 'cred-2' },
+            ];
+
+            mockCommands.findIntegrationContextByExternalEntityId.mockResolvedValue(
+                { context: mockContext },
+            );
+            mockCommands.findEntitiesByIds.mockResolvedValue(mockEntities);
+            mockCommands.deleteCredentialById.mockResolvedValue({
+                success: true,
+            });
+            mockCommands.deleteEntityById.mockResolvedValue({ success: true });
+            mockCommands.deleteIntegrationById.mockResolvedValue({
+                success: true,
+            });
+
+            // Act
+            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+
+            // Assert
+            expect(mockCommands.findEntitiesByIds).toHaveBeenCalledWith([
+                'entity-obj-1',
+                'entity-obj-2',
+            ]);
         });
     });
 
