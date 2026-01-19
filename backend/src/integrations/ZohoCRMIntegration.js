@@ -722,24 +722,18 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             return;
         }
 
-        // 3. Check if integration is being deleted (race condition protection)
-        if (result.context.record.status === 'deleting') {
-            console.log(`[Zoho CRM] Skipping renewal - integration ${integrationId} is being deleted`);
-            return;
-        }
-
-        // 4. Verify we have the necessary modules
+        // 3. Verify we have the necessary modules
         if (!this.zoho?.api) {
             throw new Error('Zoho API module not initialized');
         }
 
-        // 5. Verify notification config exists
+        // 4. Verify notification config exists
         if (!config.zohoNotificationChannelId) {
             console.warn('[Zoho CRM] No notification channel configured, skipping renewal');
             return;
         }
 
-        // 6. Create new schedule FIRST (before Zoho API call) for atomicity
+        // 5. Create new schedule FIRST (before Zoho API call) for atomicity
         //    If Zoho call fails, we delete this new schedule
         const newJobId = `zoho-notif-renewal-${this.id}-${Date.now()}`;
         const oldJobId = config.zohoNotificationRefreshJobId;
@@ -749,11 +743,11 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             // Schedule next renewal (6 days out)
             newSchedule = await this._scheduleNotificationRenewal(newJobId);
 
-            // 7. Calculate new expiry (7 days from now - Zoho max)
+            // 6. Calculate new expiry (7 days from now - Zoho max)
             const newExpiry = new Date();
             newExpiry.setDate(newExpiry.getDate() + 7);
 
-            // 8. Call Zoho API to renew notification (with retry)
+            // 7. Call Zoho API to renew notification (with retry)
             await this._renewZohoNotificationWithRetry({
                 channelId: config.zohoNotificationChannelId,
                 events: config.notificationEvents || ['Accounts.all', 'Contacts.all'],
@@ -762,7 +756,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 notifyUrl: config.zohoNotificationUrl,
             });
 
-            // 9. Update config with new expiry and tracking info
+            // 8. Update config with new expiry and tracking info
             const updatedConfig = {
                 ...config,
                 zohoNotificationExpiresAt: newExpiry.toISOString(),
@@ -779,7 +773,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
 
             this.config = updatedConfig;
 
-            // 10. Delete old schedule only after everything succeeded
+            // 9. Delete old schedule only after everything succeeded
             if (oldJobId && oldJobId !== newJobId) {
                 try {
                     await this.schedulerCommands.deleteJob(oldJobId);
