@@ -646,11 +646,11 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             const jobId = newJobId || `zoho-notif-renewal-${this.id}-${Date.now()}`;
             const executionId = `exec-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-            // Get queue ARN from environment
-            const queueArn = process.env.ZOHO_QUEUE_ARN;
-            if (!queueArn) {
+            // Get queue URL from environment
+            const queueUrl = process.env.ZOHO_QUEUE_URL;
+            if (!queueUrl) {
                 console.warn(
-                    '[Zoho CRM] ZOHO_QUEUE_ARN not set, skipping notification renewal scheduling'
+                    '[Zoho CRM] ZOHO_QUEUE_URL not set, skipping notification renewal scheduling'
                 );
                 return null;
             }
@@ -663,7 +663,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                     integrationId: this.id,
                     executionId,
                 },
-                queueArn,
+                queueUrl,
             });
 
             if (result.error) {
