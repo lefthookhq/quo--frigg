@@ -157,6 +157,22 @@ jest.mock('@friggframework/core', () => ({
         updateMapping: jest.fn().mockResolvedValue({}),
         deleteMapping: jest.fn().mockResolvedValue({}),
     })),
+    createSchedulerCommands: jest.fn((params) => ({
+        scheduleJob: jest.fn().mockResolvedValue({
+            jobId: 'mock-job-id',
+            jobArn: 'arn:aws:scheduler:mock:mock-job-arn',
+            scheduledAt: new Date().toISOString(),
+        }),
+        deleteJob: jest.fn().mockResolvedValue({
+            success: true,
+            jobId: 'mock-job-id',
+        }),
+        getJobStatus: jest.fn().mockResolvedValue({
+            exists: true,
+            scheduledAt: new Date().toISOString(),
+            state: 'ENABLED',
+        }),
+    })),
 }));
 
 // Removed mocks for non-existent modules (@friggframework/api-module-asana, @friggframework/api-module-frontify)
