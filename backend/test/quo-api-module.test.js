@@ -282,7 +282,7 @@ describe('Quo API Module - API Key Authentication', () => {
                     expect(result.identifiers.externalId).toBeDefined();
                     expect(typeof result.identifiers.externalId).toBe('string');
                     expect(result.identifiers.externalId.length).toBe(64); // SHA256 hash length
-                    expect(result.identifiers.user).toBe(userId);
+                    expect(result.identifiers.userId).toBe(userId);
                 });
 
                 it('should have consistent hash for same API key', async () => {
@@ -345,7 +345,7 @@ describe('Quo API Module - API Key Authentication', () => {
                     expect(result.identifiers.externalId).toBeDefined();
                     expect(typeof result.identifiers.externalId).toBe('string');
                     expect(result.identifiers.externalId.length).toBe(64);
-                    expect(result.identifiers.user).toBe(userId);
+                    expect(result.identifiers.userId).toBe(userId);
                 });
 
                 it('should throw error if API key is not set', async () => {

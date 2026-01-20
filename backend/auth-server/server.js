@@ -84,6 +84,45 @@ app.get('/redirect/:appId', async (req, res) => {
     }
 });
 
+// Handle Pipedrive app uninstallation callback
+// Pipedrive sends DELETE to the same callback URL when user uninstalls the app
+app.delete('/redirect/:appId', express.json(), async (req, res) => {
+    const { appId } = req.params;
+
+    console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    console.log(`🗑️  App Uninstall Callback Received`);
+    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    console.log(`App ID: ${appId}`);
+    console.log(`Body:`, req.body);
+
+    try {
+        // Forward the uninstall request to the backend
+        const response = await fetch(
+            `${BACKEND_URL}/api/${appId}-integration/uninstall`,
+            {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: req.headers.authorization || '',
+                },
+                body: JSON.stringify(req.body),
+            },
+        );
+
+        const result = await response.json();
+
+        console.log(`\n✅ Backend Response (${response.status}):`, result);
+        console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+
+        res.status(response.status).json(result);
+    } catch (error) {
+        console.error(`\n❌ Error forwarding uninstall:`, error.message);
+        console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+        // Return success anyway (graceful failure)
+        res.status(200).json({ success: true });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`\n🚀 OAuth Test Server`);
     console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
