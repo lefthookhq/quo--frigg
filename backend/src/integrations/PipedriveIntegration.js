@@ -2211,38 +2211,32 @@ class PipedriveIntegration extends BaseCRMIntegration {
             }
 
             // Step 6: Delete credentials and entities for THIS integration only
-            // Get entity IDs from the integration record (not all user entities)
-            const entityRefs = context.record.entities || [];
-            const entityIds = entityRefs.map((e) =>
-                typeof e === 'object' ? e._id || e.id || e.toString() : e,
+            // context.record.entities already contains full entity objects with credentialId
+            const entities = context.record.entities || [];
+            console.log(
+                `[Pipedrive Uninstall] Found ${entities.length} entities for this integration`,
             );
 
-            if (entityIds.length > 0) {
-                // Fetch full entity objects to get credentialId
-                const entities =
-                    await this.commands.findEntitiesByIds(entityIds);
-                console.log(
-                    `[Pipedrive Uninstall] Found ${entities?.length || 0} entities for this integration`,
-                );
-
+            if (entities.length > 0) {
                 // Delete credentials and entities
-                for (const entity of entities || []) {
-                    if (entity.credentialId) {
-                        const credId =
-                            typeof entity.credentialId === 'object'
-                                ? entity.credentialId._id ||
-                                  entity.credentialId.id ||
-                                  entity.credentialId.toString()
-                                : entity.credentialId;
+                for (const entity of entities) {
+                    // Credential can be nested as entity.credential or entity.credentialId
+                    const credId = entity.credential?.id || entity.credential?._id || entity.credentialId;
+
+                    if (credId) {
+                        const credentialId =
+                            typeof credId === 'object'
+                                ? credId._id || credId.id || credId.toString()
+                                : credId;
 
                         try {
                             console.log(
-                                `[Pipedrive Uninstall] Deleting credential: ${credId}`,
+                                `[Pipedrive Uninstall] Deleting credential: ${credentialId}`,
                             );
-                            await this.commands.deleteCredentialById(credId);
+                            await this.commands.deleteCredentialById(credentialId);
                         } catch (credError) {
                             console.error(
-                                `[Pipedrive Uninstall] Error deleting credential ${credId}:`,
+                                `[Pipedrive Uninstall] Error deleting credential ${credentialId}:`,
                                 credError.message,
                             );
                         }
