@@ -1,7 +1,10 @@
 const { BaseCRMIntegration } = require('../base/BaseCRMIntegration');
 const { Definition: QuoDefinition } = require('../api-modules/quo/definition');
 const zohoCrm = require('@friggframework/api-module-zoho-crm');
-const { createFriggCommands, createSchedulerCommands } = require('@friggframework/core');
+const {
+    createFriggCommands,
+    createSchedulerCommands,
+} = require('@friggframework/core');
 const CallSummaryEnrichmentService = require('../base/services/CallSummaryEnrichmentService');
 const QuoWebhookEventProcessor = require('../base/services/QuoWebhookEventProcessor');
 const QuoCallContentBuilder = require('../base/services/QuoCallContentBuilder');
@@ -109,6 +112,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
     };
 
     static ZOHO_NOTIFICATION_CHANNEL_ID = 1735593600000; // Unique bigint channel ID for Zoho webhooks
+    static ZOHO_DEFAULT_RENEWAL_DAYS = 6; // Days before notification expiry to schedule renewal. In Zoho, notifications (webhooks) expire after 7 days.
 
     constructor(params) {
         super(params);
@@ -208,7 +212,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             const hasMore = response.info?.more_records || false;
 
             console.log(
-                `[Zoho] Fetched ${taggedPersons.length} ${objectType}(s) at cursor ${cursor || 'start'}, ` +
+                `[Zoho CRM] Fetched ${taggedPersons.length} ${objectType}(s) at cursor ${cursor || 'start'}, ` +
                     `hasMore=${hasMore}`,
             );
 
@@ -637,20 +641,20 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
      */
     async _scheduleNotificationRenewal(newJobId = null) {
         try {
-            // Calculate renewal date: 6 days from now (configurable for testing)
-            const renewalDays = parseInt(process.env.ZOHO_RENEWAL_DAYS || '6', 10);
+            const renewalDays = this.constructor.ZOHO_DEFAULT_RENEWAL_DAYS;
             const renewalDate = new Date();
             renewalDate.setDate(renewalDate.getDate() + renewalDays);
 
             // Use provided jobId or generate new one with timestamp for uniqueness
-            const jobId = newJobId || `zoho-notif-renewal-${this.id}-${Date.now()}`;
+            const jobId =
+                newJobId || `zoho-notif-renewal-${this.id}-${Date.now()}`;
             const executionId = `exec-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
             // Get queue URL from environment
             const queueUrl = process.env.ZOHO_QUEUE_URL;
             if (!queueUrl) {
                 console.warn(
-                    '[Zoho CRM] ZOHO_QUEUE_URL not set, skipping notification renewal scheduling'
+                    '[Zoho CRM] ZOHO_QUEUE_URL not set, skipping notification renewal scheduling',
                 );
                 return null;
             }
@@ -668,20 +672,20 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
 
             if (result.error) {
                 console.warn(
-                    `[Zoho CRM] Failed to schedule notification renewal: ${result.reason}`
+                    `[Zoho CRM] Failed to schedule notification renewal: ${result.reason}`,
                 );
                 return null;
             }
 
             console.log(
-                `[Zoho CRM] ✓ Scheduled notification renewal for ${renewalDate.toISOString()} (jobId: ${jobId})`
+                `[Zoho CRM] ✓ Scheduled notification renewal for ${renewalDate.toISOString()} (jobId: ${jobId})`,
             );
 
             return { jobId, executionId };
         } catch (error) {
             console.warn(
                 '[Zoho CRM] Failed to schedule notification renewal:',
-                error.message
+                error.message,
             );
             return null;
         }
@@ -704,13 +708,17 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         const { integrationId, executionId } = data || {};
 
         console.log(
-            `[Zoho CRM] Processing REFRESH_WEBHOOK for integration ${integrationId || this.id} (executionId: ${executionId})`
+            `[Zoho CRM] Processing REFRESH_WEBHOOK for integration ${integrationId || this.id} (executionId: ${executionId})`,
         );
 
         // 1. Load fresh integration context to get current state
-        const result = await this.commands.loadIntegrationContextById(integrationId || this.id);
+        const result = await this.commands.loadIntegrationContextById(
+            integrationId || this.id,
+        );
         if (result.error) {
-            console.warn(`[Zoho CRM] Integration not found: ${integrationId}, skipping renewal`);
+            console.warn(
+                `[Zoho CRM] Integration not found: ${integrationId}, skipping renewal`,
+            );
             return;
         }
 
@@ -718,7 +726,9 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
 
         // 2. Idempotency check - prevent duplicate processing from SQS at-least-once delivery
         if (executionId && config.lastRenewalExecutionId === executionId) {
-            console.log(`[Zoho CRM] Skipping duplicate renewal for execution ${executionId}`);
+            console.log(
+                `[Zoho CRM] Skipping duplicate renewal for execution ${executionId}`,
+            );
             return;
         }
 
@@ -729,7 +739,9 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
 
         // 4. Verify notification config exists
         if (!config.zohoNotificationChannelId) {
-            console.warn('[Zoho CRM] No notification channel configured, skipping renewal');
+            console.warn(
+                '[Zoho CRM] No notification channel configured, skipping renewal',
+            );
             return;
         }
 
@@ -750,7 +762,10 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             // 7. Call Zoho API to renew notification (with retry)
             await this._renewZohoNotificationWithRetry({
                 channelId: config.zohoNotificationChannelId,
-                events: config.notificationEvents || ['Accounts.all', 'Contacts.all'],
+                events: config.notificationEvents || [
+                    'Accounts.all',
+                    'Contacts.all',
+                ],
                 expiry: newExpiry,
                 token: config.zohoNotificationToken,
                 notifyUrl: config.zohoNotificationUrl,
@@ -779,23 +794,31 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                     await this.schedulerCommands.deleteJob(oldJobId);
                     console.log(`[Zoho CRM] Deleted old schedule ${oldJobId}`);
                 } catch (deleteError) {
-                    console.warn(`[Zoho CRM] Could not delete old schedule ${oldJobId}: ${deleteError.message}`);
+                    console.warn(
+                        `[Zoho CRM] Could not delete old schedule ${oldJobId}: ${deleteError.message}`,
+                    );
                 }
             }
 
             console.log(
-                `[Zoho CRM] ✓ Notification renewed for integration ${this.id}, expires ${newExpiry.toISOString()}`
+                `[Zoho CRM] ✓ Notification renewed for integration ${this.id}, expires ${newExpiry.toISOString()}`,
             );
         } catch (error) {
             // Rollback: delete the new schedule we just created
-            console.error(`[Zoho CRM] Renewal failed for integration ${this.id}: ${error.message}`);
+            console.error(
+                `[Zoho CRM] Renewal failed for integration ${this.id}: ${error.message}`,
+            );
 
             if (newSchedule?.jobId) {
                 try {
                     await this.schedulerCommands.deleteJob(newSchedule.jobId);
-                    console.log(`[Zoho CRM] Rolled back new schedule ${newSchedule.jobId}`);
+                    console.log(
+                        `[Zoho CRM] Rolled back new schedule ${newSchedule.jobId}`,
+                    );
                 } catch (rollbackError) {
-                    console.error(`[Zoho CRM] Failed to rollback schedule ${newSchedule.jobId}: ${rollbackError.message}`);
+                    console.error(
+                        `[Zoho CRM] Failed to rollback schedule ${newSchedule.jobId}: ${rollbackError.message}`,
+                    );
                 }
             }
 
@@ -827,7 +850,13 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
      * @param {string} params.notifyUrl - Callback URL
      * @returns {Promise<Object>} - Zoho API response
      */
-    async _renewZohoNotificationWithRetry({ channelId, events, expiry, token, notifyUrl }) {
+    async _renewZohoNotificationWithRetry({
+        channelId,
+        events,
+        expiry,
+        token,
+        notifyUrl,
+    }) {
         const maxRetries = 3;
         let lastError;
 
@@ -838,7 +867,9 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                         {
                             channel_id: channelId,
                             events: events,
-                            channel_expiry: expiry.toISOString(),
+                            channel_expiry: this._formatDateTimeForZoho(
+                                expiry.toISOString(),
+                            ),
                             token: token,
                             notify_url: notifyUrl,
                         },
@@ -846,32 +877,41 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 };
 
                 console.log(
-                    `[Zoho CRM] Renewing notification channel ${channelId} (attempt ${attempt}/${maxRetries})`
+                    `[Zoho CRM] Renewing notification channel ${channelId} (attempt ${attempt}/${maxRetries})`,
                 );
 
-                const response = await this.zoho.api.updateNotification(updateConfig);
+                const response =
+                    await this.zoho.api.updateNotification(updateConfig);
 
                 if (
                     !response?.watch ||
                     response.watch.length === 0 ||
                     response.watch[0].status !== 'success'
                 ) {
-                    throw new Error(`Notification renewal failed: ${JSON.stringify(response)}`);
+                    throw new Error(
+                        `Notification renewal failed: ${JSON.stringify(response)}`,
+                    );
                 }
 
-                console.log(`[Zoho CRM] ✓ Notification channel renewed successfully`);
+                console.log(
+                    `[Zoho CRM] ✓ Notification channel renewed successfully`,
+                );
                 return response;
             } catch (error) {
                 lastError = error;
                 console.warn(
-                    `[Zoho CRM] Renewal attempt ${attempt}/${maxRetries} failed: ${error.message}`
+                    `[Zoho CRM] Renewal attempt ${attempt}/${maxRetries} failed: ${error.message}`,
                 );
 
                 if (attempt < maxRetries) {
                     // Exponential backoff: 1s, 2s, 4s
                     const backoffMs = Math.pow(2, attempt - 1) * 1000;
-                    console.log(`[Zoho CRM] Waiting ${backoffMs}ms before retry...`);
-                    await new Promise((resolve) => setTimeout(resolve, backoffMs));
+                    console.log(
+                        `[Zoho CRM] Waiting ${backoffMs}ms before retry...`,
+                    );
+                    await new Promise((resolve) =>
+                        setTimeout(resolve, backoffMs),
+                    );
                 }
             }
         }
@@ -2361,22 +2401,25 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         try {
             const refreshJobId = this.config?.zohoNotificationRefreshJobId;
             if (refreshJobId) {
-                console.log('[Zoho CRM] Deleting scheduled notification renewal job');
-                const result = await this.schedulerCommands.deleteJob(refreshJobId);
+                console.log(
+                    '[Zoho CRM] Deleting scheduled notification renewal job',
+                );
+                const result =
+                    await this.schedulerCommands.deleteJob(refreshJobId);
                 if (result.success) {
                     console.log(
-                        `[Zoho CRM] ✓ Scheduled renewal job ${refreshJobId} deleted`
+                        `[Zoho CRM] ✓ Scheduled renewal job ${refreshJobId} deleted`,
                     );
                 } else if (result.warning) {
                     console.log(
-                        `[Zoho CRM] Scheduler not configured, skipping job deletion`
+                        `[Zoho CRM] Scheduler not configured, skipping job deletion`,
                     );
                 }
             }
         } catch (error) {
             console.warn(
                 '[Zoho CRM] Failed to delete scheduled renewal job:',
-                error.message
+                error.message,
             );
             // Don't throw - continue with deletion
         }
