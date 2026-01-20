@@ -2221,7 +2221,10 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 // Delete credentials and entities
                 for (const entity of entities) {
                     // Credential can be nested as entity.credential or entity.credentialId
-                    const credId = entity.credential?.id || entity.credential?._id || entity.credentialId;
+                    const credId =
+                        entity.credential?.id ||
+                        entity.credential?._id ||
+                        entity.credentialId;
 
                     if (credId) {
                         const credentialId =
@@ -2233,7 +2236,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
                             console.log(
                                 `[Pipedrive Uninstall] Deleting credential: ${credentialId}`,
                             );
-                            await this.commands.deleteCredentialById(credentialId);
+                            await this.commands.deleteCredentialById(
+                                credentialId,
+                            );
                         } catch (credError) {
                             console.error(
                                 `[Pipedrive Uninstall] Error deleting credential ${credentialId}:`,

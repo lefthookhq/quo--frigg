@@ -57,7 +57,10 @@ describe('PipedriveIntegration - App Uninstall Handler', () => {
             };
 
             // Act
-            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+            await integration.handleAppUninstall({
+                req: mockReq,
+                res: mockRes,
+            });
 
             // Assert
             expect(mockRes.status).toHaveBeenCalledWith(200);
@@ -80,7 +83,10 @@ describe('PipedriveIntegration - App Uninstall Handler', () => {
             };
 
             // Act
-            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+            await integration.handleAppUninstall({
+                req: mockReq,
+                res: mockRes,
+            });
 
             // Assert
             expect(mockRes.status).toHaveBeenCalledWith(200);
@@ -103,7 +109,10 @@ describe('PipedriveIntegration - App Uninstall Handler', () => {
             };
 
             // Act
-            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+            await integration.handleAppUninstall({
+                req: mockReq,
+                res: mockRes,
+            });
 
             // Assert
             expect(mockRes.status).toHaveBeenCalledWith(200);
@@ -130,7 +139,10 @@ describe('PipedriveIntegration - App Uninstall Handler', () => {
             );
 
             // Act
-            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+            await integration.handleAppUninstall({
+                req: mockReq,
+                res: mockRes,
+            });
 
             // Assert
             expect(
@@ -152,7 +164,10 @@ describe('PipedriveIntegration - App Uninstall Handler', () => {
             };
 
             // Act
-            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+            await integration.handleAppUninstall({
+                req: mockReq,
+                res: mockRes,
+            });
 
             // Assert
             expect(mockRes.status).toHaveBeenCalledWith(200);
@@ -178,7 +193,10 @@ describe('PipedriveIntegration - App Uninstall Handler', () => {
             };
 
             // Act
-            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+            await integration.handleAppUninstall({
+                req: mockReq,
+                res: mockRes,
+            });
 
             // Assert
             expect(mockRes.status).toHaveBeenCalledWith(200);
@@ -206,7 +224,10 @@ describe('PipedriveIntegration - App Uninstall Handler', () => {
             );
 
             // Act
-            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+            await integration.handleAppUninstall({
+                req: mockReq,
+                res: mockRes,
+            });
 
             // Assert
             expect(console.log).toHaveBeenCalledWith(
@@ -236,7 +257,10 @@ describe('PipedriveIntegration - App Uninstall Handler', () => {
             );
 
             // Act
-            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+            await integration.handleAppUninstall({
+                req: mockReq,
+                res: mockRes,
+            });
 
             // Assert
             expect(mockRes.status).toHaveBeenCalledWith(200);
@@ -264,7 +288,10 @@ describe('PipedriveIntegration - App Uninstall Handler', () => {
             });
 
             // Act
-            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+            await integration.handleAppUninstall({
+                req: mockReq,
+                res: mockRes,
+            });
 
             // Assert
             expect(
@@ -307,7 +334,10 @@ describe('PipedriveIntegration - App Uninstall Handler', () => {
             });
 
             // Act
-            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+            await integration.handleAppUninstall({
+                req: mockReq,
+                res: mockRes,
+            });
 
             // Assert
             expect(integration.onDelete).toHaveBeenCalledWith({
@@ -335,7 +365,10 @@ describe('PipedriveIntegration - App Uninstall Handler', () => {
             });
 
             // Act
-            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+            await integration.handleAppUninstall({
+                req: mockReq,
+                res: mockRes,
+            });
 
             // Assert
             expect(mockCommands.deleteIntegrationById).toHaveBeenCalledWith(
@@ -366,7 +399,10 @@ describe('PipedriveIntegration - App Uninstall Handler', () => {
             );
 
             // Act
-            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+            await integration.handleAppUninstall({
+                req: mockReq,
+                res: mockRes,
+            });
 
             // Assert
             expect(console.error).toHaveBeenCalledWith(
@@ -398,7 +434,10 @@ describe('PipedriveIntegration - App Uninstall Handler', () => {
             });
 
             // Act
-            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+            await integration.handleAppUninstall({
+                req: mockReq,
+                res: mockRes,
+            });
 
             // Assert
             expect(console.error).toHaveBeenCalledWith(
@@ -445,7 +484,10 @@ describe('PipedriveIntegration - App Uninstall Handler', () => {
             });
 
             // Act
-            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+            await integration.handleAppUninstall({
+                req: mockReq,
+                res: mockRes,
+            });
 
             // Assert
             expect(integration.id).toBe('integration-123');
@@ -472,7 +514,10 @@ describe('PipedriveIntegration - App Uninstall Handler', () => {
             });
 
             // Act
-            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+            await integration.handleAppUninstall({
+                req: mockReq,
+                res: mockRes,
+            });
 
             // Assert
             expect(mockCommands.deleteIntegrationById).toHaveBeenCalledWith(
@@ -521,7 +566,10 @@ describe('PipedriveIntegration - App Uninstall Handler', () => {
             });
 
             // Act
-            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+            await integration.handleAppUninstall({
+                req: mockReq,
+                res: mockRes,
+            });
 
             // Assert
             expect(mockCommands.deleteCredentialById).toHaveBeenCalledWith(
@@ -560,7 +608,10 @@ describe('PipedriveIntegration - App Uninstall Handler', () => {
             });
 
             // Act
-            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+            await integration.handleAppUninstall({
+                req: mockReq,
+                res: mockRes,
+            });
 
             // Assert
             expect(mockCommands.deleteCredentialById).not.toHaveBeenCalled();
@@ -594,7 +645,10 @@ describe('PipedriveIntegration - App Uninstall Handler', () => {
             });
 
             // Act
-            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+            await integration.handleAppUninstall({
+                req: mockReq,
+                res: mockRes,
+            });
 
             // Assert
             expect(mockCommands.deleteCredentialById).toHaveBeenCalledWith(
@@ -628,7 +682,10 @@ describe('PipedriveIntegration - App Uninstall Handler', () => {
             });
 
             // Act
-            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+            await integration.handleAppUninstall({
+                req: mockReq,
+                res: mockRes,
+            });
 
             // Assert - Should still delete both entities
             expect(mockCommands.deleteEntityById).toHaveBeenCalledTimes(2);
@@ -654,7 +711,10 @@ describe('PipedriveIntegration - App Uninstall Handler', () => {
             });
 
             // Act
-            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+            await integration.handleAppUninstall({
+                req: mockReq,
+                res: mockRes,
+            });
 
             // Assert
             expect(mockCommands.deleteCredentialById).not.toHaveBeenCalled();
@@ -668,9 +728,7 @@ describe('PipedriveIntegration - App Uninstall Handler', () => {
             const mockContext = {
                 record: {
                     id: 'integration-123',
-                    entities: [
-                        { id: 'entity-1', credentialId: 'cred-legacy' },
-                    ],
+                    entities: [{ id: 'entity-1', credentialId: 'cred-legacy' }],
                     config: {},
                 },
                 modules: {},
@@ -688,7 +746,10 @@ describe('PipedriveIntegration - App Uninstall Handler', () => {
             });
 
             // Act
-            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+            await integration.handleAppUninstall({
+                req: mockReq,
+                res: mockRes,
+            });
 
             // Assert
             expect(mockCommands.deleteCredentialById).toHaveBeenCalledWith(
@@ -719,7 +780,10 @@ describe('PipedriveIntegration - App Uninstall Handler', () => {
             );
 
             // Act
-            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+            await integration.handleAppUninstall({
+                req: mockReq,
+                res: mockRes,
+            });
 
             // Assert
             expect(mockRes.status).toHaveBeenCalledWith(200);
@@ -850,7 +914,10 @@ describe('PipedriveIntegration - App Uninstall Handler', () => {
             });
 
             // Act
-            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+            await integration.handleAppUninstall({
+                req: mockReq,
+                res: mockRes,
+            });
 
             // Assert - Check log calls have prefix
             const logCalls = console.log.mock.calls;
@@ -874,7 +941,10 @@ describe('PipedriveIntegration - App Uninstall Handler', () => {
             );
 
             // Act
-            await integration.handleAppUninstall({ req: mockReq, res: mockRes });
+            await integration.handleAppUninstall({
+                req: mockReq,
+                res: mockRes,
+            });
 
             // Assert
             expect(console.log).toHaveBeenCalledWith(
@@ -906,14 +976,15 @@ describe('PipedriveIntegration - App Uninstall Handler', () => {
                 'test-client-id:test-client-secret',
             ).toString('base64');
             expect(
-                integration._verifyPipedriveBasicAuth(`Basic ${validCredentials}`),
+                integration._verifyPipedriveBasicAuth(
+                    `Basic ${validCredentials}`,
+                ),
             ).toBe(true);
         });
 
         it('should return false for invalid credentials', () => {
-            const invalidCredentials = Buffer.from('wrong:wrong').toString(
-                'base64',
-            );
+            const invalidCredentials =
+                Buffer.from('wrong:wrong').toString('base64');
             expect(
                 integration._verifyPipedriveBasicAuth(
                     `Basic ${invalidCredentials}`,
