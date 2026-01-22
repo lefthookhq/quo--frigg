@@ -12,6 +12,7 @@ const QUO_ANALYTICS_EVENTS = {
     MESSAGE_LOG_FAILED: 'MessageLogFailed',
     CALL_LOGGED: 'CallLogged',
     CALL_LOG_FAILED: 'CallLogFailed',
+    CLICK_TO_CALL_INITIATED: 'ClickToCallInitiated',
 };
 
 /**

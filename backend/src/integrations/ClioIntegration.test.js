@@ -913,19 +913,35 @@ describe('ClioIntegration', () => {
                     callSummaryWebhookId: 'summary-wh-123',
                 });
 
+                // Mock setupClickToCall
+                integration.setupClickToCall = jest.fn().mockResolvedValue({
+                    status: 'configured',
+                    customActionId: 'ca-123',
+                });
+
                 const result = await integration.setupWebhooks();
 
                 expect(result.clio.status).toBe('pending_handshake');
                 expect(result.clio.webhookId).toBe(12345);
                 expect(result.quo.status).toBe('configured');
+                expect(result.clickToCall.status).toBe('configured');
                 expect(result.overallStatus).toBe('success');
                 expect(integration.setupQuoWebhook).toHaveBeenCalled();
+                expect(integration.setupClickToCall).toHaveBeenCalled();
             });
 
             it('should handle setupClioWebhook failure gracefully', async () => {
                 mockClioApi.api.createWebhook = jest
                     .fn()
                     .mockRejectedValue(new Error('API Error'));
+
+                // Mock setupQuoWebhook and setupClickToCall
+                integration.setupQuoWebhook = jest.fn().mockResolvedValue({
+                    status: 'configured',
+                });
+                integration.setupClickToCall = jest.fn().mockResolvedValue({
+                    status: 'configured',
+                });
 
                 const result = await integration.setupWebhooks();
 
@@ -1028,6 +1044,51 @@ describe('ClioIntegration', () => {
                 expect(mockClioApi.api.deleteWebhook).toHaveBeenCalledWith(
                     99999,
                 );
+            });
+        });
+
+        describe('setupClickToCall', () => {
+            it('should return already_configured when custom action exists', async () => {
+                integration.config = {
+                    clioCustomActionId: 'ca-123',
+                };
+
+                const result = await integration.setupClickToCall();
+
+                expect(result.status).toBe('already_configured');
+                expect(result.customActionId).toBe('ca-123');
+            });
+
+            it('should create custom action when not configured', async () => {
+                integration.config = {};
+                integration.id = '10';
+                mockClioApi.api.createCustomAction = jest.fn().mockResolvedValue({
+                    data: { id: 'ca-456' },
+                });
+
+                const result = await integration.setupClickToCall();
+
+                expect(result.status).toBe('configured');
+                expect(result.customActionId).toBe('ca-456');
+                expect(mockClioApi.api.createCustomAction).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        label: 'Call with Quo',
+                        ui_reference: 'contacts/show',
+                    }),
+                );
+                expect(mockCommands.updateIntegrationConfig).toHaveBeenCalledWith({
+                    integrationId: '10',
+                    config: { clioCustomActionId: 'ca-456' },
+                });
+            });
+
+            it('should handle custom action creation failure', async () => {
+                integration.config = {};
+                mockClioApi.api.createCustomAction = jest
+                    .fn()
+                    .mockRejectedValue(new Error('API Error'));
+
+                await expect(integration.setupClickToCall()).rejects.toThrow('API Error');
             });
         });
 
@@ -1342,6 +1403,344 @@ describe('ClioIntegration', () => {
                 await expect(
                     integration._handleContactDeleted(123),
                 ).rejects.toThrow('Server error');
+            });
+        });
+
+        describe('Settings Endpoints', () => {
+            describe('getSettings', () => {
+                it('should return default settings when config is empty', async () => {
+                    integration.config = {};
+
+                    const mockReq = {};
+                    const mockRes = {
+                        json: jest.fn(),
+                    };
+
+                    await integration.getSettings({ req: mockReq, res: mockRes });
+
+                    expect(mockRes.json).toHaveBeenCalledWith({
+                        settings: {
+                            callLoggingEnabled: true,
+                            messageLoggingEnabled: true,
+                            enabledPhoneIds: [],
+                            phoneNumbersMetadata: [],
+                            phoneNumbersFetchedAt: null,
+                        },
+                    });
+                });
+
+                it('should return stored settings', async () => {
+                    integration.config = {
+                        callLoggingEnabled: false,
+                        messageLoggingEnabled: true,
+                        enabledPhoneIds: ['phone-1', 'phone-2'],
+                        phoneNumbersMetadata: [
+                            { id: 'phone-1', name: 'Main', number: '+15551234567' },
+                        ],
+                        phoneNumbersFetchedAt: '2025-01-01T00:00:00Z',
+                    };
+
+                    const mockRes = {
+                        json: jest.fn(),
+                        status: jest.fn().mockReturnThis(),
+                    };
+
+                    await integration.getSettings({ req: {}, res: mockRes });
+
+                    expect(mockRes.json).toHaveBeenCalledWith({
+                        settings: {
+                            callLoggingEnabled: false,
+                            messageLoggingEnabled: true,
+                            enabledPhoneIds: ['phone-1', 'phone-2'],
+                            phoneNumbersMetadata: [
+                                { id: 'phone-1', name: 'Main', number: '+15551234567' },
+                            ],
+                            phoneNumbersFetchedAt: '2025-01-01T00:00:00Z',
+                        },
+                    });
+                });
+            });
+
+            describe('updateSettings', () => {
+                let mockReq, mockRes;
+
+                beforeEach(() => {
+                    integration.config = {};
+                    integration.id = '10';
+                    mockCommands.updateIntegrationConfig = jest.fn().mockResolvedValue({});
+                    mockQuoApi.api.listPhoneNumbers = jest.fn().mockResolvedValue({
+                        data: [
+                            { id: 'phone-1', name: 'Main', number: '+15551234567', createdAt: '2025-01-01' },
+                            { id: 'phone-2', name: 'Support', number: '+15559876543', createdAt: '2025-01-02' },
+                        ],
+                    });
+                });
+
+                it('should update call logging toggle', async () => {
+                    const req = {
+                        body: { callLoggingEnabled: false },
+                    };
+                    const res = {
+                        json: jest.fn(),
+                        status: jest.fn().mockReturnThis(),
+                    };
+
+                    await integration.updateSettings({ req, res });
+
+                    expect(mockCommands.updateIntegrationConfig).toHaveBeenCalledWith({
+                        integrationId: '10',
+                        config: expect.objectContaining({
+                            callLoggingEnabled: false,
+                        }),
+                    });
+                    expect(res.json).toHaveBeenCalledWith({
+                        success: true,
+                        settings: expect.objectContaining({
+                            callLoggingEnabled: false,
+                        }),
+                    });
+                });
+
+                it('should update message logging toggle', async () => {
+                    integration.config = { messageLoggingEnabled: true };
+
+                    const req = {
+                        body: { messageLoggingEnabled: false },
+                    };
+                    const res = {
+                        json: jest.fn(),
+                        status: jest.fn().mockReturnThis(),
+                    };
+
+                    await integration.updateSettings({ req, res });
+
+                    expect(mockCommands.updateIntegrationConfig).toHaveBeenCalledWith({
+                        integrationId: '10',
+                        config: expect.objectContaining({
+                            messageLoggingEnabled: false,
+                        }),
+                    });
+                    expect(res.json).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            success: true,
+                            settings: expect.objectContaining({
+                                messageLoggingEnabled: false,
+                            }),
+                        }),
+                    );
+                });
+
+                it('should update enabledPhoneIds and fetch phone metadata', async () => {
+                    integration.config = {
+                        enabledPhoneIds: ['old-id-1'],
+                    };
+
+                    mockQuoApi.api.listPhoneNumbers = jest.fn().mockResolvedValue({
+                        data: [
+                            { id: 'phone-1', name: 'Main', number: '+15551234567' },
+                            { id: 'phone-2', name: 'Support', number: '+15559876543' },
+                        ],
+                    });
+
+                    const req = {
+                        body: {
+                            enabledPhoneIds: ['phone-1', 'phone-2'],
+                        },
+                    };
+                    const res = {
+                        json: jest.fn(),
+                    };
+
+                    await integration.updateSettings({ req, res });
+
+                    expect(mockCommands.updateIntegrationConfig).toHaveBeenCalledWith({
+                        integrationId: '10',
+                        config: expect.objectContaining({
+                            enabledPhoneIds: ['phone-1', 'phone-2'],
+                            phoneNumbersMetadata: expect.arrayContaining([
+                                expect.objectContaining({ id: 'phone-1' }),
+                                expect.objectContaining({ id: 'phone-2' }),
+                            ]),
+                            phoneNumbersFetchedAt: expect.any(String),
+                        }),
+                    });
+                    expect(res.json).toHaveBeenCalledWith({
+                        success: true,
+                        settings: expect.objectContaining({
+                            enabledPhoneIds: ['phone-1', 'phone-2'],
+                        }),
+                    });
+                });
+
+                it('should not refetch phone metadata if selection unchanged', async () => {
+                    integration.config = {
+                        enabledPhoneIds: ['phone-1'],
+                    };
+
+                    const req = {
+                        body: {
+                            enabledPhoneIds: ['phone-1'],
+                        },
+                    };
+                    const res = {
+                        json: jest.fn(),
+                    };
+
+                    await integration.updateSettings({ req, res });
+
+                    expect(mockQuoApi.api.listPhoneNumbers).not.toHaveBeenCalled();
+                });
+
+                it('should handle update errors', async () => {
+                    mockCommands.updateIntegrationConfig = jest
+                        .fn()
+                        .mockRejectedValue(new Error('DB Error'));
+
+                    const req = {
+                        body: { callLoggingEnabled: false },
+                    };
+                    const res = {
+                        status: jest.fn().mockReturnThis(),
+                        json: jest.fn(),
+                    };
+
+                    await integration.updateSettings({ req, res });
+
+                    expect(res.status).toHaveBeenCalledWith(500);
+                    expect(res.json).toHaveBeenCalledWith({
+                        error: 'DB Error',
+                    });
+                });
+            });
+
+            describe('listQuoPhoneNumbers', () => {
+                it('should return list of available phone numbers', async () => {
+                    mockQuoApi.api.listPhoneNumbers = jest.fn().mockResolvedValue({
+                        data: [
+                            {
+                                id: 'phone-1',
+                                name: 'Main Office',
+                                number: '+15551234567',
+                                createdAt: '2025-01-01T00:00:00Z',
+                            },
+                            {
+                                id: 'phone-2',
+                                name: 'Support',
+                                number: '+15559876543',
+                                createdAt: '2025-01-02T00:00:00Z',
+                            },
+                        ],
+                    });
+
+                    const req = {};
+                    const res = {
+                        json: jest.fn(),
+                    };
+
+                    await integration.listQuoPhoneNumbers({ req, res });
+
+                    expect(mockQuoApi.api.listPhoneNumbers).toHaveBeenCalledWith({
+                        maxResults: 100,
+                    });
+                    expect(res.json).toHaveBeenCalledWith({
+                        phoneNumbers: [
+                            {
+                                id: 'phone-1',
+                                name: 'Main Office',
+                                number: '+15551234567',
+                                createdAt: '2025-01-01T00:00:00Z',
+                            },
+                            {
+                                id: 'phone-2',
+                                name: 'Support',
+                                number: '+15559876543',
+                                createdAt: '2025-01-02T00:00:00Z',
+                            },
+                        ],
+                    });
+                });
+
+                it('should handle empty phone list', async () => {
+                    mockQuoApi.api.listPhoneNumbers = jest.fn().mockResolvedValue({
+                        data: [],
+                    });
+
+                    const req = {};
+                    const res = {
+                        json: jest.fn(),
+                    };
+
+                    await integration.listQuoPhoneNumbers({ req, res });
+
+                    expect(res.json).toHaveBeenCalledWith({
+                        phoneNumbers: [],
+                    });
+                });
+
+                it('should handle API errors', async () => {
+                    mockQuoApi.api.listPhoneNumbers = jest
+                        .fn()
+                        .mockRejectedValue(new Error('API Error'));
+
+                    const req = {};
+                    const res = {
+                        status: jest.fn().mockReturnThis(),
+                        json: jest.fn(),
+                    };
+
+                    await integration.listQuoPhoneNumbers({ req, res });
+
+                    expect(res.status).toHaveBeenCalledWith(500);
+                    expect(res.json).toHaveBeenCalledWith({
+                        error: 'API Error',
+                    });
+                });
+            });
+        });
+
+        describe('_handleContactDeleted', () => {
+            beforeEach(() => {
+                mockQuoApi.api.listContacts = jest
+                    .fn()
+                    .mockResolvedValue({ data: [{ id: 'quo-123' }] });
+                mockQuoApi.api.deleteContact = jest.fn().mockResolvedValue({});
+            });
+
+            it('should handle contact not found gracefully', async () => {
+                mockQuoApi.api.listContacts = jest
+                    .fn()
+                    .mockResolvedValue({ data: [] });
+
+                await expect(
+                    integration._handleContactDeleted(123),
+                ).resolves.not.toThrow();
+                expect(mockQuoApi.api.deleteContact).not.toHaveBeenCalled();
+            });
+
+            it('should handle 404 on delete gracefully', async () => {
+                mockQuoApi.api.listContacts = jest
+                    .fn()
+                    .mockResolvedValue({ data: [{ id: 'quo-123' }] });
+                const error = new Error('Contact not found');
+                error.status = 404;
+                mockQuoApi.api.deleteContact = jest.fn().mockRejectedValue(error);
+
+                await expect(
+                    integration._handleContactDeleted(123),
+                ).resolves.not.toThrow();
+            });
+
+            it('should rethrow non-404 errors', async () => {
+                mockQuoApi.api.listContacts = jest
+                    .fn()
+                    .mockResolvedValue({ data: [{ id: 'quo-123' }] });
+                const error = new Error('Server error');
+                error.status = 500;
+                mockQuoApi.api.deleteContact = jest.fn().mockRejectedValue(error);
+
+                await expect(integration._handleContactDeleted(123)).rejects.toThrow(
+                    'Server error',
+                );
             });
         });
 
