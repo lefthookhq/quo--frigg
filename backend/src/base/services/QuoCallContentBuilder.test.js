@@ -383,7 +383,9 @@ describe('QuoCallContentBuilder', () => {
                 formatOptions,
             });
 
-            expect(result).toContain('<a href="https://app.quo.com/msg/123" target="_blank">');
+            expect(result).toContain(
+                '<a href="https://app.quo.com/msg/123" target="_blank">',
+            );
             expect(result).toContain('<br><br>');
         });
 
@@ -609,7 +611,9 @@ describe('QuoCallContentBuilder', () => {
             });
 
             expect(result).toContain('<br><br>');
-            expect(result).toContain('<a href="https://app.quo.com/call/123" target="_blank">');
+            expect(result).toContain(
+                '<a href="https://app.quo.com/call/123" target="_blank">',
+            );
         });
     });
 

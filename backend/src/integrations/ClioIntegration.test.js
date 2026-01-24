@@ -754,7 +754,9 @@ describe('ClioIntegration', () => {
                     detail: 'Message content',
                 },
             };
-            mockClioApi.api.createNote = jest.fn().mockResolvedValue(mockNoteResponse);
+            mockClioApi.api.createNote = jest
+                .fn()
+                .mockResolvedValue(mockNoteResponse);
 
             const activity = {
                 contactExternalId: '123',
@@ -799,7 +801,8 @@ describe('ClioIntegration', () => {
                 quoCallId: 'call-123',
             };
 
-            const communicationId = await integration.logCallToActivity(activity);
+            const communicationId =
+                await integration.logCallToActivity(activity);
 
             expect(communicationId).toBe(888);
             expect(mockClioApi.api.createCommunication).toHaveBeenCalledWith({
@@ -1062,9 +1065,11 @@ describe('ClioIntegration', () => {
             it('should create custom action when not configured', async () => {
                 integration.config = {};
                 integration.id = '10';
-                mockClioApi.api.createCustomAction = jest.fn().mockResolvedValue({
-                    data: { id: 'ca-456' },
-                });
+                mockClioApi.api.createCustomAction = jest
+                    .fn()
+                    .mockResolvedValue({
+                        data: { id: 'ca-456' },
+                    });
 
                 const result = await integration.setupClickToCall();
 
@@ -1076,7 +1081,9 @@ describe('ClioIntegration', () => {
                         ui_reference: 'contacts/show',
                     }),
                 );
-                expect(mockCommands.updateIntegrationConfig).toHaveBeenCalledWith({
+                expect(
+                    mockCommands.updateIntegrationConfig,
+                ).toHaveBeenCalledWith({
                     integrationId: '10',
                     config: { clioCustomActionId: 'ca-456' },
                 });
@@ -1088,7 +1095,9 @@ describe('ClioIntegration', () => {
                     .fn()
                     .mockRejectedValue(new Error('API Error'));
 
-                await expect(integration.setupClickToCall()).rejects.toThrow('API Error');
+                await expect(integration.setupClickToCall()).rejects.toThrow(
+                    'API Error',
+                );
             });
         });
 
@@ -1416,7 +1425,10 @@ describe('ClioIntegration', () => {
                         json: jest.fn(),
                     };
 
-                    await integration.getSettings({ req: mockReq, res: mockRes });
+                    await integration.getSettings({
+                        req: mockReq,
+                        res: mockRes,
+                    });
 
                     expect(mockRes.json).toHaveBeenCalledWith({
                         settings: {
@@ -1435,7 +1447,11 @@ describe('ClioIntegration', () => {
                         messageLoggingEnabled: true,
                         enabledPhoneIds: ['phone-1', 'phone-2'],
                         phoneNumbersMetadata: [
-                            { id: 'phone-1', name: 'Main', number: '+15551234567' },
+                            {
+                                id: 'phone-1',
+                                name: 'Main',
+                                number: '+15551234567',
+                            },
                         ],
                         phoneNumbersFetchedAt: '2025-01-01T00:00:00Z',
                     };
@@ -1453,7 +1469,11 @@ describe('ClioIntegration', () => {
                             messageLoggingEnabled: true,
                             enabledPhoneIds: ['phone-1', 'phone-2'],
                             phoneNumbersMetadata: [
-                                { id: 'phone-1', name: 'Main', number: '+15551234567' },
+                                {
+                                    id: 'phone-1',
+                                    name: 'Main',
+                                    number: '+15551234567',
+                                },
                             ],
                             phoneNumbersFetchedAt: '2025-01-01T00:00:00Z',
                         },
@@ -1467,13 +1487,27 @@ describe('ClioIntegration', () => {
                 beforeEach(() => {
                     integration.config = {};
                     integration.id = '10';
-                    mockCommands.updateIntegrationConfig = jest.fn().mockResolvedValue({});
-                    mockQuoApi.api.listPhoneNumbers = jest.fn().mockResolvedValue({
-                        data: [
-                            { id: 'phone-1', name: 'Main', number: '+15551234567', createdAt: '2025-01-01' },
-                            { id: 'phone-2', name: 'Support', number: '+15559876543', createdAt: '2025-01-02' },
-                        ],
-                    });
+                    mockCommands.updateIntegrationConfig = jest
+                        .fn()
+                        .mockResolvedValue({});
+                    mockQuoApi.api.listPhoneNumbers = jest
+                        .fn()
+                        .mockResolvedValue({
+                            data: [
+                                {
+                                    id: 'phone-1',
+                                    name: 'Main',
+                                    number: '+15551234567',
+                                    createdAt: '2025-01-01',
+                                },
+                                {
+                                    id: 'phone-2',
+                                    name: 'Support',
+                                    number: '+15559876543',
+                                    createdAt: '2025-01-02',
+                                },
+                            ],
+                        });
                 });
 
                 it('should update call logging toggle', async () => {
@@ -1487,7 +1521,9 @@ describe('ClioIntegration', () => {
 
                     await integration.updateSettings({ req, res });
 
-                    expect(mockCommands.updateIntegrationConfig).toHaveBeenCalledWith({
+                    expect(
+                        mockCommands.updateIntegrationConfig,
+                    ).toHaveBeenCalledWith({
                         integrationId: '10',
                         config: expect.objectContaining({
                             callLoggingEnabled: false,
@@ -1514,7 +1550,9 @@ describe('ClioIntegration', () => {
 
                     await integration.updateSettings({ req, res });
 
-                    expect(mockCommands.updateIntegrationConfig).toHaveBeenCalledWith({
+                    expect(
+                        mockCommands.updateIntegrationConfig,
+                    ).toHaveBeenCalledWith({
                         integrationId: '10',
                         config: expect.objectContaining({
                             messageLoggingEnabled: false,
@@ -1535,12 +1573,22 @@ describe('ClioIntegration', () => {
                         enabledPhoneIds: ['old-id-1'],
                     };
 
-                    mockQuoApi.api.listPhoneNumbers = jest.fn().mockResolvedValue({
-                        data: [
-                            { id: 'phone-1', name: 'Main', number: '+15551234567' },
-                            { id: 'phone-2', name: 'Support', number: '+15559876543' },
-                        ],
-                    });
+                    mockQuoApi.api.listPhoneNumbers = jest
+                        .fn()
+                        .mockResolvedValue({
+                            data: [
+                                {
+                                    id: 'phone-1',
+                                    name: 'Main',
+                                    number: '+15551234567',
+                                },
+                                {
+                                    id: 'phone-2',
+                                    name: 'Support',
+                                    number: '+15559876543',
+                                },
+                            ],
+                        });
 
                     const req = {
                         body: {
@@ -1553,7 +1601,9 @@ describe('ClioIntegration', () => {
 
                     await integration.updateSettings({ req, res });
 
-                    expect(mockCommands.updateIntegrationConfig).toHaveBeenCalledWith({
+                    expect(
+                        mockCommands.updateIntegrationConfig,
+                    ).toHaveBeenCalledWith({
                         integrationId: '10',
                         config: expect.objectContaining({
                             enabledPhoneIds: ['phone-1', 'phone-2'],
@@ -1588,7 +1638,9 @@ describe('ClioIntegration', () => {
 
                     await integration.updateSettings({ req, res });
 
-                    expect(mockQuoApi.api.listPhoneNumbers).not.toHaveBeenCalled();
+                    expect(
+                        mockQuoApi.api.listPhoneNumbers,
+                    ).not.toHaveBeenCalled();
                 });
 
                 it('should handle update errors', async () => {
@@ -1615,22 +1667,24 @@ describe('ClioIntegration', () => {
 
             describe('listQuoPhoneNumbers', () => {
                 it('should return list of available phone numbers', async () => {
-                    mockQuoApi.api.listPhoneNumbers = jest.fn().mockResolvedValue({
-                        data: [
-                            {
-                                id: 'phone-1',
-                                name: 'Main Office',
-                                number: '+15551234567',
-                                createdAt: '2025-01-01T00:00:00Z',
-                            },
-                            {
-                                id: 'phone-2',
-                                name: 'Support',
-                                number: '+15559876543',
-                                createdAt: '2025-01-02T00:00:00Z',
-                            },
-                        ],
-                    });
+                    mockQuoApi.api.listPhoneNumbers = jest
+                        .fn()
+                        .mockResolvedValue({
+                            data: [
+                                {
+                                    id: 'phone-1',
+                                    name: 'Main Office',
+                                    number: '+15551234567',
+                                    createdAt: '2025-01-01T00:00:00Z',
+                                },
+                                {
+                                    id: 'phone-2',
+                                    name: 'Support',
+                                    number: '+15559876543',
+                                    createdAt: '2025-01-02T00:00:00Z',
+                                },
+                            ],
+                        });
 
                     const req = {};
                     const res = {
@@ -1639,7 +1693,9 @@ describe('ClioIntegration', () => {
 
                     await integration.listQuoPhoneNumbers({ req, res });
 
-                    expect(mockQuoApi.api.listPhoneNumbers).toHaveBeenCalledWith({
+                    expect(
+                        mockQuoApi.api.listPhoneNumbers,
+                    ).toHaveBeenCalledWith({
                         maxResults: 100,
                     });
                     expect(res.json).toHaveBeenCalledWith({
@@ -1661,9 +1717,11 @@ describe('ClioIntegration', () => {
                 });
 
                 it('should handle empty phone list', async () => {
-                    mockQuoApi.api.listPhoneNumbers = jest.fn().mockResolvedValue({
-                        data: [],
-                    });
+                    mockQuoApi.api.listPhoneNumbers = jest
+                        .fn()
+                        .mockResolvedValue({
+                            data: [],
+                        });
 
                     const req = {};
                     const res = {
@@ -1723,7 +1781,9 @@ describe('ClioIntegration', () => {
                     .mockResolvedValue({ data: [{ id: 'quo-123' }] });
                 const error = new Error('Contact not found');
                 error.status = 404;
-                mockQuoApi.api.deleteContact = jest.fn().mockRejectedValue(error);
+                mockQuoApi.api.deleteContact = jest
+                    .fn()
+                    .mockRejectedValue(error);
 
                 await expect(
                     integration._handleContactDeleted(123),
@@ -1736,11 +1796,13 @@ describe('ClioIntegration', () => {
                     .mockResolvedValue({ data: [{ id: 'quo-123' }] });
                 const error = new Error('Server error');
                 error.status = 500;
-                mockQuoApi.api.deleteContact = jest.fn().mockRejectedValue(error);
+                mockQuoApi.api.deleteContact = jest
+                    .fn()
+                    .mockRejectedValue(error);
 
-                await expect(integration._handleContactDeleted(123)).rejects.toThrow(
-                    'Server error',
-                );
+                await expect(
+                    integration._handleContactDeleted(123),
+                ).rejects.toThrow('Server error');
             });
         });
 

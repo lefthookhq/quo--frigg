@@ -27,7 +27,8 @@ class QuoCallContentBuilder {
                     lineBreak: '<br>',
                     lineBreakDouble: '<br><br>',
                     bold: (text) => `<strong>${text}</strong>`,
-                    link: (text, url) => `<a href="${url}" target="_blank">${text}</a>`,
+                    link: (text, url) =>
+                        `<a href="${url}" target="_blank">${text}</a>`,
                     emoji: {
                         call: '☎️',
                         message: '💬',
