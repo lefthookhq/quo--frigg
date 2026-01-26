@@ -219,7 +219,7 @@ describe('formatCallRecordings - HTML mode', () => {
             });
 
             expect(result).toBe(
-                '<a href="https://storage.example.com/rec1.mp3">▶️ Recording (1:15)</a>',
+                '<a href="https://storage.example.com/rec1.mp3" target="_blank">▶️ Recording (1:15)</a>',
             );
         });
 
@@ -257,7 +257,7 @@ describe('formatCallRecordings - HTML mode', () => {
             });
 
             expect(result).toBe(
-                '▶️ Recordings: <a href="https://storage.example.com/part1.mp3">Part 1 (0:45)</a> | <a href="https://storage.example.com/part2.mp3">Part 2 (0:30)</a>',
+                '▶️ Recordings: <a href="https://storage.example.com/part1.mp3" target="_blank">Part 1 (0:45)</a> | <a href="https://storage.example.com/part2.mp3" target="_blank">Part 2 (0:30)</a>',
             );
         });
 
@@ -278,7 +278,7 @@ describe('formatCallRecordings - HTML mode', () => {
             });
 
             expect(result).toBe(
-                '▶️ Recordings: <a href="https://storage.example.com/part1.mp3">Part 1 (0:45)</a> | Part 2 (0:30)',
+                '▶️ Recordings: <a href="https://storage.example.com/part1.mp3" target="_blank">Part 1 (0:45)</a> | Part 2 (0:30)',
             );
         });
     });
@@ -328,7 +328,7 @@ describe('formatVoicemail - HTML mode', () => {
         const result = formatVoicemail(voicemail, { useHtml: true });
 
         expect(result).toBe(
-            '<a href="https://storage.example.com/vm.mp3">➿ Voicemail (0:35)</a>',
+            '<a href="https://storage.example.com/vm.mp3" target="_blank">➿ Voicemail (0:35)</a>',
         );
     });
 

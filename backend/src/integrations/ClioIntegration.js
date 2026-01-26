@@ -353,16 +353,13 @@ class ClioIntegration extends BaseCRMIntegration {
     async logSMSToActivity(activity) {
         // Check if message logging is enabled
         if (this.config?.messageLoggingEnabled === false) {
-            console.log('[Clio] Message logging is disabled - skipping SMS Note creation');
+            console.log(
+                '[Clio] Message logging is disabled - skipping SMS Note creation',
+            );
             return null;
         }
 
-        const {
-            contactExternalId,
-            title,
-            content,
-            timestamp,
-        } = activity;
+        const { contactExternalId, title, content, timestamp } = activity;
 
         if (!contactExternalId) {
             throw new Error('contactExternalId is required to log SMS');
@@ -387,9 +384,7 @@ class ClioIntegration extends BaseCRMIntegration {
             const response = await this.clio.api.createNote(noteParams);
 
             if (!response?.data?.id) {
-                throw new Error(
-                    'Invalid Clio Note response: missing note ID',
-                );
+                throw new Error('Invalid Clio Note response: missing note ID');
             }
 
             const noteId = response.data.id;
@@ -397,10 +392,7 @@ class ClioIntegration extends BaseCRMIntegration {
 
             return noteId;
         } catch (error) {
-            console.error(
-                `[Clio] Error creating Note for SMS:`,
-                error.message,
-            );
+            console.error(`[Clio] Error creating Note for SMS:`, error.message);
             throw error;
         }
     }
@@ -421,7 +413,9 @@ class ClioIntegration extends BaseCRMIntegration {
     async logCallToActivity(activity) {
         // Check if call logging is enabled
         if (this.config?.callLoggingEnabled === false) {
-            console.log('[Clio] Call logging is disabled - skipping PhoneCommunication creation');
+            console.log(
+                '[Clio] Call logging is disabled - skipping PhoneCommunication creation',
+            );
             return null;
         }
 
@@ -489,7 +483,9 @@ class ClioIntegration extends BaseCRMIntegration {
                 received_at: timestamp,
                 ...(senders.length > 0 && { senders }),
                 ...(receivers.length > 0 && { receivers }),
-                ...(externalProperties.length > 0 && { external_properties: externalProperties }),
+                ...(externalProperties.length > 0 && {
+                    external_properties: externalProperties,
+                }),
             };
 
             // TODO: Optional Matter association if contact is linked to a matter
@@ -1252,9 +1248,8 @@ class ClioIntegration extends BaseCRMIntegration {
             }
 
             // Load integration context to get credentials
-            const result = await this.commands.loadIntegrationContextById(
-                integrationId,
-            );
+            const result =
+                await this.commands.loadIntegrationContextById(integrationId);
             if (result.error) {
                 console.error(
                     `[Click-to-Call] Failed to load integration ${integrationId}`,
@@ -1304,14 +1299,18 @@ class ClioIntegration extends BaseCRMIntegration {
             );
 
             // Get phone numbers for the contact
-            const phoneNumbers = await clioApi.getContactPhoneNumbers(contactId, {
-                fields: 'id,name,number,default_number',
-            });
+            const phoneNumbers = await clioApi.getContactPhoneNumbers(
+                contactId,
+                {
+                    fields: 'id,name,number,default_number',
+                },
+            );
             const phoneNumbersList = phoneNumbers?.data || [];
 
             // Find default phone number or use first one
             const primaryPhone = phoneNumbersList.find((p) => p.default_number);
-            const phoneNumber = primaryPhone?.number || phoneNumbersList[0]?.number;
+            const phoneNumber =
+                primaryPhone?.number || phoneNumbersList[0]?.number;
 
             if (!phoneNumber) {
                 console.error(
@@ -1328,9 +1327,13 @@ class ClioIntegration extends BaseCRMIntegration {
             }
 
             // Track analytics event
-            trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.CLICK_TO_CALL_INITIATED, {
-                contactId,
-            });
+            trackAnalyticsEvent(
+                this,
+                QUO_ANALYTICS_EVENTS.CLICK_TO_CALL_INITIATED,
+                {
+                    contactId,
+                },
+            );
 
             // Redirect to tel: URL which will trigger OS to open Quo app
             const telUrl = `tel:${phoneNumber}`;
@@ -1353,13 +1356,13 @@ class ClioIntegration extends BaseCRMIntegration {
     getSettings = async ({ req, res }) => {
         try {
             const settings = {
-                callLoggingEnabled:
-                    this.config?.callLoggingEnabled !== false, // default true
+                callLoggingEnabled: this.config?.callLoggingEnabled !== false, // default true
                 messageLoggingEnabled:
                     this.config?.messageLoggingEnabled !== false, // default true
                 enabledPhoneIds: this.config?.enabledPhoneIds || [],
                 phoneNumbersMetadata: this.config?.phoneNumbersMetadata || [],
-                phoneNumbersFetchedAt: this.config?.phoneNumbersFetchedAt || null,
+                phoneNumbersFetchedAt:
+                    this.config?.phoneNumbersFetchedAt || null,
             };
 
             res.json({ settings });
@@ -1493,10 +1496,7 @@ class ClioIntegration extends BaseCRMIntegration {
                 })),
             });
         } catch (error) {
-            console.error(
-                '[Quo] listPhoneNumbers error:',
-                error.message,
-            );
+            console.error('[Quo] listPhoneNumbers error:', error.message);
             res.status(500).json({
                 error: error.message,
             });
@@ -1890,7 +1890,8 @@ class ClioIntegration extends BaseCRMIntegration {
         const inboxNumber = inboxPhone?.number || '';
 
         // Build formatters for content generation
-        const formatOptions = QuoCallContentBuilder.getFormatOptions('markdown');
+        const formatOptions =
+            QuoCallContentBuilder.getFormatOptions('markdown');
         const formatters = {
             formatCallHeader: (call, recordings, voicemail) =>
                 QuoCallContentBuilder.buildCallTitle({
@@ -1919,8 +1920,7 @@ class ClioIntegration extends BaseCRMIntegration {
         // Look up existing mapping to find contactId
         const existingMapping = await this.getMapping(callId);
         const contactId =
-            existingMapping?.mapping?.contactId ||
-            existingMapping?.contactId;
+            existingMapping?.mapping?.contactId || existingMapping?.contactId;
 
         if (!contactId) {
             console.warn(
@@ -1993,9 +1993,7 @@ class ClioIntegration extends BaseCRMIntegration {
         const recordingUrl = recordings[0]?.url;
 
         if (!callId || !recordingUrl) {
-            throw new Error(
-                'Invalid recording webhook: missing callId or url',
-            );
+            throw new Error('Invalid recording webhook: missing callId or url');
         }
 
         console.log(
@@ -2072,9 +2070,7 @@ class ClioIntegration extends BaseCRMIntegration {
         }
 
         // STRATEGY 2: Fallback to Clio API search (slower)
-        console.log(
-            `[Webhook Lookup] ✗ No mapping found, searching Clio API`,
-        );
+        console.log(`[Webhook Lookup] ✗ No mapping found, searching Clio API`);
 
         try {
             const contactId = await this._findContactByPhone(normalizedPhone);
