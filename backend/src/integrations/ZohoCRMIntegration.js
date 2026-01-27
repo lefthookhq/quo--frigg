@@ -780,8 +780,11 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 `[Quo] Registering message and call webhooks at: ${webhookUrl}`,
             );
 
+            await this._fetchAndStoreEnabledPhoneIds();
+            const phoneIds = this.config.enabledPhoneIds || [];
+
             const { messageWebhooks, callWebhooks, callSummaryWebhooks } =
-                await this._createQuoWebhooksWithPhoneIds(webhookUrl);
+                await this._createQuoWebhooksWithPhoneIds(webhookUrl, phoneIds);
 
             createdWebhooks.push(
                 ...messageWebhooks.map((wh) => ({

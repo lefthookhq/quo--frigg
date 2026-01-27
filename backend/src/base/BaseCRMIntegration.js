@@ -1452,14 +1452,14 @@ class BaseCRMIntegration extends IntegrationBase {
      * @private
      * @param {Array} array - Array to split into chunks
      * @param {number} chunkSize - Maximum size of each chunk (default: 10)
-     * @returns {Array<Array>} Array of chunks, or [[]] if input is empty
+     * @returns {Array<Array>} Array of chunks, or [] if input is empty
      */
     _chunkArray(array, chunkSize = 10) {
         const chunks = [];
         for (let i = 0; i < array.length; i += chunkSize) {
             chunks.push(array.slice(i, i + chunkSize));
         }
-        return chunks.length > 0 ? chunks : [[]];
+        return chunks;
     }
 
     /**
@@ -1473,15 +1473,24 @@ class BaseCRMIntegration extends IntegrationBase {
      * - 21 phone IDs → 3 webhooks per type (9 total)
      *
      * @param {string} webhookUrl - The URL to receive webhook events
+     * @param {string[]} phoneIds - Array of phone IDs to filter webhooks by
      * @returns {Promise<{messageWebhooks: Array, callWebhooks: Array, callSummaryWebhooks: Array}>}
      * @throws {Error} If Quo API is not configured or webhook creation fails
      */
-    async _createQuoWebhooksWithPhoneIds(webhookUrl) {
+    async _createQuoWebhooksWithPhoneIds(webhookUrl, phoneIds = []) {
         if (!this.quo?.api) {
             throw new Error('Quo API not configured - cannot create webhooks');
         }
 
-        const phoneIds = this.config?.enabledPhoneIds || [];
+        if (phoneIds.length === 0) {
+            console.log('[Quo] No phone IDs configured, skipping webhook creation', {integrationId: this.id});
+            return {
+                messageWebhooks: [],
+                callWebhooks: [],
+                callSummaryWebhooks: [],
+            };
+        }
+
         const phoneIdBatches = this._chunkArray(phoneIds, 10);
 
         console.log(
@@ -1618,7 +1627,10 @@ class BaseCRMIntegration extends IntegrationBase {
         } catch (error) {
             console.error(
                 '[Quo] Webhook creation failed, rolling back...',
-                error,
+                {
+                    integrationId: this.id,
+                    error
+                },
             );
 
             // Rollback: Delete all successfully created webhooks
@@ -1631,6 +1643,7 @@ class BaseCRMIntegration extends IntegrationBase {
             if (allCreated.length > 0) {
                 console.warn(
                     `[Quo] Rolling back ${allCreated.length} webhook(s)`,
+                    { integrationId: this.id }
                 );
 
                 for (const webhook of allCreated) {
@@ -1638,11 +1651,12 @@ class BaseCRMIntegration extends IntegrationBase {
                         await this.quo.api.deleteWebhook(webhook.id);
                         console.log(
                             `[Quo] ✓ Rolled back webhook ${webhook.id}`,
+                            { integrationId: this.id }
                         );
                     } catch (deleteError) {
                         console.error(
                             `[Quo] Failed to rollback webhook ${webhook.id}:`,
-                            deleteError.message,
+                            { integrationId: this.id, error: deleteError.message }
                         );
                     }
                 }
@@ -1658,12 +1672,6 @@ class BaseCRMIntegration extends IntegrationBase {
      * Rolls back on failure.
      */
     async _recreateQuoWebhooks(newPhoneIds) {
-        if (!this.quo?.api) {
-            throw new Error(
-                'Quo API not configured - cannot recreate webhooks',
-            );
-        }
-
         // Support both new array structure and old single-value structure
         const oldWebhooks = {
             message: this.config?.quoMessageWebhooks || [],
@@ -1678,41 +1686,105 @@ class BaseCRMIntegration extends IntegrationBase {
             callSummary: this.config?.quoCallSummaryWebhookId,
         };
 
-        const hasNewStructure =
+        const areWebhooksConfigured =
             oldWebhooks.message.length > 0 ||
             oldWebhooks.call.length > 0 ||
             oldWebhooks.callSummary.length > 0;
 
-        const hasLegacyStructure =
+        const areWebhooksConfiguredLegacy =
             legacyWebhookIds.message ||
             legacyWebhookIds.call ||
             legacyWebhookIds.callSummary;
 
-        if (!hasNewStructure && !hasLegacyStructure) {
-            throw new Error(
-                'Webhooks not configured - cannot recreate. Run initial webhook setup first.',
+        // Check if webhook arrays were ever configured (even if now empty)
+        // Empty arrays mean user opted out all phones; undefined means initial setup never done
+        const webhookArraysExist =
+            Array.isArray(this.config?.quoMessageWebhooks) ||
+            Array.isArray(this.config?.quoCallWebhooks) ||
+            Array.isArray(this.config?.quoCallSummaryWebhooks);
+
+        // If no existing webhooks but we have new phone IDs, check if webhooks were ever configured
+        if (!areWebhooksConfigured && !areWebhooksConfiguredLegacy) {
+            if (newPhoneIds.length === 0) {
+                // No old webhooks and no new phone IDs - nothing to do
+                console.log('[Quo] No webhooks configured and no phone IDs - skipping', {integrationId: this.id});
+                return {
+                    messageWebhooks: [],
+                    callWebhooks: [],
+                    callSummaryWebhooks: [],
+                };
+            }
+
+            // Check if this is a re-enable after opt-out (webhook arrays exist but are empty)
+            // vs initial setup never done (webhook arrays don't exist)
+            if (!webhookArraysExist) {
+                console.error('[Quo] Webhooks not configured - cannot recreate', {integrationId: this.id});
+                throw new Error(
+                    'Webhooks not configured - cannot recreate. Run initial webhook setup first.',
+                );
+            }
+
+            // Webhook arrays exist but are empty - user is re-enabling after opt-out
+            console.log('[Quo] No existing webhooks, creating new webhooks for phone IDs');
+        }
+
+        // Handle empty phone IDs (delete only, no create)
+        if (newPhoneIds.length === 0) {
+            console.log('[Quo] Deleting webhooks (all phones opted out)...');
+
+            const oldWebhookIds = [
+                ...oldWebhooks.message.map((wh) => wh.id),
+                ...oldWebhooks.call.map((wh) => wh.id),
+                ...oldWebhooks.callSummary.map((wh) => wh.id),
+                ...(legacyWebhookIds.message ? [legacyWebhookIds.message] : []),
+                ...(legacyWebhookIds.call ? [legacyWebhookIds.call] : []),
+                ...(legacyWebhookIds.callSummary
+                    ? [legacyWebhookIds.callSummary]
+                    : []),
+            ];
+
+            const deletionResults = await Promise.allSettled(
+                oldWebhookIds.map((id) => this.quo.api.deleteWebhook(id)),
             );
+
+            deletionResults.forEach((result, index) => {
+                if (result.status === 'rejected') {
+                    console.warn(
+                        `[Quo] Could not delete webhook ${oldWebhookIds[index]}: ${result.reason?.message}`,
+                        {integrationId: this.id},
+                    );
+                } else {
+                    console.log(
+                        `[Quo] ✓ Deleted webhook ${oldWebhookIds[index]}`,
+                        {integrationId: this.id},
+                    );
+                }
+            });
+
+            console.log(
+                '[Quo] ✓ Webhooks deleted (no new webhooks created)',
+                {integrationId: this.id},
+            );
+
+            return {
+                messageWebhooks: [],
+                callWebhooks: [],
+                callSummaryWebhooks: [],
+            };
         }
 
         console.log(
             `[Quo] Recreating webhooks with ${newPhoneIds.length} phone number ID(s)`,
+            {integrationId: this.id},
         );
 
-        // Temporarily update config with new phone IDs
-        const originalPhoneIds = this.config?.enabledPhoneIds;
-        this.config = {
-            ...this.config,
-            enabledPhoneIds: newPhoneIds,
-        };
-
-        let newWebhooks;
         try {
             // Create new webhooks FIRST to minimize downtime
             console.log('[Quo] Creating new webhooks...');
             const webhookUrl = this._generateWebhookUrl(`/webhooks/${this.id}`);
-            newWebhooks = await this._createQuoWebhooksWithPhoneIds(webhookUrl);
+            const newWebhooks = await this._createQuoWebhooksWithPhoneIds(webhookUrl, newPhoneIds);
 
-            console.log('[Quo] ✓ New webhooks created successfully');
+            console.log('[Quo] ✓ New webhooks created successfully for integration:', {integrationId: this.id});
 
             // Delete old webhooks (best effort - collect IDs from both new and legacy structures)
             console.log('[Quo] Deleting old webhooks...');
@@ -1738,26 +1810,21 @@ class BaseCRMIntegration extends IntegrationBase {
                 if (result.status === 'rejected') {
                     console.warn(
                         `[Quo] Could not delete old webhook ${oldWebhookIds[index]} (may already be deleted): ${result.reason?.message}`,
+                        {integrationId: this.id},
                     );
                 } else {
                     console.log(
                         `[Quo] ✓ Deleted old webhook ${oldWebhookIds[index]}`,
+                        {integrationId: this.id},
                     );
                 }
             });
 
-            console.log('[Quo] ✓ Old webhooks cleanup complete');
+            console.log('[Quo] ✓ Old webhooks cleanup complete', {integrationId: this.id});
 
             return newWebhooks;
         } catch (error) {
-            // Restore original phone IDs on error
-            this.config = {
-                ...this.config,
-                enabledPhoneIds: originalPhoneIds,
-            };
-
-            console.error(`[Quo] Webhook recreation failed: ${error.message}`);
-
+            console.error(`[Quo] Webhook recreation failed: ${error.message}`, {integrationId: this.id});
             throw error;
         }
     }
@@ -1842,7 +1909,6 @@ class BaseCRMIntegration extends IntegrationBase {
             }
         }
 
-        // Persist config only after all operations succeed
         await this.commands.updateIntegrationConfig({
             integrationId: this.id,
             config: patchedConfig,

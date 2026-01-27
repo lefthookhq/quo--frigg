@@ -882,6 +882,7 @@ class ClioIntegration extends BaseCRMIntegration {
             // STEP 1: Fetch phone numbers and store IDs in config
             console.log('[Quo] Fetching phone numbers for webhook filtering');
             await this._fetchAndStoreEnabledPhoneIds();
+            const phoneIds = this.config.enabledPhoneIds || [];
 
             // STEP 2: Create webhooks with phone number IDs as resourceIds
             const {
@@ -891,7 +892,7 @@ class ClioIntegration extends BaseCRMIntegration {
                 callWebhookKey,
                 callSummaryWebhookId,
                 callSummaryWebhookKey,
-            } = await this._createQuoWebhooksWithPhoneIds(webhookUrl);
+            } = await this._createQuoWebhooksWithPhoneIds(webhookUrl, phoneIds);
 
             // Track created webhooks for rollback
             createdWebhooks.push(
