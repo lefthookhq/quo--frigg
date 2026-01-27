@@ -30,6 +30,14 @@ describe('Quo Webhook Subscriptions', () => {
                     data: { id: 'summary-webhook-789', key: 'summary-key-ghi' },
                 }),
                 deleteWebhook: jest.fn().mockResolvedValue({}),
+                listPhoneNumbers: jest.fn().mockResolvedValue({ data: [] }),
+                getPhoneNumber: jest.fn().mockImplementation((phoneId) => {
+                    const phones = {
+                        'phone-1': { data: { id: 'phone-1', number: '+15551111111', name: 'Phone 1' } },
+                        'phone-2': { data: { id: 'phone-2', number: '+15552222222', name: 'Phone 2' } },
+                    };
+                    return Promise.resolve(phones[phoneId] || { data: null });
+                }),
             },
         };
 
@@ -114,44 +122,36 @@ describe('Quo Webhook Subscriptions', () => {
             );
         });
 
-        it('should NOT include resourceIds when enabledPhoneIds is empty', async () => {
+        it('should skip webhook creation when enabledPhoneIds is empty', async () => {
             // Setup: No phone IDs configured
             integration.config.enabledPhoneIds = [];
 
             // Execute
-            await integration.setupQuoWebhook();
+            const result = await integration.setupQuoWebhook();
 
-            // Verify: resourceIds should NOT be present
-            expect(mockQuoApi.api.createMessageWebhook).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    url: expect.any(String),
-                    status: 'enabled',
-                    events: expect.any(Array),
-                    label: expect.any(String),
-                }),
-            );
-
-            const messageCall =
-                mockQuoApi.api.createMessageWebhook.mock.calls[0][0];
-            expect(messageCall).not.toHaveProperty('resourceIds');
+            // Verify: No webhooks should be created when no phone IDs
+            expect(mockQuoApi.api.createMessageWebhook).not.toHaveBeenCalled();
+            expect(mockQuoApi.api.createCallWebhook).not.toHaveBeenCalled();
+            expect(mockQuoApi.api.createCallSummaryWebhook).not.toHaveBeenCalled();
         });
 
-        it('should NOT include resourceIds when enabledPhoneIds is undefined', async () => {
+        it('should skip webhook creation when enabledPhoneIds is undefined', async () => {
             // Setup: enabledPhoneIds not configured at all
             integration.config = {};
 
             // Execute
-            await integration.setupQuoWebhook();
+            const result = await integration.setupQuoWebhook();
 
-            // Verify: resourceIds should NOT be present
-            const messageCall =
-                mockQuoApi.api.createMessageWebhook.mock.calls[0][0];
-            expect(messageCall).not.toHaveProperty('resourceIds');
+            // Verify: No webhooks should be created when no phone IDs
+            expect(mockQuoApi.api.createMessageWebhook).not.toHaveBeenCalled();
+            expect(mockQuoApi.api.createCallWebhook).not.toHaveBeenCalled();
+            expect(mockQuoApi.api.createCallSummaryWebhook).not.toHaveBeenCalled();
         });
 
         it('should preserve existing cleanup logic when using base class method', async () => {
-            // Setup: Partial config (orphaned webhooks)
+            // Setup: Partial config (orphaned webhooks) with phone IDs to create new webhooks
             integration.config = {
+                enabledPhoneIds: ['PHmR5aU'],
                 quoMessageWebhooks: [
                     {
                         id: 'old-msg-webhook',

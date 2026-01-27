@@ -1399,6 +1399,7 @@ class BaseCRMIntegration extends IntegrationBase {
 
     /**
      * Fetch phone metadata for specific phone IDs from Quo API
+     * Uses parallel individual API calls for better performance with many phone IDs
      */
     async _fetchPhoneMetadataForIds(phoneIds) {
         if (!this.quo?.api) {
@@ -1415,23 +1416,25 @@ class BaseCRMIntegration extends IntegrationBase {
         }
 
         console.log(
-            `[Quo] Fetching metadata for ${phoneIds.length} phone number(s)`,
+            `[Quo] Fetching metadata for ${phoneIds.length} phone number(s) in parallel`,
         );
 
-        // Fetch all phone numbers from Quo API
-        // Note: Quo API doesn't support filtering by IDs, so we fetch all and filter locally
-        const response = await this.quo.api.listPhoneNumbers({
-            maxResults: 100,
+        // Fetch all phone numbers in parallel using individual API calls
+        const results = await Promise.allSettled(
+            phoneIds.map((id) => this.quo.api.getPhoneNumber(id)),
+        );
+
+        const matchedPhones = [];
+        const missingIds = [];
+
+        results.forEach((result, index) => {
+            if (result.status === 'fulfilled' && result.value?.data) {
+                matchedPhones.push(result.value.data);
+            } else {
+                missingIds.push(phoneIds[index]);
+            }
         });
 
-        const allPhones = response.data || [];
-        const phoneIdSet = new Set(phoneIds);
-        const matchedPhones = allPhones.filter((phone) =>
-            phoneIdSet.has(phone.id),
-        );
-
-        const foundIds = new Set(matchedPhones.map((p) => p.id));
-        const missingIds = phoneIds.filter((id) => !foundIds.has(id));
         if (missingIds.length > 0) {
             console.warn(
                 `[Quo] ${missingIds.length} phone ID(s) not found in Quo: ${missingIds.join(', ')}`,
@@ -1506,134 +1509,123 @@ class BaseCRMIntegration extends IntegrationBase {
             );
         }
 
+        // Prepare all webhook creation tasks for parallel execution
+        const webhookTasks = [];
+
+        // Message webhooks (one per batch)
+        for (let i = 0; i < phoneIdBatches.length; i++) {
+            const batch = phoneIdBatches[i];
+            const webhookData = {
+                url: webhookUrl,
+                status: 'enabled',
+                events: WEBHOOK_EVENTS.QUO_MESSAGES,
+                resourceIds: batch,
+                label:
+                    phoneIdBatches.length > 1
+                        ? `${WEBHOOK_LABELS.QUO_MESSAGES} (batch ${i + 1})`
+                        : WEBHOOK_LABELS.QUO_MESSAGES,
+            };
+
+            webhookTasks.push({
+                type: 'message',
+                batch,
+                createFn: () => this.quo.api.createMessageWebhook(webhookData),
+            });
+        }
+
+        // Call webhooks (one per batch)
+        for (let i = 0; i < phoneIdBatches.length; i++) {
+            const batch = phoneIdBatches[i];
+            const webhookData = {
+                url: webhookUrl,
+                status: 'enabled',
+                events: WEBHOOK_EVENTS.QUO_CALLS,
+                resourceIds: batch,
+                label:
+                    phoneIdBatches.length > 1
+                        ? `${WEBHOOK_LABELS.QUO_CALLS} (batch ${i + 1})`
+                        : WEBHOOK_LABELS.QUO_CALLS,
+            };
+
+            webhookTasks.push({
+                type: 'call',
+                batch,
+                createFn: () => this.quo.api.createCallWebhook(webhookData),
+            });
+        }
+
+        // Call summary webhooks (one per batch)
+        for (let i = 0; i < phoneIdBatches.length; i++) {
+            const batch = phoneIdBatches[i];
+            const webhookData = {
+                url: webhookUrl,
+                status: 'enabled',
+                events: WEBHOOK_EVENTS.QUO_CALL_SUMMARIES,
+                resourceIds: batch,
+                label:
+                    phoneIdBatches.length > 1
+                        ? `${WEBHOOK_LABELS.QUO_CALL_SUMMARIES} (batch ${i + 1})`
+                        : WEBHOOK_LABELS.QUO_CALL_SUMMARIES,
+            };
+
+            webhookTasks.push({
+                type: 'callSummary',
+                batch,
+                createFn: () =>
+                    this.quo.api.createCallSummaryWebhook(webhookData),
+            });
+        }
+
+        // Execute all webhook creations in parallel
+        const results = await Promise.allSettled(
+            webhookTasks.map((task) => task.createFn()),
+        );
+
+        // Process results and collect created webhooks
         const createdWebhooks = {
             message: [],
             call: [],
             callSummary: [],
         };
+        const errors = [];
 
-        try {
-            // Create all message webhooks (one per batch)
-            for (let i = 0; i < phoneIdBatches.length; i++) {
-                const batch = phoneIdBatches[i];
-                const webhookData = {
-                    url: webhookUrl,
-                    status: 'enabled',
-                    events: WEBHOOK_EVENTS.QUO_MESSAGES,
-                    label:
-                        phoneIdBatches.length > 1
-                            ? `${WEBHOOK_LABELS.QUO_MESSAGES} (batch ${i + 1})`
-                            : WEBHOOK_LABELS.QUO_MESSAGES,
-                };
+        results.forEach((result, index) => {
+            const task = webhookTasks[index];
 
-                if (batch.length > 0) {
-                    webhookData.resourceIds = batch;
-                }
-
-                const response =
-                    await this.quo.api.createMessageWebhook(webhookData);
-
+            if (result.status === 'fulfilled') {
+                const response = result.value;
                 if (!response?.data?.id || !response.data.key) {
-                    throw new Error(
-                        'Invalid Quo message webhook response: missing id or key',
-                    );
+                    errors.push({
+                        type: task.type,
+                        error: new Error(
+                            `Invalid Quo ${task.type} webhook response: missing id or key`,
+                        ),
+                    });
+                } else {
+                    createdWebhooks[task.type].push({
+                        id: response.data.id,
+                        key: response.data.key,
+                        resourceIds: task.batch,
+                    });
                 }
-
-                createdWebhooks.message.push({
-                    id: response.data.id,
-                    key: response.data.key,
-                    resourceIds: batch,
+            } else {
+                errors.push({
+                    type: task.type,
+                    error: result.reason,
                 });
             }
+        });
 
-            // Create all call webhooks (one per batch)
-            for (let i = 0; i < phoneIdBatches.length; i++) {
-                const batch = phoneIdBatches[i];
-                const webhookData = {
-                    url: webhookUrl,
-                    status: 'enabled',
-                    events: WEBHOOK_EVENTS.QUO_CALLS,
-                    label:
-                        phoneIdBatches.length > 1
-                            ? `${WEBHOOK_LABELS.QUO_CALLS} (batch ${i + 1})`
-                            : WEBHOOK_LABELS.QUO_CALLS,
-                };
+        // If any errors occurred, rollback all created webhooks
+        if (errors.length > 0) {
+            console.error('[Quo] Webhook creation failed, rolling back...', {
+                integrationId: this.id,
+                errors: errors.map((e) => ({
+                    type: e.type,
+                    message: e.error?.message,
+                })),
+            });
 
-                if (batch.length > 0) {
-                    webhookData.resourceIds = batch;
-                }
-
-                const response =
-                    await this.quo.api.createCallWebhook(webhookData);
-
-                if (!response?.data?.id || !response.data.key) {
-                    throw new Error(
-                        'Invalid Quo call webhook response: missing id or key',
-                    );
-                }
-
-                createdWebhooks.call.push({
-                    id: response.data.id,
-                    key: response.data.key,
-                    resourceIds: batch,
-                });
-            }
-
-            // Create all call summary webhooks (one per batch)
-            for (let i = 0; i < phoneIdBatches.length; i++) {
-                const batch = phoneIdBatches[i];
-                const webhookData = {
-                    url: webhookUrl,
-                    status: 'enabled',
-                    events: WEBHOOK_EVENTS.QUO_CALL_SUMMARIES,
-                    label:
-                        phoneIdBatches.length > 1
-                            ? `${WEBHOOK_LABELS.QUO_CALL_SUMMARIES} (batch ${i + 1})`
-                            : WEBHOOK_LABELS.QUO_CALL_SUMMARIES,
-                };
-
-                if (batch.length > 0) {
-                    webhookData.resourceIds = batch;
-                }
-
-                const response =
-                    await this.quo.api.createCallSummaryWebhook(webhookData);
-
-                if (!response?.data?.id || !response.data.key) {
-                    throw new Error(
-                        'Invalid Quo call-summary webhook response: missing id or key',
-                    );
-                }
-
-                createdWebhooks.callSummary.push({
-                    id: response.data.id,
-                    key: response.data.key,
-                    resourceIds: batch,
-                });
-            }
-
-            const totalWebhooks =
-                createdWebhooks.message.length +
-                createdWebhooks.call.length +
-                createdWebhooks.callSummary.length;
-
-            console.log(`[Quo] ✓ Created ${totalWebhooks} webhook(s) total`);
-
-            return {
-                messageWebhooks: createdWebhooks.message,
-                callWebhooks: createdWebhooks.call,
-                callSummaryWebhooks: createdWebhooks.callSummary,
-            };
-        } catch (error) {
-            console.error(
-                '[Quo] Webhook creation failed, rolling back...',
-                {
-                    integrationId: this.id,
-                    error
-                },
-            );
-
-            // Rollback: Delete all successfully created webhooks
             const allCreated = [
                 ...createdWebhooks.message,
                 ...createdWebhooks.call,
@@ -1643,27 +1635,48 @@ class BaseCRMIntegration extends IntegrationBase {
             if (allCreated.length > 0) {
                 console.warn(
                     `[Quo] Rolling back ${allCreated.length} webhook(s)`,
-                    { integrationId: this.id }
+                    { integrationId: this.id },
                 );
 
-                for (const webhook of allCreated) {
-                    try {
-                        await this.quo.api.deleteWebhook(webhook.id);
-                        console.log(
-                            `[Quo] ✓ Rolled back webhook ${webhook.id}`,
-                            { integrationId: this.id }
-                        );
-                    } catch (deleteError) {
-                        console.error(
-                            `[Quo] Failed to rollback webhook ${webhook.id}:`,
-                            { integrationId: this.id, error: deleteError.message }
-                        );
-                    }
-                }
+                // Rollback in parallel too
+                await Promise.allSettled(
+                    allCreated.map(async (webhook) => {
+                        try {
+                            await this.quo.api.deleteWebhook(webhook.id);
+                            console.log(
+                                `[Quo] ✓ Rolled back webhook ${webhook.id}`,
+                                { integrationId: this.id },
+                            );
+                        } catch (deleteError) {
+                            console.error(
+                                `[Quo] Failed to rollback webhook ${webhook.id}:`,
+                                {
+                                    integrationId: this.id,
+                                    error: deleteError.message,
+                                },
+                            );
+                        }
+                    }),
+                );
             }
 
-            throw error;
+            throw new Error(
+                `Failed to create ${errors.length} webhook(s): ${errors[0].error?.message}`,
+            );
         }
+
+        const totalWebhooks =
+            createdWebhooks.message.length +
+            createdWebhooks.call.length +
+            createdWebhooks.callSummary.length;
+
+        console.log(`[Quo] ✓ Created ${totalWebhooks} webhook(s) total`);
+
+        return {
+            messageWebhooks: createdWebhooks.message,
+            callWebhooks: createdWebhooks.call,
+            callSummaryWebhooks: createdWebhooks.callSummary,
+        };
     }
 
     /**
@@ -1672,6 +1685,10 @@ class BaseCRMIntegration extends IntegrationBase {
      * Rolls back on failure.
      */
     async _recreateQuoWebhooks(newPhoneIds) {
+        if (!this.quo?.api) {
+            throw new Error('Quo API not configured - cannot recreate webhooks');
+        }
+
         // Support both new array structure and old single-value structure
         const oldWebhooks = {
             message: this.config?.quoMessageWebhooks || [],

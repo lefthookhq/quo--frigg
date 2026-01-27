@@ -49,6 +49,23 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
                     { id: 'phone-4', number: '+15554444444', name: 'Phone 4' },
                 ],
             }),
+            getPhoneNumber: jest.fn().mockImplementation((phoneId) => {
+                const phones = {
+                    'phone-1': {
+                        data: { id: 'phone-1', number: '+15551111111', name: 'Phone 1' },
+                    },
+                    'phone-2': {
+                        data: { id: 'phone-2', number: '+15552222222', name: 'Phone 2' },
+                    },
+                    'phone-3': {
+                        data: { id: 'phone-3', number: '+15553333333', name: 'Phone 3' },
+                    },
+                    'phone-4': {
+                        data: { id: 'phone-4', number: '+15554444444', name: 'Phone 4' },
+                    },
+                };
+                return Promise.resolve(phones[phoneId] || { data: null });
+            }),
         };
 
         mockCommands = {
@@ -823,7 +840,7 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
             expect(mockQuoApi.createMessageWebhook).not.toHaveBeenCalled();
         });
 
-        it('should throw and not persist config when phone metadata fetch fails', async () => {
+        it('should handle phone metadata fetch failures gracefully', async () => {
             // Arrange
             integration.config = {
                 enabledPhoneIds: ['phone-1'],
@@ -838,20 +855,25 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
                 ],
             };
 
-            // Metadata fetch fails
-            mockQuoApi.listPhoneNumbers.mockRejectedValue(
-                new Error('Quo API unavailable'),
-            );
+            // Individual phone metadata fetch fails for phone-2
+            mockQuoApi.getPhoneNumber.mockImplementation((phoneId) => {
+                if (phoneId === 'phone-2') {
+                    return Promise.reject(new Error('Phone not found'));
+                }
+                return Promise.resolve({
+                    data: { id: phoneId, number: '+15551111111', name: 'Phone 1' },
+                });
+            });
 
-            // Act & Assert
-            await expect(
-                integration.onUpdate({
-                    config: { enabledPhoneIds: ['phone-2'] },
-                }),
-            ).rejects.toThrow('Quo API unavailable');
+            // Act - should succeed despite individual fetch failure
+            const result = await integration.onUpdate({
+                config: { enabledPhoneIds: ['phone-2'] },
+            });
 
-            // Verify config was NOT persisted to database
-            expect(mockCommands.updateIntegrationConfig).not.toHaveBeenCalled();
+            // Assert - operation completes, but phone-2 not in metadata
+            expect(result.success).toBe(true);
+            // The phone metadata should be empty since the fetch failed
+            expect(result.config.phoneNumbersMetadata).toEqual([]);
         });
 
         it('should not recreate webhooks when enabledPhoneIds is undefined in both configs', async () => {
