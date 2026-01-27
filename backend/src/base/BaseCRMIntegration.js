@@ -1696,13 +1696,6 @@ class BaseCRMIntegration extends IntegrationBase {
             legacyWebhookIds.call ||
             legacyWebhookIds.callSummary;
 
-        // Check if webhook arrays were ever configured (even if now empty)
-        // Empty arrays mean user opted out all phones; undefined means initial setup never done
-        const webhookArraysExist =
-            Array.isArray(this.config?.quoMessageWebhooks) ||
-            Array.isArray(this.config?.quoCallWebhooks) ||
-            Array.isArray(this.config?.quoCallSummaryWebhooks);
-
         // If no existing webhooks but we have new phone IDs, check if webhooks were ever configured
         if (!areWebhooksConfigured && !areWebhooksConfiguredLegacy) {
             if (newPhoneIds.length === 0) {
@@ -1714,18 +1707,6 @@ class BaseCRMIntegration extends IntegrationBase {
                     callSummaryWebhooks: [],
                 };
             }
-
-            // Check if this is a re-enable after opt-out (webhook arrays exist but are empty)
-            // vs initial setup never done (webhook arrays don't exist)
-            if (!webhookArraysExist) {
-                console.error('[Quo] Webhooks not configured - cannot recreate', {integrationId: this.id});
-                throw new Error(
-                    'Webhooks not configured - cannot recreate. Run initial webhook setup first.',
-                );
-            }
-
-            // Webhook arrays exist but are empty - user is re-enabling after opt-out
-            console.log('[Quo] No existing webhooks, creating new webhooks for phone IDs');
         }
 
         // Handle empty phone IDs (delete only, no create)

@@ -989,25 +989,65 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
             expect(mockCommands.updateIntegrationConfig).toHaveBeenCalled();
         });
 
-        it('should throw error if webhooks not configured when phone IDs change', async () => {
-            // Arrange
+        it('should create webhooks when webhook arrays not configured but phone IDs provided', async () => {
+            // Arrange - config has NO webhook arrays (undefined)
             integration.config = {
                 enabledPhoneIds: ['phone-1'],
                 phoneNumbersMetadata: [
                     { id: 'phone-1', number: '+15551111111', name: 'Phone 1' },
                 ],
+                // No quoMessageWebhooks, quoCallWebhooks, quoCallSummaryWebhooks
             };
 
             const updateParams = {
                 config: {
-                    enabledPhoneIds: ['phone-2'],
+                    enabledPhoneIds: ['phone-1', 'phone-2'],
                 },
             };
 
-            // Act & Assert
-            await expect(integration.onUpdate(updateParams)).rejects.toThrow(
-                'Webhooks not configured',
+            // Act
+            await integration.onUpdate(updateParams);
+
+            // Assert - webhooks should be created
+            expect(mockQuoApi.createMessageWebhook).toHaveBeenCalled();
+            expect(mockQuoApi.createCallWebhook).toHaveBeenCalled();
+            expect(mockQuoApi.createCallSummaryWebhook).toHaveBeenCalled();
+
+            // Config should be updated with webhook arrays
+            expect(mockCommands.updateIntegrationConfig).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    config: expect.objectContaining({
+                        quoMessageWebhooks: expect.any(Array),
+                        quoCallWebhooks: expect.any(Array),
+                        quoCallSummaryWebhooks: expect.any(Array),
+                    }),
+                }),
             );
+        });
+
+        it('should skip webhook creation when no webhook arrays AND no new phone IDs', async () => {
+            // Arrange - no webhook arrays AND empty phone IDs
+            integration.config = {
+                enabledPhoneIds: [],
+                phoneNumbersMetadata: [],
+                // No quoMessageWebhooks, quoCallWebhooks, quoCallSummaryWebhooks
+            };
+
+            const updateParams = {
+                config: {
+                    enabledPhoneIds: [],
+                },
+            };
+
+            // Act
+            const result = await integration.onUpdate(updateParams);
+
+            // Assert - should not throw, should not create or delete webhooks
+            expect(mockQuoApi.deleteWebhook).not.toHaveBeenCalled();
+            expect(mockQuoApi.createMessageWebhook).not.toHaveBeenCalled();
+            expect(mockQuoApi.createCallWebhook).not.toHaveBeenCalled();
+            expect(mockQuoApi.createCallSummaryWebhook).not.toHaveBeenCalled();
+            expect(result.success).toBe(true);
         });
     });
 
