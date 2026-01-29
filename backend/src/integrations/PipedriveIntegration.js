@@ -918,6 +918,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
 
             console.log('[Quo] Fetching phone numbers for webhook filtering');
             await this._fetchAndStoreEnabledPhoneIds();
+            const phoneIds = this.config.enabledPhoneIds || [];
 
             const webhookUrl = this._generateWebhookUrl(`/webhooks/${this.id}`);
 
@@ -927,7 +928,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
 
             // Use base class method to create webhooks with resourceIds support
             const { messageWebhooks, callWebhooks, callSummaryWebhooks } =
-                await this._createQuoWebhooksWithPhoneIds(webhookUrl);
+                await this._createQuoWebhooksWithPhoneIds(webhookUrl, phoneIds);
 
             // Track created webhooks for rollback on error
             createdWebhooks.push(

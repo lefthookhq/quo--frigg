@@ -9,6 +9,20 @@ describe('BaseCRMIntegration - Phone Number ID Webhook Subscriptions', () => {
         // Mock Quo API
         mockQuoApi = {
             listPhoneNumbers: jest.fn(),
+            getPhoneNumber: jest.fn().mockImplementation((phoneId) => {
+                const phones = {
+                    'phone-id-1': {
+                        data: { id: 'phone-id-1', phoneNumber: '+12125551234', name: 'Main Line' },
+                    },
+                    'phone-id-2': {
+                        data: { id: 'phone-id-2', phoneNumber: '+19175555678', name: 'Support Line' },
+                    },
+                    'phone-id-3': {
+                        data: { id: 'phone-id-3', phoneNumber: '+14155559999', name: 'Sales Line' },
+                    },
+                };
+                return Promise.resolve(phones[phoneId] || { data: null });
+            }),
             createMessageWebhook: jest.fn(),
             createCallWebhook: jest.fn(),
             createCallSummaryWebhook: jest.fn(),
@@ -168,7 +182,10 @@ describe('BaseCRMIntegration - Phone Number ID Webhook Subscriptions', () => {
             });
 
             // Act
-            await integration._createQuoWebhooksWithPhoneIds(webhookUrl);
+            await integration._createQuoWebhooksWithPhoneIds(
+                webhookUrl,
+                integration.config.enabledPhoneIds,
+            );
 
             // Assert
             expect(mockQuoApi.createMessageWebhook).toHaveBeenCalledWith(
@@ -194,7 +211,10 @@ describe('BaseCRMIntegration - Phone Number ID Webhook Subscriptions', () => {
             });
 
             // Act
-            await integration._createQuoWebhooksWithPhoneIds(webhookUrl);
+            await integration._createQuoWebhooksWithPhoneIds(
+                webhookUrl,
+                integration.config.enabledPhoneIds,
+            );
 
             // Assert
             expect(mockQuoApi.createCallWebhook).toHaveBeenCalledWith(
@@ -220,7 +240,10 @@ describe('BaseCRMIntegration - Phone Number ID Webhook Subscriptions', () => {
             });
 
             // Act
-            await integration._createQuoWebhooksWithPhoneIds(webhookUrl);
+            await integration._createQuoWebhooksWithPhoneIds(
+                webhookUrl,
+                integration.config.enabledPhoneIds,
+            );
 
             // Assert
             expect(mockQuoApi.createCallSummaryWebhook).toHaveBeenCalledWith(
@@ -247,14 +270,18 @@ describe('BaseCRMIntegration - Phone Number ID Webhook Subscriptions', () => {
             });
 
             // Act
-            await integration._createQuoWebhooksWithPhoneIds(webhookUrl);
-
-            // Assert - Should create webhooks without resourceIds
-            expect(mockQuoApi.createMessageWebhook).toHaveBeenCalledWith(
-                expect.not.objectContaining({
-                    resourceIds: expect.anything(),
-                }),
+            const result = await integration._createQuoWebhooksWithPhoneIds(
+                webhookUrl,
+                integration.config.enabledPhoneIds,
             );
+
+            // Assert - Should skip webhook creation and return empty arrays
+            expect(mockQuoApi.createMessageWebhook).not.toHaveBeenCalled();
+            expect(result).toEqual({
+                messageWebhooks: [],
+                callWebhooks: [],
+                callSummaryWebhooks: [],
+            });
         });
 
         it('should return created webhook IDs', async () => {
@@ -272,8 +299,10 @@ describe('BaseCRMIntegration - Phone Number ID Webhook Subscriptions', () => {
             });
 
             // Act
-            const result =
-                await integration._createQuoWebhooksWithPhoneIds(webhookUrl);
+            const result = await integration._createQuoWebhooksWithPhoneIds(
+                webhookUrl,
+                integration.config.enabledPhoneIds,
+            );
 
             // Assert
             expect(result).toEqual({

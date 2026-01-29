@@ -623,7 +623,10 @@ describe('AttioIntegration (Refactored)', () => {
                 ).toHaveBeenCalled();
                 expect(
                     integration._createQuoWebhooksWithPhoneIds,
-                ).toHaveBeenCalledWith(expect.stringContaining('/webhooks/'));
+                ).toHaveBeenCalledWith(
+                    expect.stringContaining('/webhooks/'),
+                    expect.any(Array),
+                );
 
                 // Verify config was updated
                 expect(

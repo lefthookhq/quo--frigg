@@ -49,6 +49,23 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
                     { id: 'phone-4', number: '+15554444444', name: 'Phone 4' },
                 ],
             }),
+            getPhoneNumber: jest.fn().mockImplementation((phoneId) => {
+                const phones = {
+                    'phone-1': {
+                        data: { id: 'phone-1', number: '+15551111111', name: 'Phone 1' },
+                    },
+                    'phone-2': {
+                        data: { id: 'phone-2', number: '+15552222222', name: 'Phone 2' },
+                    },
+                    'phone-3': {
+                        data: { id: 'phone-3', number: '+15553333333', name: 'Phone 3' },
+                    },
+                    'phone-4': {
+                        data: { id: 'phone-4', number: '+15554444444', name: 'Phone 4' },
+                    },
+                };
+                return Promise.resolve(phones[phoneId] || { data: null });
+            }),
         };
 
         mockCommands = {
@@ -286,7 +303,7 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
             );
         });
 
-        it('should handle empty enabledPhoneIds array', async () => {
+        it('should handle empty enabledPhoneIds array by deleting webhooks and not creating new ones', async () => {
             // Arrange
             const updateParams = {
                 config: {
@@ -297,15 +314,21 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
             // Act
             await integration.onUpdate(updateParams);
 
-            // Assert - resourceIds should be omitted when no phones selected
-            expect(mockQuoApi.createMessageWebhook).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    url: expect.any(String),
-                    status: 'enabled',
-                }),
+            // Assert - old webhooks should be deleted
+            expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith(
+                'webhook-msg-123',
             );
-            const callArgs = mockQuoApi.createMessageWebhook.mock.calls[0][0];
-            expect(callArgs).not.toHaveProperty('resourceIds');
+            expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith(
+                'webhook-call-123',
+            );
+            expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith(
+                'webhook-summary-123',
+            );
+
+            // Assert - NO new webhooks should be created (Quo API requires resourceIds)
+            expect(mockQuoApi.createMessageWebhook).not.toHaveBeenCalled();
+            expect(mockQuoApi.createCallWebhook).not.toHaveBeenCalled();
+            expect(mockQuoApi.createCallSummaryWebhook).not.toHaveBeenCalled();
         });
     });
 
@@ -517,6 +540,431 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
         });
     });
 
+    describe('Webhook deletion on phone opt-out', () => {
+        it('should delete old webhooks when phone IDs are removed', async () => {
+            // Arrange
+            integration.config = {
+                enabledPhoneIds: ['phone-1', 'phone-2', 'phone-3'],
+                quoMessageWebhooks: [
+                    {
+                        id: 'msg-wh-1',
+                        key: 'key-1',
+                        resourceIds: ['phone-1', 'phone-2', 'phone-3'],
+                    },
+                ],
+                quoCallWebhooks: [
+                    {
+                        id: 'call-wh-1',
+                        key: 'key-2',
+                        resourceIds: ['phone-1', 'phone-2', 'phone-3'],
+                    },
+                ],
+                quoCallSummaryWebhooks: [
+                    {
+                        id: 'sum-wh-1',
+                        key: 'key-3',
+                        resourceIds: ['phone-1', 'phone-2', 'phone-3'],
+                    },
+                ],
+            };
+
+            // Act
+            await integration.onUpdate({
+                config: { enabledPhoneIds: ['phone-1'] },
+            });
+
+            // Assert - old webhooks were deleted
+            expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith('msg-wh-1');
+            expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith('call-wh-1');
+            expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith('sum-wh-1');
+        });
+
+        it('should create new webhooks with updated resourceIds', async () => {
+            // Arrange
+            integration.config = {
+                enabledPhoneIds: ['phone-1', 'phone-2'],
+                quoMessageWebhooks: [
+                    {
+                        id: 'old-msg',
+                        key: 'key',
+                        resourceIds: ['phone-1', 'phone-2'],
+                    },
+                ],
+                quoCallWebhooks: [
+                    {
+                        id: 'old-call',
+                        key: 'key',
+                        resourceIds: ['phone-1', 'phone-2'],
+                    },
+                ],
+                quoCallSummaryWebhooks: [
+                    {
+                        id: 'old-sum',
+                        key: 'key',
+                        resourceIds: ['phone-1', 'phone-2'],
+                    },
+                ],
+            };
+
+            // Act
+            await integration.onUpdate({
+                config: { enabledPhoneIds: ['phone-1'] },
+            });
+
+            // Assert - new webhooks have updated resourceIds
+            expect(mockQuoApi.createMessageWebhook).toHaveBeenCalledWith(
+                expect.objectContaining({ resourceIds: ['phone-1'] }),
+            );
+            expect(mockQuoApi.createCallWebhook).toHaveBeenCalledWith(
+                expect.objectContaining({ resourceIds: ['phone-1'] }),
+            );
+            expect(mockQuoApi.createCallSummaryWebhook).toHaveBeenCalledWith(
+                expect.objectContaining({ resourceIds: ['phone-1'] }),
+            );
+        });
+
+        it('should delete all webhook batches when phone IDs change (>10 phones)', async () => {
+            // Arrange - 15 phones = 2 batches per webhook type
+            const phoneIds = Array.from(
+                { length: 15 },
+                (_, i) => `phone-${i + 1}`,
+            );
+
+            integration.config = {
+                enabledPhoneIds: phoneIds,
+                quoMessageWebhooks: [
+                    {
+                        id: 'msg-batch-1',
+                        key: 'key',
+                        resourceIds: phoneIds.slice(0, 10),
+                    },
+                    {
+                        id: 'msg-batch-2',
+                        key: 'key',
+                        resourceIds: phoneIds.slice(10),
+                    },
+                ],
+                quoCallWebhooks: [
+                    {
+                        id: 'call-batch-1',
+                        key: 'key',
+                        resourceIds: phoneIds.slice(0, 10),
+                    },
+                    {
+                        id: 'call-batch-2',
+                        key: 'key',
+                        resourceIds: phoneIds.slice(10),
+                    },
+                ],
+                quoCallSummaryWebhooks: [
+                    {
+                        id: 'sum-batch-1',
+                        key: 'key',
+                        resourceIds: phoneIds.slice(0, 10),
+                    },
+                    {
+                        id: 'sum-batch-2',
+                        key: 'key',
+                        resourceIds: phoneIds.slice(10),
+                    },
+                ],
+            };
+
+            // Act
+            await integration.onUpdate({
+                config: { enabledPhoneIds: ['phone-1'] },
+            });
+
+            // Assert - all 6 old webhooks should be deleted
+            expect(mockQuoApi.deleteWebhook).toHaveBeenCalledTimes(6);
+            expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith('msg-batch-1');
+            expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith('msg-batch-2');
+            expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith(
+                'call-batch-1',
+            );
+            expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith(
+                'call-batch-2',
+            );
+            expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith('sum-batch-1');
+            expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith('sum-batch-2');
+        });
+
+        it('should create new webhooks even if deletion of old ones fails', async () => {
+            // NOTE: Deletion failures are non-fatal (Promise.allSettled) to prioritize
+            // creating new webhooks over cleaning up old ones. Old webhooks may remain
+            // as orphans in Quo if deletion fails, but new functionality will work.
+
+            // Arrange
+            integration.config = {
+                enabledPhoneIds: ['phone-1', 'phone-2'],
+                quoMessageWebhooks: [
+                    { id: 'old-msg', key: 'key', resourceIds: [] },
+                ],
+                quoCallWebhooks: [
+                    { id: 'old-call', key: 'key', resourceIds: [] },
+                ],
+                quoCallSummaryWebhooks: [
+                    { id: 'old-sum', key: 'key', resourceIds: [] },
+                ],
+            };
+
+            // Deletion fails
+            mockQuoApi.deleteWebhook.mockRejectedValue(
+                new Error('Webhook not found'),
+            );
+
+            // Act
+            await integration.onUpdate({
+                config: { enabledPhoneIds: ['phone-1'] },
+            });
+
+            // Assert - new webhooks should still be created
+            expect(mockQuoApi.createMessageWebhook).toHaveBeenCalled();
+            expect(mockQuoApi.createCallWebhook).toHaveBeenCalled();
+            expect(mockQuoApi.createCallSummaryWebhook).toHaveBeenCalled();
+        });
+
+        it('should delete webhooks and not create new ones when opting out all phones (empty enabledPhoneIds)', async () => {
+            // Arrange
+            integration.config = {
+                enabledPhoneIds: ['phone-1', 'phone-2'],
+                quoMessageWebhooks: [
+                    {
+                        id: 'msg-wh',
+                        key: 'key',
+                        resourceIds: ['phone-1', 'phone-2'],
+                    },
+                ],
+                quoCallWebhooks: [
+                    {
+                        id: 'call-wh',
+                        key: 'key',
+                        resourceIds: ['phone-1', 'phone-2'],
+                    },
+                ],
+                quoCallSummaryWebhooks: [
+                    {
+                        id: 'sum-wh',
+                        key: 'key',
+                        resourceIds: ['phone-1', 'phone-2'],
+                    },
+                ],
+            };
+
+            // Act
+            await integration.onUpdate({
+                config: { enabledPhoneIds: [] },
+            });
+
+            // Assert - old webhooks are deleted
+            expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith('msg-wh');
+            expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith('call-wh');
+            expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith('sum-wh');
+
+            // Assert - NO new webhooks created (Quo API requires resourceIds, can't create with empty array)
+            expect(mockQuoApi.createMessageWebhook).not.toHaveBeenCalled();
+            expect(mockQuoApi.createCallWebhook).not.toHaveBeenCalled();
+            expect(mockQuoApi.createCallSummaryWebhook).not.toHaveBeenCalled();
+        });
+
+        it('should allow re-enabling phones after all phones were opted out (empty webhook arrays)', async () => {
+            // Arrange - simulate state AFTER user opted out all phones
+            // (empty webhook arrays, no legacy structure)
+            integration.config = {
+                enabledPhoneIds: [],
+                quoMessageWebhooks: [],
+                quoCallWebhooks: [],
+                quoCallSummaryWebhooks: [],
+            };
+
+            // Act - user re-enables some phones
+            await integration.onUpdate({
+                config: { enabledPhoneIds: ['phone-1', 'phone-2'] },
+            });
+
+            // Assert - new webhooks should be created
+            expect(mockQuoApi.createMessageWebhook).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    resourceIds: ['phone-1', 'phone-2'],
+                }),
+            );
+            expect(mockQuoApi.createCallWebhook).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    resourceIds: ['phone-1', 'phone-2'],
+                }),
+            );
+            expect(mockQuoApi.createCallSummaryWebhook).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    resourceIds: ['phone-1', 'phone-2'],
+                }),
+            );
+
+            // Assert - no deletions needed (no old webhooks to delete)
+            expect(mockQuoApi.deleteWebhook).not.toHaveBeenCalled();
+        });
+
+        it('should not recreate webhooks when phone IDs are same but reordered', async () => {
+            // Arrange - phone IDs in different order
+            integration.config = {
+                enabledPhoneIds: ['phone-2', 'phone-1'],
+                quoMessageWebhooks: [
+                    {
+                        id: 'msg-wh',
+                        key: 'key',
+                        resourceIds: ['phone-1', 'phone-2'],
+                    },
+                ],
+                quoCallWebhooks: [
+                    {
+                        id: 'call-wh',
+                        key: 'key',
+                        resourceIds: ['phone-1', 'phone-2'],
+                    },
+                ],
+                quoCallSummaryWebhooks: [
+                    {
+                        id: 'sum-wh',
+                        key: 'key',
+                        resourceIds: ['phone-1', 'phone-2'],
+                    },
+                ],
+            };
+
+            // Act - same IDs but different order
+            await integration.onUpdate({
+                config: { enabledPhoneIds: ['phone-1', 'phone-2'] },
+            });
+
+            // Assert - no webhook recreation should occur (sorted comparison)
+            expect(mockQuoApi.deleteWebhook).not.toHaveBeenCalled();
+            expect(mockQuoApi.createMessageWebhook).not.toHaveBeenCalled();
+        });
+
+        it('should handle phone metadata fetch failures gracefully', async () => {
+            // Arrange
+            integration.config = {
+                enabledPhoneIds: ['phone-1'],
+                quoMessageWebhooks: [
+                    { id: 'msg-wh', key: 'key', resourceIds: ['phone-1'] },
+                ],
+                quoCallWebhooks: [
+                    { id: 'call-wh', key: 'key', resourceIds: ['phone-1'] },
+                ],
+                quoCallSummaryWebhooks: [
+                    { id: 'sum-wh', key: 'key', resourceIds: ['phone-1'] },
+                ],
+            };
+
+            // Individual phone metadata fetch fails for phone-2
+            mockQuoApi.getPhoneNumber.mockImplementation((phoneId) => {
+                if (phoneId === 'phone-2') {
+                    return Promise.reject(new Error('Phone not found'));
+                }
+                return Promise.resolve({
+                    data: { id: phoneId, number: '+15551111111', name: 'Phone 1' },
+                });
+            });
+
+            // Act - should succeed despite individual fetch failure
+            const result = await integration.onUpdate({
+                config: { enabledPhoneIds: ['phone-2'] },
+            });
+
+            // Assert - operation completes, but phone-2 not in metadata
+            expect(result.success).toBe(true);
+            // The phone metadata should be empty since the fetch failed
+            expect(result.config.phoneNumbersMetadata).toEqual([]);
+        });
+
+        it('should not recreate webhooks when enabledPhoneIds is undefined in both configs', async () => {
+            // Arrange - no enabledPhoneIds in existing config
+            integration.config = {
+                quoMessageWebhooks: [
+                    { id: 'msg-wh', key: 'key', resourceIds: [] },
+                ],
+                quoCallWebhooks: [
+                    { id: 'call-wh', key: 'key', resourceIds: [] },
+                ],
+                quoCallSummaryWebhooks: [
+                    { id: 'sum-wh', key: 'key', resourceIds: [] },
+                ],
+            };
+
+            // Act
+            await integration.onUpdate({
+                config: { someOtherField: 'value' },
+            });
+
+            // Assert - no webhook recreation should occur
+            expect(mockQuoApi.deleteWebhook).not.toHaveBeenCalled();
+            expect(mockQuoApi.createMessageWebhook).not.toHaveBeenCalled();
+        });
+
+        it('should delete legacy webhook structure when phone IDs change', async () => {
+            // Arrange - legacy structure (single values, not arrays)
+            integration.config = {
+                enabledPhoneIds: ['phone-1', 'phone-2'],
+                quoMessageWebhookId: 'legacy-msg-id',
+                quoMessageWebhookKey: 'legacy-msg-key',
+                quoCallWebhookId: 'legacy-call-id',
+                quoCallWebhookKey: 'legacy-call-key',
+                quoCallSummaryWebhookId: 'legacy-sum-id',
+                quoCallSummaryWebhookKey: 'legacy-sum-key',
+            };
+
+            // Act
+            await integration.onUpdate({
+                config: { enabledPhoneIds: ['phone-1'] },
+            });
+
+            // Assert - legacy webhooks should be deleted
+            expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith(
+                'legacy-msg-id',
+            );
+            expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith(
+                'legacy-call-id',
+            );
+            expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith(
+                'legacy-sum-id',
+            );
+        });
+
+        it('should clean up legacy webhook fields after migration', async () => {
+            // Arrange - legacy structure
+            integration.config = {
+                enabledPhoneIds: ['phone-1', 'phone-2'],
+                quoMessageWebhookId: 'legacy-msg-id',
+                quoMessageWebhookKey: 'legacy-msg-key',
+                quoCallWebhookId: 'legacy-call-id',
+                quoCallWebhookKey: 'legacy-call-key',
+                quoCallSummaryWebhookId: 'legacy-sum-id',
+                quoCallSummaryWebhookKey: 'legacy-sum-key',
+            };
+
+            // Act
+            await integration.onUpdate({
+                config: { enabledPhoneIds: ['phone-1'] },
+            });
+
+            // Assert - legacy fields should be removed from persisted config
+            const persistedConfig =
+                mockCommands.updateIntegrationConfig.mock.calls[0][0].config;
+            expect(persistedConfig).not.toHaveProperty('quoMessageWebhookId');
+            expect(persistedConfig).not.toHaveProperty('quoMessageWebhookKey');
+            expect(persistedConfig).not.toHaveProperty('quoCallWebhookId');
+            expect(persistedConfig).not.toHaveProperty('quoCallWebhookKey');
+            expect(persistedConfig).not.toHaveProperty('quoCallSummaryWebhookId');
+            expect(persistedConfig).not.toHaveProperty(
+                'quoCallSummaryWebhookKey',
+            );
+
+            // Assert - new array structure should be present
+            expect(persistedConfig).toHaveProperty('quoMessageWebhooks');
+            expect(persistedConfig).toHaveProperty('quoCallWebhooks');
+            expect(persistedConfig).toHaveProperty('quoCallSummaryWebhooks');
+        });
+    });
+
     describe('Edge cases', () => {
         it('should handle update with no config parameter', async () => {
             // Arrange
@@ -563,25 +1011,65 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
             expect(mockCommands.updateIntegrationConfig).toHaveBeenCalled();
         });
 
-        it('should throw error if webhooks not configured when phone IDs change', async () => {
-            // Arrange
+        it('should create webhooks when webhook arrays not configured but phone IDs provided', async () => {
+            // Arrange - config has NO webhook arrays (undefined)
             integration.config = {
                 enabledPhoneIds: ['phone-1'],
                 phoneNumbersMetadata: [
                     { id: 'phone-1', number: '+15551111111', name: 'Phone 1' },
                 ],
+                // No quoMessageWebhooks, quoCallWebhooks, quoCallSummaryWebhooks
             };
 
             const updateParams = {
                 config: {
-                    enabledPhoneIds: ['phone-2'],
+                    enabledPhoneIds: ['phone-1', 'phone-2'],
                 },
             };
 
-            // Act & Assert
-            await expect(integration.onUpdate(updateParams)).rejects.toThrow(
-                'Webhooks not configured',
+            // Act
+            await integration.onUpdate(updateParams);
+
+            // Assert - webhooks should be created
+            expect(mockQuoApi.createMessageWebhook).toHaveBeenCalled();
+            expect(mockQuoApi.createCallWebhook).toHaveBeenCalled();
+            expect(mockQuoApi.createCallSummaryWebhook).toHaveBeenCalled();
+
+            // Config should be updated with webhook arrays
+            expect(mockCommands.updateIntegrationConfig).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    config: expect.objectContaining({
+                        quoMessageWebhooks: expect.any(Array),
+                        quoCallWebhooks: expect.any(Array),
+                        quoCallSummaryWebhooks: expect.any(Array),
+                    }),
+                }),
             );
+        });
+
+        it('should skip webhook creation when no webhook arrays AND no new phone IDs', async () => {
+            // Arrange - no webhook arrays AND empty phone IDs
+            integration.config = {
+                enabledPhoneIds: [],
+                phoneNumbersMetadata: [],
+                // No quoMessageWebhooks, quoCallWebhooks, quoCallSummaryWebhooks
+            };
+
+            const updateParams = {
+                config: {
+                    enabledPhoneIds: [],
+                },
+            };
+
+            // Act
+            const result = await integration.onUpdate(updateParams);
+
+            // Assert - should not throw, should not create or delete webhooks
+            expect(mockQuoApi.deleteWebhook).not.toHaveBeenCalled();
+            expect(mockQuoApi.createMessageWebhook).not.toHaveBeenCalled();
+            expect(mockQuoApi.createCallWebhook).not.toHaveBeenCalled();
+            expect(mockQuoApi.createCallSummaryWebhook).not.toHaveBeenCalled();
+            expect(result.success).toBe(true);
         });
     });
 

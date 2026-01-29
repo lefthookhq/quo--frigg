@@ -432,6 +432,11 @@ describe('ZohoCRMIntegration (Refactored)', () => {
 
         describe('setupWebhooks', () => {
             it('should setup Zoho notifications and Quo webhooks', async () => {
+                // Setup enabledPhoneIds for webhook creation
+                integration.config = {
+                    enabledPhoneIds: ['phone-1', 'phone-2'],
+                };
+
                 // Mock Zoho notification setup
                 mockZohoCrm.api.enableNotification = jest
                     .fn()
@@ -449,7 +454,20 @@ describe('ZohoCRMIntegration (Refactored)', () => {
                         ],
                     });
 
-                // Mock Quo webhook creation
+                // Mock Quo API methods
+                mockQuoApi.api.getPhoneNumber = jest
+                    .fn()
+                    .mockImplementation((phoneId) => {
+                        const phones = {
+                            'phone-1': {
+                                data: { id: 'phone-1', number: '+15551111111', name: 'Phone 1' },
+                            },
+                            'phone-2': {
+                                data: { id: 'phone-2', number: '+15552222222', name: 'Phone 2' },
+                            },
+                        };
+                        return Promise.resolve(phones[phoneId] || { data: null });
+                    });
                 mockQuoApi.api.createMessageWebhook = jest
                     .fn()
                     .mockResolvedValue({

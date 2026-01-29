@@ -1302,6 +1302,28 @@ describe('BaseCRMIntegration', () => {
                     },
                 ],
             });
+            integration.quo.api.getPhoneNumber = jest
+                .fn()
+                .mockImplementation((phoneId) => {
+                    const phones = {
+                        'PN-1': {
+                            data: { id: 'PN-1', number: '+11111111111', name: 'Phone 1' },
+                        },
+                        'PN-2': {
+                            data: { id: 'PN-2', number: '+12222222222', name: 'Phone 2' },
+                        },
+                        'PN-new-1': {
+                            data: { id: 'PN-new-1', number: '+13333333333', name: 'New Phone 1' },
+                        },
+                        'PN-new-2': {
+                            data: { id: 'PN-new-2', number: '+14444444444', name: 'New Phone 2' },
+                        },
+                        'PN-new-3': {
+                            data: { id: 'PN-new-3', number: '+15555555555', name: 'New Phone 3' },
+                        },
+                    };
+                    return Promise.resolve(phones[phoneId] || { data: null });
+                });
             integration.quo.api.deleteWebhook = jest
                 .fn()
                 .mockResolvedValue({ success: true });
@@ -1573,7 +1595,7 @@ describe('BaseCRMIntegration', () => {
                 ).rejects.toThrow('Webhook creation failed');
             });
 
-            it('should throw if webhooks are not configured but phone IDs change', async () => {
+            it('should create webhooks when none configured but phone IDs provided', async () => {
                 integration.config.quoMessageWebhooks = [];
                 integration.config.quoCallWebhooks = [];
                 integration.config.quoCallSummaryWebhooks = [];
@@ -1582,11 +1604,15 @@ describe('BaseCRMIntegration', () => {
                 delete integration.config.quoCallWebhookId;
                 delete integration.config.quoCallSummaryWebhookId;
 
-                await expect(
-                    integration.onUpdate({
-                        config: { resourceIds: ['PN-new-1'] },
-                    }),
-                ).rejects.toThrow('Webhooks not configured');
+                const result = await integration.onUpdate({
+                    config: { resourceIds: ['PN-new-1'] },
+                });
+
+                // Should create webhooks when phone IDs are provided
+                expect(result.success).toBe(true);
+                expect(result.config.quoMessageWebhooks).toHaveLength(1);
+                expect(result.config.quoCallWebhooks).toHaveLength(1);
+                expect(result.config.quoCallSummaryWebhooks).toHaveLength(1);
             });
         });
 
