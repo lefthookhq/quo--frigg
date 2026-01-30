@@ -1,3 +1,5 @@
+//todo: add await to the calls to this function
+
 /**
  * Track an analytics event to Quo's analytics API (fire-and-forget)
  *
@@ -18,7 +20,7 @@
  * @param {Object} [data={}] - Event-specific data (contactId, messageId, callId, error)
  * @returns {void}
  */
-function trackAnalyticsEvent(integration, event, data = {}) {
+async function trackAnalyticsEvent(integration, event, data = {}) {
     const integrationName = integration.constructor.Definition.name;
 
     if (!integration?.quo?.api || !integration?.commands) {
@@ -28,31 +30,42 @@ function trackAnalyticsEvent(integration, event, data = {}) {
         return;
     }
 
-    integration.commands
-        .findOrganizationUserById(integration.userId)
-        .then((user) => {
-            if (!user) {
-                console.warn(
-                    `[Analytics][${integrationName}] User ${integration.userId} not found for analytics tracking`,
-                );
-            }
+    try {
 
-            return integration.quo.api.sendAnalyticsEvent({
-                orgId: user?.appOrgId || null,
-                userId: user?.id || null,
-                integration: integrationName,
-                event,
-                data,
-            });
-        })
-        .then(() => {
-            console.log(`[Analytics][${integrationName}] ✓ Tracked ${event}`);
-        })
-        .catch((error) => {
+         const credential = await integration.commands.findCredential(
+            {userId: integration.userId},
+         );
+        
+        if (!credential) {
             console.warn(
-                `[Analytics][${integrationName}] Failed to track ${event}: ${error.message}`,
+                `[Analytics][${integrationName}] No credential found for user ${integration.userId}, skipping tracking`,
             );
+        }
+
+        const user = await integration.commands.findOrganizationUserById(
+            integration.userId,
+        );
+
+        if (!user) {
+            console.warn(
+                `[Analytics][${integrationName}] User ${integration.userId} not found for analytics tracking`,
+            );
+        }
+
+        await integration.quo.api.sendAnalyticsEvent({
+            orgId: user?.appOrgId || null,
+            userId: credential.externalId || null,
+            integration: integrationName,
+            event,
+            data,
         });
+
+        console.log(`[Analytics][${integrationName}] ✓ Tracked ${event}`);
+    } catch (error) {
+        console.warn(
+            `[Analytics][${integrationName}] Failed to track ${event}: ${error.message}`,
+        );
+    }
 }
 
 module.exports = {
