@@ -460,13 +460,23 @@ describe('ZohoCRMIntegration (Refactored)', () => {
                     .mockImplementation((phoneId) => {
                         const phones = {
                             'phone-1': {
-                                data: { id: 'phone-1', number: '+15551111111', name: 'Phone 1' },
+                                data: {
+                                    id: 'phone-1',
+                                    number: '+15551111111',
+                                    name: 'Phone 1',
+                                },
                             },
                             'phone-2': {
-                                data: { id: 'phone-2', number: '+15552222222', name: 'Phone 2' },
+                                data: {
+                                    id: 'phone-2',
+                                    number: '+15552222222',
+                                    name: 'Phone 2',
+                                },
                             },
                         };
-                        return Promise.resolve(phones[phoneId] || { data: null });
+                        return Promise.resolve(
+                            phones[phoneId] || { data: null },
+                        );
                     });
                 mockQuoApi.api.createMessageWebhook = jest
                     .fn()

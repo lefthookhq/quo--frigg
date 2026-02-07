@@ -1486,7 +1486,10 @@ class BaseCRMIntegration extends IntegrationBase {
         }
 
         if (phoneIds.length === 0) {
-            console.log('[Quo] No phone IDs configured, skipping webhook creation', {integrationId: this.id});
+            console.log(
+                '[Quo] No phone IDs configured, skipping webhook creation',
+                { integrationId: this.id },
+            );
             return {
                 messageWebhooks: [],
                 callWebhooks: [],
@@ -1686,7 +1689,9 @@ class BaseCRMIntegration extends IntegrationBase {
      */
     async _recreateQuoWebhooks(newPhoneIds) {
         if (!this.quo?.api) {
-            throw new Error('Quo API not configured - cannot recreate webhooks');
+            throw new Error(
+                'Quo API not configured - cannot recreate webhooks',
+            );
         }
 
         // Support both new array structure and old single-value structure
@@ -1717,7 +1722,10 @@ class BaseCRMIntegration extends IntegrationBase {
         if (!areWebhooksConfigured && !areWebhooksConfiguredLegacy) {
             if (newPhoneIds.length === 0) {
                 // No old webhooks and no new phone IDs - nothing to do
-                console.log('[Quo] No webhooks configured and no phone IDs - skipping', {integrationId: this.id});
+                console.log(
+                    '[Quo] No webhooks configured and no phone IDs - skipping',
+                    { integrationId: this.id },
+                );
                 return {
                     messageWebhooks: [],
                     callWebhooks: [],
@@ -1749,20 +1757,19 @@ class BaseCRMIntegration extends IntegrationBase {
                 if (result.status === 'rejected') {
                     console.warn(
                         `[Quo] Could not delete webhook ${oldWebhookIds[index]}: ${result.reason?.message}`,
-                        {integrationId: this.id},
+                        { integrationId: this.id },
                     );
                 } else {
                     console.log(
                         `[Quo] ✓ Deleted webhook ${oldWebhookIds[index]}`,
-                        {integrationId: this.id},
+                        { integrationId: this.id },
                     );
                 }
             });
 
-            console.log(
-                '[Quo] ✓ Webhooks deleted (no new webhooks created)',
-                {integrationId: this.id},
-            );
+            console.log('[Quo] ✓ Webhooks deleted (no new webhooks created)', {
+                integrationId: this.id,
+            });
 
             return {
                 messageWebhooks: [],
@@ -1773,16 +1780,22 @@ class BaseCRMIntegration extends IntegrationBase {
 
         console.log(
             `[Quo] Recreating webhooks with ${newPhoneIds.length} phone number ID(s)`,
-            {integrationId: this.id},
+            { integrationId: this.id },
         );
 
         try {
             // Create new webhooks FIRST to minimize downtime
             console.log('[Quo] Creating new webhooks...');
             const webhookUrl = this._generateWebhookUrl(`/webhooks/${this.id}`);
-            const newWebhooks = await this._createQuoWebhooksWithPhoneIds(webhookUrl, newPhoneIds);
+            const newWebhooks = await this._createQuoWebhooksWithPhoneIds(
+                webhookUrl,
+                newPhoneIds,
+            );
 
-            console.log('[Quo] ✓ New webhooks created successfully for integration:', {integrationId: this.id});
+            console.log(
+                '[Quo] ✓ New webhooks created successfully for integration:',
+                { integrationId: this.id },
+            );
 
             // Delete old webhooks (best effort - collect IDs from both new and legacy structures)
             console.log('[Quo] Deleting old webhooks...');
@@ -1808,21 +1821,25 @@ class BaseCRMIntegration extends IntegrationBase {
                 if (result.status === 'rejected') {
                     console.warn(
                         `[Quo] Could not delete old webhook ${oldWebhookIds[index]} (may already be deleted): ${result.reason?.message}`,
-                        {integrationId: this.id},
+                        { integrationId: this.id },
                     );
                 } else {
                     console.log(
                         `[Quo] ✓ Deleted old webhook ${oldWebhookIds[index]}`,
-                        {integrationId: this.id},
+                        { integrationId: this.id },
                     );
                 }
             });
 
-            console.log('[Quo] ✓ Old webhooks cleanup complete', {integrationId: this.id});
+            console.log('[Quo] ✓ Old webhooks cleanup complete', {
+                integrationId: this.id,
+            });
 
             return newWebhooks;
         } catch (error) {
-            console.error(`[Quo] Webhook recreation failed: ${error.message}`, {integrationId: this.id});
+            console.error(`[Quo] Webhook recreation failed: ${error.message}`, {
+                integrationId: this.id,
+            });
             throw error;
         }
     }

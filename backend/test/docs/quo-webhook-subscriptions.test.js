@@ -33,8 +33,20 @@ describe('Quo Webhook Subscriptions', () => {
                 listPhoneNumbers: jest.fn().mockResolvedValue({ data: [] }),
                 getPhoneNumber: jest.fn().mockImplementation((phoneId) => {
                     const phones = {
-                        'phone-1': { data: { id: 'phone-1', number: '+15551111111', name: 'Phone 1' } },
-                        'phone-2': { data: { id: 'phone-2', number: '+15552222222', name: 'Phone 2' } },
+                        'phone-1': {
+                            data: {
+                                id: 'phone-1',
+                                number: '+15551111111',
+                                name: 'Phone 1',
+                            },
+                        },
+                        'phone-2': {
+                            data: {
+                                id: 'phone-2',
+                                number: '+15552222222',
+                                name: 'Phone 2',
+                            },
+                        },
                     };
                     return Promise.resolve(phones[phoneId] || { data: null });
                 }),
@@ -132,7 +144,9 @@ describe('Quo Webhook Subscriptions', () => {
             // Verify: No webhooks should be created when no phone IDs
             expect(mockQuoApi.api.createMessageWebhook).not.toHaveBeenCalled();
             expect(mockQuoApi.api.createCallWebhook).not.toHaveBeenCalled();
-            expect(mockQuoApi.api.createCallSummaryWebhook).not.toHaveBeenCalled();
+            expect(
+                mockQuoApi.api.createCallSummaryWebhook,
+            ).not.toHaveBeenCalled();
         });
 
         it('should skip webhook creation when enabledPhoneIds is undefined', async () => {
@@ -145,7 +159,9 @@ describe('Quo Webhook Subscriptions', () => {
             // Verify: No webhooks should be created when no phone IDs
             expect(mockQuoApi.api.createMessageWebhook).not.toHaveBeenCalled();
             expect(mockQuoApi.api.createCallWebhook).not.toHaveBeenCalled();
-            expect(mockQuoApi.api.createCallSummaryWebhook).not.toHaveBeenCalled();
+            expect(
+                mockQuoApi.api.createCallSummaryWebhook,
+            ).not.toHaveBeenCalled();
         });
 
         it('should preserve existing cleanup logic when using base class method', async () => {
