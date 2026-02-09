@@ -4,6 +4,7 @@ const clio = require('../api-modules/clio');
 const quo = require('../api-modules/quo');
 // eslint-disable-next-line no-unused-vars
 const { QUO_ANALYTICS_EVENTS, QuoWebhookEvents } = require('../base/constants');
+const { trackAnalyticsEvent } = require('../utils/trackAnalyticsEvent');
 
 class ClioIntegration extends BaseCRMIntegration {
     static Definition = {
@@ -46,6 +47,26 @@ class ClioIntegration extends BaseCRMIntegration {
                 path: '/clio/matters',
                 method: 'GET',
                 event: 'LIST_CLIO_MATTERS',
+            },
+            {
+                path: '/click-to-call/:integrationId',
+                method: 'GET',
+                event: 'CLICK_TO_CALL_REDIRECT',
+            },
+            {
+                path: '/clio/settings',
+                method: 'GET',
+                event: 'GET_CLIO_SETTINGS',
+            },
+            {
+                path: '/clio/settings',
+                method: 'PUT',
+                event: 'UPDATE_CLIO_SETTINGS',
+            },
+            {
+                path: '/clio/phone-numbers',
+                method: 'GET',
+                event: 'LIST_QUO_PHONE_NUMBERS',
             },
         ],
     };
@@ -107,6 +128,18 @@ class ClioIntegration extends BaseCRMIntegration {
             },
             LIST_CLIO_MATTERS: {
                 handler: this.listMatters,
+            },
+            CLICK_TO_CALL_REDIRECT: {
+                handler: this.handleClickToCallRedirect,
+            },
+            GET_CLIO_SETTINGS: {
+                handler: this.getSettings,
+            },
+            UPDATE_CLIO_SETTINGS: {
+                handler: this.updateSettings,
+            },
+            LIST_QUO_PHONE_NUMBERS: {
+                handler: this.listQuoPhoneNumbers,
             },
             ON_WEBHOOK: {
                 handler: this.onWebhook,
@@ -306,12 +339,181 @@ class ClioIntegration extends BaseCRMIntegration {
         );
     }
 
-    async logSMSToActivity() {
-        throw new Error('ClioIntegration.logSMSToActivity() not implemented');
+    /**
+     * Log an SMS message as a Note in Clio
+     *
+     * @param {Object} activity - Message activity details
+     * @param {string} activity.contactExternalId - Clio contact ID
+     * @param {string} activity.title - Message title
+     * @param {string} activity.content - Message content (rich text/markdown)
+     * @param {string} activity.timestamp - ISO timestamp
+     * @param {string} activity.direction - 'inbound' or 'outbound'
+     * @returns {Promise<number>} Note ID
+     */
+    async logSMSToActivity(activity) {
+        // Check if message logging is enabled
+        if (this.config?.messageLoggingEnabled === false) {
+            console.log(
+                '[Clio] Message logging is disabled - skipping SMS Note creation',
+            );
+            return null;
+        }
+
+        const { contactExternalId, title, content, timestamp } = activity;
+
+        if (!contactExternalId) {
+            throw new Error('contactExternalId is required to log SMS');
+        }
+
+        console.log(
+            `[Clio] Creating Note for SMS to contact ${contactExternalId}`,
+        );
+
+        try {
+            const contactId = parseInt(contactExternalId, 10);
+
+            const noteParams = {
+                type: 'Contact',
+                contact: { id: contactId },
+                subject: title,
+                detail: content,
+                detail_text_type: 'rich_text',
+                date: timestamp,
+            };
+
+            const response = await this.clio.api.createNote(noteParams);
+
+            if (!response?.data?.id) {
+                throw new Error('Invalid Clio Note response: missing note ID');
+            }
+
+            const noteId = response.data.id;
+            console.log(`[Clio] ✓ Created Note ${noteId} for SMS`);
+
+            return noteId;
+        } catch (error) {
+            console.error(`[Clio] Error creating Note for SMS:`, error.message);
+            throw error;
+        }
     }
 
-    async logCallToActivity() {
-        throw new Error('ClioIntegration.logCallToActivity() not implemented');
+    /**
+     * Log a phone call as a Communication in Clio
+     *
+     * @param {Object} activity - Call activity details
+     * @param {string} activity.contactExternalId - Clio contact ID
+     * @param {string} activity.title - Call title
+     * @param {string} activity.content - Call content (rich text/markdown)
+     * @param {string} activity.timestamp - ISO timestamp
+     * @param {number} activity.duration - Call duration in seconds
+     * @param {string} activity.direction - 'inbound' or 'outbound'
+     * @param {string} [activity.quoCallId] - Quo call ID for external_properties
+     * @returns {Promise<number>} Communication ID
+     */
+    async logCallToActivity(activity) {
+        // Check if call logging is enabled
+        if (this.config?.callLoggingEnabled === false) {
+            console.log(
+                '[Clio] Call logging is disabled - skipping PhoneCommunication creation',
+            );
+            return null;
+        }
+
+        const {
+            contactExternalId,
+            title,
+            content,
+            timestamp,
+            duration,
+            direction,
+            quoCallId,
+        } = activity;
+
+        if (!contactExternalId) {
+            throw new Error('contactExternalId is required to log call');
+        }
+
+        console.log(
+            `[Clio] Creating PhoneCommunication for contact ${contactExternalId}`,
+        );
+
+        try {
+            const contactId = parseInt(contactExternalId, 10);
+
+            // Build senders and receivers based on call direction
+            const senders = [];
+            const receivers = [];
+
+            if (direction === 'inbound') {
+                // Incoming call: external contact → user
+                senders.push({
+                    type: 'Contact',
+                    id: contactId,
+                });
+                // Receiver would be a User, but we don't have userId in this context
+                // Clio will handle this via the API user's context
+            } else {
+                // Outgoing call: user → external contact
+                receivers.push({
+                    type: 'Contact',
+                    id: contactId,
+                });
+            }
+
+            // Build external_properties for metadata
+            const externalProperties = [];
+            if (quoCallId) {
+                externalProperties.push({
+                    name: 'quo_call_id',
+                    value: quoCallId,
+                });
+            }
+            if (duration !== undefined) {
+                externalProperties.push({
+                    name: 'duration',
+                    value: String(duration),
+                });
+            }
+
+            const communicationParams = {
+                type: 'PhoneCommunication',
+                subject: title,
+                body: content,
+                date: timestamp,
+                received_at: timestamp,
+                ...(senders.length > 0 && { senders }),
+                ...(receivers.length > 0 && { receivers }),
+                ...(externalProperties.length > 0 && {
+                    external_properties: externalProperties,
+                }),
+            };
+
+            // TODO: Optional Matter association if contact is linked to a matter
+            // This requires checking if contact has an associated matter
+            // Will be implemented based on config setting
+
+            const response =
+                await this.clio.api.createCommunication(communicationParams);
+
+            if (!response?.data?.id) {
+                throw new Error(
+                    'Invalid Clio Communication response: missing communication ID',
+                );
+            }
+
+            const communicationId = response.data.id;
+            console.log(
+                `[Clio] ✓ Created PhoneCommunication ${communicationId} for call`,
+            );
+
+            return communicationId;
+        } catch (error) {
+            console.error(
+                `[Clio] Error creating PhoneCommunication:`,
+                error.message,
+            );
+            throw error;
+        }
     }
 
     async setupWebhooks() {
@@ -343,13 +545,122 @@ class ClioIntegration extends BaseCRMIntegration {
             results.overallStatus = 'partial';
         }
 
-        // TODO: Add Quo webhook setup in ticket 86ae3cum3
-        results.quo = {
-            status: 'pending',
-            note: 'Quo webhooks implementation in separate ticket',
-        };
+        try {
+            results.quo = await this.setupQuoWebhook();
+            console.log('[Webhook Setup] ✓ Quo webhooks configured');
+        } catch (error) {
+            results.quo = { status: 'failed', error: error.message };
+            console.error(
+                '[Webhook Setup] ✗ Quo webhook setup failed:',
+                error.message,
+            );
+
+            if (this.id) {
+                await this.updateIntegrationMessages.execute(
+                    this.id,
+                    'warnings',
+                    'Quo Webhook Setup Failed',
+                    `Could not register webhooks with Quo: ${error.message}. Call and message logging will not work.`,
+                    Date.now(),
+                );
+            }
+            results.overallStatus = 'partial';
+        }
+
+        // Setup Click-to-Call custom action
+        try {
+            results.clickToCall = await this.setupClickToCall();
+            console.log('[Click-to-Call] ✓ Custom Action configured');
+        } catch (error) {
+            results.clickToCall = { status: 'failed', error: error.message };
+            console.error(
+                '[Click-to-Call] ✗ Custom Action setup failed:',
+                error.message,
+            );
+
+            if (this.id) {
+                await this.updateIntegrationMessages.execute(
+                    this.id,
+                    'warnings',
+                    'Click-to-Call Setup Failed',
+                    `Could not register Click-to-Call action with Clio: ${error.message}. Click-to-call from Clio will not work.`,
+                    Date.now(),
+                );
+            }
+            // Non-fatal - don't change overallStatus
+        }
 
         return results;
+    }
+
+    /**
+     * Setup Click-to-Call custom action in Clio
+     * Creates a custom action that appears on contact pages
+     * Allows users to click to call contacts via tel: URL scheme
+     *
+     * @returns {Promise<Object>} Setup result
+     */
+    async setupClickToCall() {
+        // Check if custom action already configured
+        if (this.config?.clioCustomActionId) {
+            console.log(
+                `[Click-to-Call] Custom Action already configured: ${this.config.clioCustomActionId}`,
+            );
+            return {
+                status: 'already_configured',
+                customActionId: this.config.clioCustomActionId,
+            };
+        }
+
+        console.log('[Click-to-Call] Creating Custom Action in Clio');
+
+        try {
+            const clickToCallUrl = this._generateWebhookUrl(
+                `/click-to-call/${this.id}`,
+            );
+
+            const customActionParams = {
+                label: 'Call with Quo',
+                target_url: clickToCallUrl,
+                ui_reference: 'contacts/show',
+            };
+
+            const response =
+                await this.clio.api.createCustomAction(customActionParams);
+
+            if (!response?.data?.id) {
+                throw new Error(
+                    'Invalid Clio Custom Action response: missing ID',
+                );
+            }
+
+            const customActionId = response.data.id;
+            console.log(
+                `[Click-to-Call] ✓ Created Custom Action: ${customActionId}`,
+            );
+
+            // Store custom action ID in config
+            await this.commands.updateIntegrationConfig({
+                integrationId: this.id,
+                config: {
+                    ...this.config,
+                    clioCustomActionId: customActionId,
+                },
+            });
+
+            console.log('[Click-to-Call] ✓ Custom Action ID saved to config');
+
+            return {
+                status: 'configured',
+                customActionId,
+            };
+        } catch (error) {
+            console.error(
+                '[Click-to-Call] Failed to create Custom Action:',
+                error.message,
+            );
+            throw error;
+        }
     }
 
     async setupClioWebhook() {
@@ -480,14 +791,199 @@ class ClioIntegration extends BaseCRMIntegration {
         };
     }
 
+    async setupQuoWebhook() {
+        const createdWebhooks = [];
+
+        try {
+            // Check if already configured
+            if (
+                this.config?.quoMessageWebhookId &&
+                this.config?.quoCallWebhookId &&
+                this.config?.quoCallSummaryWebhookId
+            ) {
+                console.log(
+                    `[Quo] Webhooks already registered: message=${this.config.quoMessageWebhookId}, call=${this.config.quoCallWebhookId}, callSummary=${this.config.quoCallSummaryWebhookId}`,
+                );
+                return {
+                    status: 'already_configured',
+                    messageWebhookId: this.config.quoMessageWebhookId,
+                    callWebhookId: this.config.quoCallWebhookId,
+                    callSummaryWebhookId: this.config.quoCallSummaryWebhookId,
+                    webhookUrl: this.config.quoWebhooksUrl,
+                };
+            }
+
+            // Check for partial configuration (recovery scenario)
+            const hasPartialConfig =
+                this.config?.quoMessageWebhookId ||
+                this.config?.quoCallWebhookId ||
+                this.config?.quoCallSummaryWebhookId;
+
+            if (hasPartialConfig) {
+                console.warn(
+                    '[Quo] Partial webhook configuration detected - cleaning up before retry',
+                );
+
+                // Clean up orphaned message webhook
+                if (this.config?.quoMessageWebhookId) {
+                    try {
+                        await this.quo.api.deleteWebhook(
+                            this.config.quoMessageWebhookId,
+                        );
+                        console.log(
+                            `[Quo] Cleaned up orphaned message webhook: ${this.config.quoMessageWebhookId}`,
+                        );
+                    } catch (cleanupError) {
+                        console.warn(
+                            `[Quo] Could not clean up message webhook (may have been deleted): ${cleanupError.message}`,
+                        );
+                    }
+                }
+
+                // Clean up orphaned call webhook
+                if (this.config?.quoCallWebhookId) {
+                    try {
+                        await this.quo.api.deleteWebhook(
+                            this.config.quoCallWebhookId,
+                        );
+                        console.log(
+                            `[Quo] Cleaned up orphaned call webhook: ${this.config.quoCallWebhookId}`,
+                        );
+                    } catch (cleanupError) {
+                        console.warn(
+                            `[Quo] Could not clean up call webhook (may have been deleted): ${cleanupError.message}`,
+                        );
+                    }
+                }
+
+                // Clean up orphaned call summary webhook
+                if (this.config?.quoCallSummaryWebhookId) {
+                    try {
+                        await this.quo.api.deleteWebhook(
+                            this.config.quoCallSummaryWebhookId,
+                        );
+                        console.log(
+                            `[Quo] Cleaned up orphaned call-summary webhook: ${this.config.quoCallSummaryWebhookId}`,
+                        );
+                    } catch (cleanupError) {
+                        console.warn(
+                            `[Quo] Could not clean up call-summary webhook (may have been deleted): ${cleanupError.message}`,
+                        );
+                    }
+                }
+            }
+
+            const webhookUrl = this._generateWebhookUrl(`/webhooks/${this.id}`);
+
+            console.log(
+                `[Quo] Registering message and call webhooks at: ${webhookUrl}`,
+            );
+
+            // STEP 1: Fetch phone numbers and store IDs in config
+            console.log('[Quo] Fetching phone numbers for webhook filtering');
+            await this._fetchAndStoreEnabledPhoneIds();
+            const phoneIds = this.config.enabledPhoneIds || [];
+
+            // STEP 2: Create webhooks with phone number IDs as resourceIds
+            const {
+                messageWebhookId,
+                messageWebhookKey,
+                callWebhookId,
+                callWebhookKey,
+                callSummaryWebhookId,
+                callSummaryWebhookKey,
+            } = await this._createQuoWebhooksWithPhoneIds(webhookUrl, phoneIds);
+
+            // Track created webhooks for rollback
+            createdWebhooks.push(
+                { type: 'message', id: messageWebhookId },
+                { type: 'call', id: callWebhookId },
+                { type: 'callSummary', id: callSummaryWebhookId },
+            );
+
+            console.log(
+                `[Quo] ✓ All webhooks registered with phone number filtering`,
+            );
+
+            // STEP 3: Save config atomically (only after all webhooks created)
+            const updatedConfig = {
+                ...this.config,
+                quoMessageWebhookId: messageWebhookId,
+                quoMessageWebhookKey: messageWebhookKey,
+                quoCallWebhookId: callWebhookId,
+                quoCallWebhookKey: callWebhookKey,
+                quoCallSummaryWebhookId: callSummaryWebhookId,
+                quoCallSummaryWebhookKey: callSummaryWebhookKey,
+                quoWebhooksUrl: webhookUrl,
+                quoWebhooksCreatedAt: new Date().toISOString(),
+            };
+
+            await this.commands.updateIntegrationConfig({
+                integrationId: this.id,
+                config: updatedConfig,
+            });
+
+            this.config = updatedConfig;
+
+            console.log(`[Quo] ✓ Keys stored securely (encrypted at rest)`);
+
+            return {
+                status: 'configured',
+                messageWebhookId,
+                callWebhookId,
+                callSummaryWebhookId,
+                webhookUrl,
+            };
+        } catch (error) {
+            console.error('[Quo] Failed to setup webhooks:', error);
+
+            // Rollback: Delete any webhooks that were created
+            if (createdWebhooks.length > 0) {
+                console.warn(
+                    `[Quo] Rolling back ${createdWebhooks.length} created webhook(s)`,
+                );
+
+                for (const webhook of createdWebhooks) {
+                    try {
+                        await this.quo.api.deleteWebhook(webhook.id);
+                        console.log(
+                            `[Quo] ✓ Rolled back ${webhook.type} webhook ${webhook.id}`,
+                        );
+                    } catch (rollbackError) {
+                        console.error(
+                            `[Quo] Failed to rollback ${webhook.type} webhook ${webhook.id}:`,
+                            rollbackError.message,
+                        );
+                    }
+                }
+            }
+
+            // Log error to integration messages for user visibility
+            if (this.id) {
+                await this.updateIntegrationMessages.execute(
+                    this.id,
+                    'errors',
+                    'Quo Webhook Setup Failed',
+                    `Failed to register Quo webhooks: ${error.message}`,
+                    Date.now(),
+                );
+            }
+
+            return {
+                status: 'failed',
+                error: error.message,
+            };
+        }
+    }
+
     async onWebhookReceived({ req, res }) {
         try {
             const hookSecret = req.headers['x-hook-secret'];
             const clioSignature = req.headers['x-hook-signature'];
+            const quoSignature = req.headers['openphone-signature'];
+            const svixSignature = req.headers['svix-signature'];
 
-            // Handle handshake POST from Clio (delayed option)
-            // Clio sends X-Hook-Secret header when setting up webhook
-            // Queue it for processing in onWebhook where we have full context
+            // Handle Clio handshake
             if (hookSecret) {
                 console.log(
                     '[Clio Webhook] Received handshake request - queueing for processing',
@@ -508,10 +1004,14 @@ class ClioIntegration extends BaseCRMIntegration {
                 return;
             }
 
-            // Regular webhook - verify signature exists
-            if (!clioSignature) {
+            // Determine webhook source (Quo uses Svix for delivery)
+            const isQuoWebhook = !!(quoSignature || svixSignature);
+            const source = isQuoWebhook ? 'quo' : 'clio';
+            const signature = quoSignature || svixSignature || clioSignature;
+
+            if (!signature) {
                 console.error(
-                    '[Clio Webhook] Missing signature header - rejecting',
+                    `[${source === 'quo' ? 'Quo' : 'Clio'} Webhook] Missing signature header - rejecting`,
                 );
                 res.status(401).json({ error: 'Signature required' });
                 return;
@@ -521,8 +1021,8 @@ class ClioIntegration extends BaseCRMIntegration {
                 body: req.body,
                 headers: req.headers,
                 integrationId: req.params.integrationId,
-                signature: clioSignature,
-                source: 'clio',
+                signature: signature,
+                source: source,
                 receivedAt: new Date().toISOString(),
             };
 
@@ -530,7 +1030,7 @@ class ClioIntegration extends BaseCRMIntegration {
 
             res.status(200).json({ received: true });
         } catch (error) {
-            console.error('[Clio Webhook] Receive error:', error);
+            console.error('[Webhook] Receive error:', error);
             throw error;
         }
     }
@@ -733,6 +1233,277 @@ class ClioIntegration extends BaseCRMIntegration {
         }
     };
 
+    handleClickToCallRedirect = async ({ req, res }) => {
+        try {
+            const { integrationId } = req.params;
+            const { subject_url, custom_action_id, user_id } = req.query;
+
+            console.log(
+                `[Click-to-Call] Redirect request from user ${user_id}, subject: ${subject_url}`,
+            );
+
+            if (!subject_url) {
+                return res.status(400).json({
+                    error: 'Missing subject_url parameter',
+                });
+            }
+
+            // Load integration context to get credentials
+            const result =
+                await this.commands.loadIntegrationContextById(integrationId);
+            if (result.error) {
+                console.error(
+                    `[Click-to-Call] Failed to load integration ${integrationId}`,
+                );
+                return res.status(result.error).json({
+                    error: result.reason || 'Integration not found',
+                });
+            }
+
+            const { record } = result.context;
+
+            // Find Clio entity and instantiate API
+            const clioEntity = record.entities.find(
+                (e) => e.moduleName === 'clio',
+            );
+
+            if (!clioEntity || !clioEntity.credential) {
+                console.error('[Click-to-Call] No Clio credentials found');
+                return res.status(500).json({
+                    error: 'Clio credentials not configured',
+                });
+            }
+
+            console.log(
+                `[Click-to-Call] Found Clio entity for user: ${clioEntity.name}`,
+            );
+
+            // Directly instantiate Clio API class with credentials
+            const { Api: ClioApi } = require('../api-modules/clio/dist/api');
+            const clioApi = new ClioApi({
+                access_token: clioEntity.credential.data.access_token,
+                refresh_token: clioEntity.credential.data.refresh_token,
+                region: clioEntity.credential.data.region || 'us',
+            });
+
+            // Extract contact ID from subject_url (e.g., /api/v4/contacts/2486979490)
+            const contactIdMatch = subject_url.match(/\/contacts\/(\d+)/);
+            if (!contactIdMatch) {
+                return res.status(400).json({
+                    error: 'Invalid subject_url format',
+                });
+            }
+
+            const contactId = contactIdMatch[1];
+            console.log(
+                `[Click-to-Call] Fetching phone number for contact ${contactId}`,
+            );
+
+            // Get phone numbers for the contact
+            const phoneNumbers = await clioApi.getContactPhoneNumbers(
+                contactId,
+                {
+                    fields: 'id,name,number,default_number',
+                },
+            );
+            const phoneNumbersList = phoneNumbers?.data || [];
+
+            // Find default phone number or use first one
+            const primaryPhone = phoneNumbersList.find((p) => p.default_number);
+            const phoneNumber =
+                primaryPhone?.number || phoneNumbersList[0]?.number;
+
+            if (!phoneNumber) {
+                console.error(
+                    `[Click-to-Call] No phone number found for contact ${contactId}`,
+                );
+                return res.status(404).send(`
+                    <html>
+                        <body>
+                            <h1>No Phone Number Found</h1>
+                            <p>This contact does not have a phone number in Clio.</p>
+                        </body>
+                    </html>
+                `);
+            }
+
+            // Track analytics event
+            trackAnalyticsEvent(
+                this,
+                QUO_ANALYTICS_EVENTS.CLICK_TO_CALL_INITIATED,
+                {
+                    contactId,
+                },
+            );
+
+            // Redirect to tel: URL which will trigger OS to open Quo app
+            const telUrl = `tel:${phoneNumber}`;
+            console.log(`[Click-to-Call] Redirecting to: ${telUrl}`);
+
+            res.redirect(302, telUrl);
+        } catch (error) {
+            console.error('[Click-to-Call] Error:', error.message);
+            res.status(500).json({
+                error: 'Failed to initiate call',
+                message: error.message,
+            });
+        }
+    };
+
+    /**
+     * Get integration settings
+     * Returns current configuration for call logging, message logging, enabled phones, etc.
+     */
+    getSettings = async ({ req, res }) => {
+        try {
+            const settings = {
+                callLoggingEnabled: this.config?.callLoggingEnabled !== false, // default true
+                messageLoggingEnabled:
+                    this.config?.messageLoggingEnabled !== false, // default true
+                enabledPhoneIds: this.config?.enabledPhoneIds || [],
+                phoneNumbersMetadata: this.config?.phoneNumbersMetadata || [],
+                phoneNumbersFetchedAt:
+                    this.config?.phoneNumbersFetchedAt || null,
+            };
+
+            res.json({ settings });
+        } catch (error) {
+            console.error('[Clio Settings] getSettings error:', error.message);
+            res.status(500).json({
+                error: error.message,
+            });
+        }
+    };
+
+    /**
+     * Update integration settings
+     * Allows toggling call/message logging and selecting enabled phone numbers
+     */
+    updateSettings = async ({ req, res }) => {
+        try {
+            const updates = req.body;
+
+            console.log('[Clio Settings] Updating settings:', updates);
+
+            const updatedConfig = {
+                ...this.config,
+            };
+
+            // Update call logging toggle
+            if (typeof updates.callLoggingEnabled === 'boolean') {
+                updatedConfig.callLoggingEnabled = updates.callLoggingEnabled;
+                console.log(
+                    `[Clio Settings] Call logging: ${updates.callLoggingEnabled ? 'enabled' : 'disabled'}`,
+                );
+            }
+
+            // Update message logging toggle
+            if (typeof updates.messageLoggingEnabled === 'boolean') {
+                updatedConfig.messageLoggingEnabled =
+                    updates.messageLoggingEnabled;
+                console.log(
+                    `[Clio Settings] Message logging: ${updates.messageLoggingEnabled ? 'enabled' : 'disabled'}`,
+                );
+            }
+
+            // Update enabled phone IDs
+            if (Array.isArray(updates.enabledPhoneIds)) {
+                updatedConfig.enabledPhoneIds = updates.enabledPhoneIds;
+                console.log(
+                    `[Clio Settings] Enabled phone IDs: ${updates.enabledPhoneIds.join(', ')}`,
+                );
+
+                // Re-fetch phone metadata if phone selection changed
+                if (
+                    JSON.stringify(updates.enabledPhoneIds) !==
+                    JSON.stringify(this.config?.enabledPhoneIds)
+                ) {
+                    const phoneNumbersResponse =
+                        await this.quo.api.listPhoneNumbers({
+                            maxResults: 100,
+                        });
+                    const allPhones = phoneNumbersResponse?.data || [];
+
+                    // Filter to only selected phones
+                    const selectedPhones = allPhones.filter((phone) =>
+                        updates.enabledPhoneIds.includes(phone.id),
+                    );
+
+                    updatedConfig.phoneNumbersMetadata = selectedPhones;
+                    updatedConfig.phoneNumbersFetchedAt =
+                        new Date().toISOString();
+
+                    console.log(
+                        `[Clio Settings] Updated phone metadata for ${selectedPhones.length} phone(s)`,
+                    );
+                }
+            }
+
+            // Save updated config
+            await this.commands.updateIntegrationConfig({
+                integrationId: this.id,
+                config: updatedConfig,
+            });
+
+            this.config = updatedConfig;
+
+            console.log('[Clio Settings] ✓ Settings updated successfully');
+
+            res.json({
+                success: true,
+                settings: {
+                    callLoggingEnabled:
+                        updatedConfig.callLoggingEnabled !== false,
+                    messageLoggingEnabled:
+                        updatedConfig.messageLoggingEnabled !== false,
+                    enabledPhoneIds: updatedConfig.enabledPhoneIds || [],
+                    phoneNumbersMetadata:
+                        updatedConfig.phoneNumbersMetadata || [],
+                },
+            });
+        } catch (error) {
+            console.error(
+                '[Clio Settings] updateSettings error:',
+                error.message,
+            );
+            res.status(500).json({
+                error: error.message,
+            });
+        }
+    };
+
+    /**
+     * List available Quo phone numbers
+     * Returns all phone numbers from Quo API for user selection
+     */
+    listQuoPhoneNumbers = async ({ req, res }) => {
+        try {
+            console.log('[Quo] Fetching available phone numbers');
+
+            const response = await this.quo.api.listPhoneNumbers({
+                maxResults: 100,
+            });
+
+            const phoneNumbers = response?.data || [];
+
+            console.log(`[Quo] Found ${phoneNumbers.length} phone number(s)`);
+
+            res.json({
+                phoneNumbers: phoneNumbers.map((phone) => ({
+                    id: phone.id,
+                    name: phone.name,
+                    number: phone.number,
+                    createdAt: phone.createdAt,
+                })),
+            });
+        } catch (error) {
+            console.error('[Quo] listPhoneNumbers error:', error.message);
+            res.status(500).json({
+                error: error.message,
+            });
+        }
+    };
+
     onWebhook = async ({ data }) => {
         const { source } = data;
 
@@ -741,12 +1512,7 @@ class ClioIntegration extends BaseCRMIntegration {
         if (source === 'clio') {
             return await this._handleClioWebhook(data);
         } else if (source === 'quo') {
-            // TODO: Implement in ticket 86ae3cum3
-            console.log('[Webhook] Quo webhook processing not yet implemented');
-            return {
-                success: false,
-                reason: 'Quo webhooks pending implementation',
-            };
+            return await this._handleQuoWebhook(data);
         }
 
         throw new Error(`Unknown webhook source: ${source}`);
@@ -933,9 +1699,519 @@ class ClioIntegration extends BaseCRMIntegration {
         }
     }
 
+    /**
+     * Handle Quo webhook events
+     * Routes events to appropriate processors based on event type
+     *
+     * @private
+     * @param {Object} data - Webhook data from queue
+     * @returns {Promise<Object>} Processing result
+     */
+    async _handleQuoWebhook(data) {
+        const { body } = data;
+        const eventType = body.type;
+
+        console.log(`[Quo Webhook] Processing event: ${eventType}`);
+
+        try {
+            let result;
+
+            // Route message events
+            if (
+                eventType === 'message.received' ||
+                eventType === 'message.delivered'
+            ) {
+                result = await this._handleQuoMessageEvent(body);
+            }
+            // Route call events
+            else if (eventType === 'call.completed') {
+                result = await this._handleQuoCallEvent(body);
+            } else if (eventType === 'call.summary.completed') {
+                result = await this._handleCallSummaryCompleted(body);
+            } else if (eventType === 'call.recording.completed') {
+                result = await this._handleCallRecordingCompleted(body);
+            } else {
+                console.warn(`[Quo Webhook] Unknown event type: ${eventType}`);
+                return { success: true, skipped: true, eventType };
+            }
+
+            return {
+                success: true,
+                processedAt: new Date().toISOString(),
+                eventType,
+                result,
+            };
+        } catch (error) {
+            console.error('[Quo Webhook] Processing error:', error);
+
+            if (this.id) {
+                await this.updateIntegrationMessages.execute(
+                    this.id,
+                    'errors',
+                    'Quo Webhook Processing Error',
+                    `Failed to process ${eventType}: ${error.message}`,
+                    Date.now(),
+                );
+            }
+
+            throw error;
+        }
+    }
+
+    /**
+     * Handle Quo message.received and message.delivered webhook events
+     * Finds Clio contact by phone number and logs SMS as a Note
+     *
+     * @private
+     * @param {Object} webhookData - Quo webhook payload
+     * @returns {Promise<Object>} Processing result
+     */
+    async _handleQuoMessageEvent(webhookData) {
+        const QuoWebhookEventProcessor = require('../base/services/QuoWebhookEventProcessor');
+        const { trackAnalyticsEvent } = require('../utils/trackAnalyticsEvent');
+        const { QUO_ANALYTICS_EVENTS } = require('../base/constants');
+
+        const result = await QuoWebhookEventProcessor.processMessageEvent({
+            webhookData,
+            quoApi: this.quo.api,
+            crmAdapter: {
+                formatMethod: 'markdown',
+                useEmoji: true,
+                findContactByPhone: (phone) =>
+                    this._findClioContactFromQuoWebhook(phone),
+                createMessageActivity: async (contactId, activity) => {
+                    return this.logSMSToActivity({
+                        contactExternalId: contactId,
+                        ...activity,
+                    });
+                },
+            },
+            mappingRepo: {
+                get: (id) => this.getMapping(id),
+                upsert: (id, data) => this.upsertMapping(id, data),
+            },
+            onActivityCreated: ({ messageId }) => {
+                trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.MESSAGE_LOGGED, {
+                    messageId,
+                });
+            },
+        });
+
+        return result;
+    }
+
+    /**
+     * Handle Quo call.completed webhook events
+     * Finds Clio contact by phone number and logs call as PhoneCommunication
+     *
+     * @private
+     * @param {Object} webhookData - Quo webhook payload
+     * @returns {Promise<Object>} Processing result
+     */
+    async _handleQuoCallEvent(webhookData) {
+        const QuoWebhookEventProcessor = require('../base/services/QuoWebhookEventProcessor');
+        const { trackAnalyticsEvent } = require('../utils/trackAnalyticsEvent');
+        const { QUO_ANALYTICS_EVENTS } = require('../base/constants');
+
+        // Fetch Quo phone numbers for participant filtering
+        const phoneNumbersResponse = await this.quo.api.listPhoneNumbers();
+        const phoneNumbersMetadata = phoneNumbersResponse?.data || [];
+
+        const callId = webhookData.data?.object?.id;
+
+        const result = await QuoWebhookEventProcessor.processCallEvent({
+            webhookData,
+            quoApi: this.quo.api,
+            phoneNumbersMetadata,
+            crmAdapter: {
+                formatMethod: 'markdown',
+                useEmoji: true,
+                findContactByPhone: (phone) =>
+                    this._findClioContactFromQuoWebhook(phone),
+                createCallActivity: async (contactId, activity) => {
+                    return this.logCallToActivity({
+                        contactExternalId: contactId,
+                        quoCallId: callId,
+                        ...activity,
+                    });
+                },
+            },
+            mappingRepo: {
+                get: (id) => this.getMapping(id),
+                upsert: (id, data) => this.upsertMapping(id, data),
+            },
+            onActivityCreated: ({ callId, activityId }) => {
+                trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.CALL_LOGGED, {
+                    callId,
+                    communicationId: activityId,
+                });
+            },
+        });
+
+        return result;
+    }
+
+    /**
+     * Handle Quo call.summary.completed webhook events
+     * Enriches existing Communication with AI summary, recordings, and voicemails
+     *
+     * @private
+     * @param {Object} webhookData - Quo webhook payload
+     * @returns {Promise<Object>} Enrichment result
+     */
+    async _handleCallSummaryCompleted(webhookData) {
+        const CallSummaryEnrichmentService = require('../base/services/CallSummaryEnrichmentService');
+        const QuoCallContentBuilder = require('../base/services/QuoCallContentBuilder');
+
+        const callId = webhookData.data?.object?.callId;
+        const summaryData = webhookData.data?.object || {};
+        const deepLink = webhookData.data?.deepLink || '#';
+
+        console.log(
+            `[Clio] Enriching call ${callId} with summary and recordings`,
+        );
+
+        // Fetch full call details from Quo API
+        const callResponse = await this.quo.api.getCall(callId);
+        const callDetails = callResponse?.data;
+
+        if (!callDetails) {
+            throw new Error(`Call ${callId} not found in Quo API`);
+        }
+
+        // Fetch Quo phone numbers for inbox metadata
+        const phoneNumbersResponse = await this.quo.api.listPhoneNumbers();
+        const phoneNumbersMetadata = phoneNumbersResponse?.data || [];
+
+        // Find inbox details
+        const inboxPhone = phoneNumbersMetadata.find(
+            (p) => p.id === callDetails.phoneNumberId,
+        );
+        const inboxName = inboxPhone?.name || 'Unknown Inbox';
+        const inboxNumber = inboxPhone?.number || '';
+
+        // Build formatters for content generation
+        const formatOptions =
+            QuoCallContentBuilder.getFormatOptions('markdown');
+        const formatters = {
+            formatCallHeader: (call, recordings, voicemail) =>
+                QuoCallContentBuilder.buildCallTitle({
+                    call,
+                    inboxName,
+                    inboxNumber,
+                    contactPhone: '', // Will be filled by service
+                    formatOptions,
+                    useEmoji: true,
+                }),
+            formatTitle: (call) =>
+                QuoCallContentBuilder.buildCallTitle({
+                    call,
+                    inboxName,
+                    inboxNumber,
+                    contactPhone: '',
+                    formatOptions,
+                    useEmoji: true,
+                }),
+            formatDeepLink: () => {
+                return formatOptions.link('View in Quo', deepLink);
+            },
+            formatMethod: 'markdown',
+        };
+
+        // Look up existing mapping to find contactId
+        const existingMapping = await this.getMapping(callId);
+        const contactId =
+            existingMapping?.mapping?.contactId || existingMapping?.contactId;
+
+        if (!contactId) {
+            console.warn(
+                `[Clio] No contact mapping found for call ${callId}, cannot enrich`,
+            );
+            return {
+                success: false,
+                error: 'No contact mapping found',
+                callId,
+            };
+        }
+
+        // Configure CRM adapter for enrichment
+        const crmAdapter = {
+            canUpdateNote: () => true, // Clio supports PATCH for Communications
+            updateNote: async (communicationId, { content, title }) => {
+                await this.clio.api.updateCommunication(communicationId, {
+                    body: content,
+                    subject: title,
+                });
+            },
+            createNote: async ({ contactId, content, title, timestamp }) => {
+                return this.logCallToActivity({
+                    contactExternalId: contactId,
+                    title,
+                    content,
+                    timestamp,
+                    duration: callDetails.duration,
+                    direction: callDetails.direction,
+                    quoCallId: callId,
+                });
+            },
+            deleteNote: async (communicationId) => {
+                await this.clio.api.deleteCommunication(communicationId);
+            },
+        };
+
+        const result = await CallSummaryEnrichmentService.enrichCallNote({
+            callId,
+            summaryData,
+            callDetails,
+            quoApi: this.quo.api,
+            crmAdapter,
+            mappingRepo: {
+                get: (id) => this.getMapping(id),
+                upsert: (id, data) => this.upsertMapping(id, data),
+            },
+            contactId,
+            formatters,
+        });
+
+        console.log(
+            `[Clio] ✓ Enriched Communication ${result.noteId} with summary`,
+        );
+
+        return result;
+    }
+
+    /**
+     * Handle Quo call.recording.completed webhook events
+     * Updates existing Communication with recording link
+     *
+     * @private
+     * @param {Object} webhookData - Quo webhook payload
+     * @returns {Promise<Object>} Update result
+     */
+    async _handleCallRecordingCompleted(webhookData) {
+        const callId = webhookData.data?.object?.id;
+        const recordings = webhookData.data?.object?.recordings || [];
+        const recordingUrl = recordings[0]?.url;
+
+        if (!callId || !recordingUrl) {
+            throw new Error('Invalid recording webhook: missing callId or url');
+        }
+
+        console.log(
+            `[Clio] Adding recording link to Communication for call ${callId}`,
+        );
+
+        // Find existing Communication via mapping
+        const existingMapping = await this.getMapping(callId);
+        const communicationId =
+            existingMapping?.mapping?.noteId || existingMapping?.noteId;
+
+        if (!communicationId) {
+            console.warn(
+                `[Clio] No Communication found for call ${callId}, cannot add recording`,
+            );
+            return {
+                success: false,
+                error: 'No Communication mapping found',
+                callId,
+            };
+        }
+
+        // Fetch existing Communication to preserve content
+        const commResponse =
+            await this.clio.api.getCommunication(communicationId);
+        const existingBody = commResponse?.data?.body || '';
+
+        // Append recording link to body
+        const recordingLink = `\n\n▶️ [Recording](${recordingUrl})`;
+        const updatedBody = existingBody + recordingLink;
+
+        await this.clio.api.updateCommunication(communicationId, {
+            body: updatedBody,
+        });
+
+        console.log(
+            `[Clio] ✓ Added recording link to Communication ${communicationId}`,
+        );
+
+        return {
+            success: true,
+            communicationId,
+            callId,
+            recordingUrl,
+        };
+    }
+
+    /**
+     * Find Clio contact by phone number (with mapping optimization)
+     * Uses two-strategy approach: mapping lookup first, then API search
+     *
+     * @private
+     * @param {string} phoneNumber - Phone number to search for
+     * @returns {Promise<number|null>} Clio contact ID or null if not found
+     */
+    async _findClioContactFromQuoWebhook(phoneNumber) {
+        if (!phoneNumber) {
+            throw new Error('Phone number is required for webhook lookup');
+        }
+
+        const normalizedPhone = this._normalizePhoneNumber(phoneNumber);
+        console.log(
+            `[Webhook Lookup] Searching for Clio contact with phone: ${phoneNumber} (normalized: ${normalizedPhone})`,
+        );
+
+        // STRATEGY 1: Try mapping lookup by phone number (O(1) - fast!)
+        const externalId =
+            await this._getExternalIdFromMappingByPhone(normalizedPhone);
+        if (externalId) {
+            console.log(
+                `[Webhook Lookup] ✓ Found via mapping cache: ${externalId}`,
+            );
+            return externalId;
+        }
+
+        // STRATEGY 2: Fallback to Clio API search (slower)
+        console.log(`[Webhook Lookup] ✗ No mapping found, searching Clio API`);
+
+        try {
+            const contactId = await this._findContactByPhone(normalizedPhone);
+
+            if (contactId) {
+                // Cache the mapping for future lookups
+                console.log(
+                    `[Webhook Lookup] Creating phone mapping for future lookups: ${normalizedPhone} → ${contactId}`,
+                );
+                await this.upsertMapping(normalizedPhone, {
+                    externalId: contactId,
+                    phoneNumber: normalizedPhone,
+                    entityType: 'contact',
+                    lastSyncedAt: new Date().toISOString(),
+                    syncMethod: 'webhook',
+                });
+            }
+
+            return contactId;
+        } catch (error) {
+            console.error(
+                `[Webhook Lookup] Error searching Clio for phone ${normalizedPhone}:`,
+                error.message,
+            );
+            return null;
+        }
+    }
+
+    /**
+     * Search Clio for contact by phone number
+     * Note: Clio doesn't have a direct phone search API, so we use query parameter
+     *
+     * @private
+     * @param {string} phone - Normalized phone number
+     * @returns {Promise<number|null>} Clio contact ID or null
+     */
+    async _findContactByPhone(phone) {
+        try {
+            // Try searching with the phone number as query
+            // Clio's query parameter searches across multiple fields
+            const response = await this.clio.api.listContacts({
+                query: phone,
+                limit: 50,
+            });
+
+            if (!response?.data || response.data.length === 0) {
+                console.log(`[Clio] No contacts found for phone: ${phone}`);
+                return null;
+            }
+
+            for (const contact of response.data) {
+                if (contact.primary_phone_number) {
+                    const normalizedPrimary = this._normalizePhoneNumber(
+                        contact.primary_phone_number,
+                    );
+                    if (normalizedPrimary === phone) {
+                        console.log(
+                            `[Clio] ✓ Found contact ${contact.id} via primary phone`,
+                        );
+                        return contact.id;
+                    }
+                }
+
+                if (contact.id) {
+                    const phoneNumbersResponse =
+                        await this.clio.api.getContactPhoneNumbers(contact.id, {
+                            fields: 'id,name,number,default_number',
+                        });
+                    const phoneNumbers = phoneNumbersResponse?.data || [];
+
+                    for (const phoneObj of phoneNumbers) {
+                        const normalizedPhoneNumber =
+                            this._normalizePhoneNumber(phoneObj.number);
+                        if (normalizedPhoneNumber === phone) {
+                            console.log(
+                                `[Clio] ✓ Found contact ${contact.id} via phone number ${phoneObj.name}`,
+                            );
+                            return contact.id;
+                        }
+                    }
+                }
+            }
+
+            console.log(
+                `[Clio] No exact phone match found among ${response.data.length} contacts`,
+            );
+            return null;
+        } catch (error) {
+            console.error(
+                `[Clio] Error searching for contact by phone:`,
+                error.message,
+            );
+            throw error;
+        }
+    }
+
     async onDelete() {
         console.log('[Clio] Integration being deleted - cleaning up webhooks');
 
+        // Check if API modules are loaded
+        if (!this.clio?.api || !this.quo?.api) {
+            const missingModules = [];
+            if (!this.clio?.api) missingModules.push('clio');
+            if (!this.quo?.api) missingModules.push('quo');
+
+            console.error(
+                `[Webhook Cleanup] Cannot delete webhooks: Missing API modules: ${missingModules.join(', ')}`,
+            );
+            console.warn(
+                '[Webhook Cleanup] Webhook IDs preserved in config for manual cleanup:',
+            );
+
+            if (this.config?.clioWebhookId) {
+                console.warn(`  - Clio webhook: ${this.config.clioWebhookId}`);
+            }
+            if (this.config?.clioCustomActionId) {
+                console.warn(
+                    `  - Clio Custom Action: ${this.config.clioCustomActionId}`,
+                );
+            }
+            if (this.config?.quoMessageWebhookId) {
+                console.warn(
+                    `  - Quo message webhook: ${this.config.quoMessageWebhookId}`,
+                );
+            }
+            if (this.config?.quoCallWebhookId) {
+                console.warn(
+                    `  - Quo call webhook: ${this.config.quoCallWebhookId}`,
+                );
+            }
+            if (this.config?.quoCallSummaryWebhookId) {
+                console.warn(
+                    `  - Quo call-summary webhook: ${this.config.quoCallSummaryWebhookId}`,
+                );
+            }
+
+            return;
+        }
+
+        // Delete Clio webhook
         if (this.config?.clioWebhookId) {
             try {
                 await this.clio.api.deleteWebhook(this.config.clioWebhookId);
@@ -949,12 +2225,87 @@ class ClioIntegration extends BaseCRMIntegration {
             }
         }
 
-        // TODO: Clean up Quo webhooks in ticket 86ae3cum3
+        // Delete Clio Custom Action (Click-to-Call)
+        if (this.config?.clioCustomActionId) {
+            console.log(
+                `[Click-to-Call] Deleting Custom Action: ${this.config.clioCustomActionId}`,
+            );
+            try {
+                await this.clio.api.deleteCustomAction(
+                    this.config.clioCustomActionId,
+                );
+                console.log(
+                    `[Click-to-Call] ✓ Custom Action ${this.config.clioCustomActionId} deleted`,
+                );
+            } catch (error) {
+                console.warn(
+                    `[Click-to-Call] Could not delete Custom Action: ${error.message}`,
+                );
+            }
+        }
+
+        // Delete Quo message webhook
+        if (this.config?.quoMessageWebhookId) {
+            console.log(
+                `[Quo] Deleting message webhook: ${this.config.quoMessageWebhookId}`,
+            );
+            try {
+                await this.quo.api.deleteWebhook(
+                    this.config.quoMessageWebhookId,
+                );
+                console.log(
+                    `[Quo] ✓ Message webhook ${this.config.quoMessageWebhookId} deleted`,
+                );
+            } catch (error) {
+                console.error(
+                    `[Quo] Failed to delete message webhook:`,
+                    error.message,
+                );
+            }
+        }
+
+        // Delete Quo call webhook
+        if (this.config?.quoCallWebhookId) {
+            console.log(
+                `[Quo] Deleting call webhook: ${this.config.quoCallWebhookId}`,
+            );
+            try {
+                await this.quo.api.deleteWebhook(this.config.quoCallWebhookId);
+                console.log(
+                    `[Quo] ✓ Call webhook ${this.config.quoCallWebhookId} deleted`,
+                );
+            } catch (error) {
+                console.error(
+                    `[Quo] Failed to delete call webhook:`,
+                    error.message,
+                );
+            }
+        }
+
+        // Delete Quo call-summary webhook
+        if (this.config?.quoCallSummaryWebhookId) {
+            console.log(
+                `[Quo] Deleting call-summary webhook: ${this.config.quoCallSummaryWebhookId}`,
+            );
+            try {
+                await this.quo.api.deleteWebhook(
+                    this.config.quoCallSummaryWebhookId,
+                );
+                console.log(
+                    `[Quo] ✓ Call-summary webhook ${this.config.quoCallSummaryWebhookId} deleted`,
+                );
+            } catch (error) {
+                console.error(
+                    `[Quo] Failed to delete call-summary webhook:`,
+                    error.message,
+                );
+            }
+        }
     }
 
     _normalizePhoneNumber(phone) {
         if (!phone || typeof phone !== 'string') return phone;
-        return phone.replace(/[\s\(\)\-]/g, '');
+        return phone.replace(/\D/g, '');
     }
 
     _generateWebhookUrl(path) {

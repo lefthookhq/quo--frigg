@@ -86,7 +86,7 @@ function formatCallRecordings(
         if (recording.url) {
             switch (method) {
                 case 'html':
-                    return `<a href="${recording.url}">▶️ Recording (${formattedDuration})</a>`;
+                    return `<a href="${recording.url}" target="_blank">▶️ Recording (${formattedDuration})</a>`;
                 case 'plainText':
                     return `Recording (${formattedDuration}): ${recording.url}`;
                 default:
@@ -110,7 +110,7 @@ function formatCallRecordings(
             if (recording.url) {
                 switch (method) {
                     case 'html':
-                        return `<a href="${recording.url}">Part ${partNumber} (${formattedDuration})</a>`;
+                        return `<a href="${recording.url}" target="_blank">Part ${partNumber} (${formattedDuration})</a>`;
                     case 'plainText':
                         return `Part ${partNumber} (${formattedDuration}): ${recording.url}`;
                     default:
@@ -167,7 +167,7 @@ function formatVoicemail(voicemail, { formatMethod, useHtml = false } = {}) {
     if (voicemail.url) {
         switch (method) {
             case 'html':
-                return `<a href="${voicemail.url}">➿ Voicemail (${formattedDuration})</a>`;
+                return `<a href="${voicemail.url}" target="_blank">➿ Voicemail (${formattedDuration})</a>`;
             case 'plainText':
                 return `Voicemail (${formattedDuration}): ${voicemail.url}`;
             default:

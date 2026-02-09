@@ -24,7 +24,7 @@ describe('QuoCallContentBuilder', () => {
             expect(options.lineBreakDouble).toBe('<br><br>');
             expect(options.bold('test')).toBe('<strong>test</strong>');
             expect(options.link('text', 'http://example.com')).toBe(
-                '<a href="http://example.com">text</a>',
+                '<a href="http://example.com" target="_blank">text</a>',
             );
             expect(options.emoji.call).toBe('☎️');
         });
@@ -383,7 +383,9 @@ describe('QuoCallContentBuilder', () => {
                 formatOptions,
             });
 
-            expect(result).toContain('<a href="https://app.quo.com/msg/123">');
+            expect(result).toContain(
+                '<a href="https://app.quo.com/msg/123" target="_blank">',
+            );
             expect(result).toContain('<br><br>');
         });
 
@@ -489,7 +491,7 @@ describe('QuoCallContentBuilder', () => {
 
             expect(result).toContain('<strong>Voicemail:</strong>');
             expect(result).toContain(
-                '<a href="http://example.com/vm.mp3">Listen to voicemail</a>',
+                '<a href="http://example.com/vm.mp3" target="_blank">Listen to voicemail</a>',
             );
             expect(result).toContain('(1:05)');
         });
@@ -609,7 +611,9 @@ describe('QuoCallContentBuilder', () => {
             });
 
             expect(result).toContain('<br><br>');
-            expect(result).toContain('<a href="https://app.quo.com/call/123">');
+            expect(result).toContain(
+                '<a href="https://app.quo.com/call/123" target="_blank">',
+            );
         });
     });
 

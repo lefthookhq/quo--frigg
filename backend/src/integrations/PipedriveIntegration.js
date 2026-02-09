@@ -84,6 +84,11 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 method: 'GET',
                 event: 'LIST_PIPEDRIVE_ACTIVITIES',
             },
+            {
+                path: '/uninstall',
+                method: 'DELETE',
+                event: 'PIPEDRIVE_APP_UNINSTALL',
+            },
         ],
     };
 
@@ -178,6 +183,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 description:
                     'Get statistics and performance metrics from Pipedrive',
                 userActionType: 'REPORT',
+            },
+            PIPEDRIVE_APP_UNINSTALL: {
+                handler: this.handleAppUninstall.bind(this),
             },
         };
     }
@@ -910,6 +918,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
 
             console.log('[Quo] Fetching phone numbers for webhook filtering');
             await this._fetchAndStoreEnabledPhoneIds();
+            const phoneIds = this.config.enabledPhoneIds || [];
 
             const webhookUrl = this._generateWebhookUrl(`/webhooks/${this.id}`);
 
@@ -919,7 +928,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
 
             // Use base class method to create webhooks with resourceIds support
             const { messageWebhooks, callWebhooks, callSummaryWebhooks } =
-                await this._createQuoWebhooksWithPhoneIds(webhookUrl);
+                await this._createQuoWebhooksWithPhoneIds(webhookUrl, phoneIds);
 
             // Track created webhooks for rollback on error
             createdWebhooks.push(
@@ -1636,9 +1645,11 @@ class PipedriveIntegration extends BaseCRMIntegration {
         }
 
         // Fetch metadata once for all participants
+        // Use answeredBy (the user who answered) if available, otherwise fall back to userId (phone owner)
+        const userIdForDisplay = callObject.answeredBy || callObject.userId;
         const [phoneNumberDetails, userDetails] = await Promise.all([
             this.quo.api.getPhoneNumber(callObject.phoneNumberId),
-            this.quo.api.getUser(callObject.userId),
+            this.quo.api.getUser(userIdForDisplay),
         ]);
 
         const inboxName =
@@ -2072,6 +2083,227 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 error: 'Failed to get stats',
                 details: error.message,
             });
+        }
+    }
+
+    /**
+     * Verify Pipedrive Basic Auth credentials
+     * Pipedrive sends HTTP Basic Auth with client_id:client_secret encoded in Base64
+     *
+     * @private
+     * @param {string} authHeader - Authorization header value
+     * @returns {boolean} - True if credentials are valid
+     */
+    _verifyPipedriveBasicAuth(authHeader) {
+        if (!authHeader || !authHeader.startsWith('Basic ')) {
+            return false;
+        }
+
+        const clientId = process.env.PIPEDRIVE_CLIENT_ID;
+        const clientSecret = process.env.PIPEDRIVE_CLIENT_SECRET;
+
+        if (!clientId || !clientSecret) {
+            console.error(
+                '[Pipedrive Uninstall] PIPEDRIVE_CLIENT_ID or PIPEDRIVE_CLIENT_SECRET not configured',
+            );
+            return false;
+        }
+
+        const expectedCredentials = Buffer.from(
+            `${clientId}:${clientSecret}`,
+        ).toString('base64');
+        const receivedCredentials = authHeader.slice(6); // Remove 'Basic ' prefix
+
+        return receivedCredentials === expectedCredentials;
+    }
+
+    /**
+     * Handle Pipedrive app uninstall callback
+     * Called when a user uninstalls the app from their Pipedrive account
+     * Pipedrive sends a DELETE request with Basic Auth to the callback URL
+     *
+     * @see https://pipedrive.readme.io/docs/app-uninstallation
+     * @param {Object} params - Request and response objects
+     * @param {Object} params.req - Express request
+     * @param {Object} params.res - Express response
+     */
+    async handleAppUninstall({ req, res }) {
+        console.log('[Pipedrive Uninstall] Received uninstall callback');
+
+        try {
+            // Step 1: Verify Pipedrive Basic Auth
+            const authHeader = req.headers.authorization;
+            if (!this._verifyPipedriveBasicAuth(authHeader)) {
+                console.error(
+                    '[Pipedrive Uninstall] Invalid or missing Basic Auth credentials',
+                );
+                // Return success anyway (graceful failure - Pipedrive may retry)
+                return res.status(200).json({ success: true });
+            }
+
+            // Step 2: Extract company_id from request body
+            // Pipedrive sends: { user_id, company_id, timestamp }
+            const { company_id: companyId, user_id: pipedriveUserId } =
+                req.body;
+
+            if (!companyId) {
+                console.error(
+                    '[Pipedrive Uninstall] Missing company_id in request body',
+                );
+                // Return success anyway (graceful failure)
+                return res.status(200).json({ success: true });
+            }
+
+            console.log(
+                `[Pipedrive Uninstall] Processing uninstall for company_id: ${companyId}, user_id: ${pipedriveUserId}`,
+            );
+
+            // Step 3: Find integration by external entity ID (company_id)
+            const result =
+                await this.commands.findIntegrationContextByExternalEntityId(
+                    String(companyId),
+                );
+
+            if (result.error) {
+                // Integration not found - may already be deleted (idempotent)
+                console.log(
+                    `[Pipedrive Uninstall] Integration not found for company_id: ${companyId}. ` +
+                        `This may be expected if the integration was already deleted.`,
+                );
+                return res.status(200).json({ success: true });
+            }
+
+            const { context } = result;
+            const integrationId = context.record.id || context.record._id;
+
+            console.log(
+                `[Pipedrive Uninstall] Found integration: ${integrationId}`,
+            );
+
+            // Step 4: Hydrate integration instance for cleanup
+            this.id = integrationId;
+            this.record = context.record;
+            this.config = context.record.config || {};
+
+            // Hydrate modules if available for webhook cleanup
+            if (context.modules) {
+                for (const [moduleName, moduleData] of Object.entries(
+                    context.modules,
+                )) {
+                    this[moduleName] = moduleData;
+                }
+            }
+
+            // Step 5: Call onDelete to cleanup external resources (webhooks, etc.)
+            try {
+                await this.onDelete({
+                    integrationId,
+                    triggeredBy: 'pipedrive_uninstall',
+                    pipedriveUserId,
+                    companyId,
+                });
+                console.log(
+                    `[Pipedrive Uninstall] onDelete completed for integration: ${integrationId}`,
+                );
+            } catch (deleteError) {
+                console.error(
+                    `[Pipedrive Uninstall] Error in onDelete:`,
+                    deleteError.message,
+                );
+                // Continue with deletion even if onDelete has errors
+            }
+
+            // Step 6: Delete credentials and entities for THIS integration only
+            // context.record.entities already contains full entity objects with credentialId
+            const entities = context.record.entities || [];
+            console.log(
+                `[Pipedrive Uninstall] Found ${entities.length} entities for this integration`,
+            );
+
+            if (entities.length > 0) {
+                // Delete credentials and entities
+                for (const entity of entities) {
+                    // Credential can be nested as entity.credential or entity.credentialId
+                    const credId =
+                        entity.credential?.id ||
+                        entity.credential?._id ||
+                        entity.credentialId;
+
+                    if (credId) {
+                        const credentialId =
+                            typeof credId === 'object'
+                                ? credId._id || credId.id || credId.toString()
+                                : credId;
+
+                        try {
+                            console.log(
+                                `[Pipedrive Uninstall] Deleting credential: ${credentialId}`,
+                            );
+                            await this.commands.deleteCredentialById(
+                                credentialId,
+                            );
+                        } catch (credError) {
+                            console.error(
+                                `[Pipedrive Uninstall] Error deleting credential ${credentialId}:`,
+                                credError.message,
+                            );
+                        }
+                    }
+
+                    const entityId = entity.id || entity._id;
+                    try {
+                        console.log(
+                            `[Pipedrive Uninstall] Deleting entity: ${entityId}`,
+                        );
+                        await this.commands.deleteEntityById(entityId);
+                    } catch (entityError) {
+                        console.error(
+                            `[Pipedrive Uninstall] Error deleting entity ${entityId}:`,
+                            entityError.message,
+                        );
+                    }
+                }
+            } else {
+                console.log(
+                    `[Pipedrive Uninstall] No entities found in integration record`,
+                );
+            }
+
+            // Note: User is NOT deleted as they may have other integrations
+
+            // Step 7: Delete the integration record from database
+            const deleteResult =
+                await this.commands.deleteIntegrationById(integrationId);
+
+            if (deleteResult.error) {
+                console.error(
+                    `[Pipedrive Uninstall] Failed to delete integration ${integrationId}:`,
+                    deleteResult.reason,
+                );
+                // Still return success as we've processed the request
+            } else {
+                console.log(
+                    `[Pipedrive Uninstall] Successfully deleted integration: ${integrationId}`,
+                );
+            }
+
+            // Step 8: Track analytics event
+            trackAnalyticsEvent(
+                this,
+                QUO_ANALYTICS_EVENTS.INTEGRATION_DISCONNECTED ||
+                    'integration.disconnected',
+                {
+                    integrationId,
+                    companyId,
+                    triggeredBy: 'pipedrive_uninstall',
+                },
+            );
+
+            return res.status(200).json({ success: true });
+        } catch (error) {
+            // Log error but return success (graceful failure)
+            console.error('[Pipedrive Uninstall] Unexpected error:', error);
+            return res.status(200).json({ success: true });
         }
     }
 

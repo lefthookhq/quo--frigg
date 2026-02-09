@@ -68,11 +68,13 @@ class QuoWebhookEventProcessor {
             `[QuoEventProcessor] Found ${externalParticipants.length} external participant(s)`,
         );
 
+        // Use answeredBy (the user who answered) if available, otherwise fall back to userId (phone owner)
+        const userIdForDisplay = call.answeredBy || call.userId;
         const { inboxName, inboxNumber, userName } =
             await this.fetchCallMetadata(
                 quoApi,
                 call.phoneNumberId,
-                call.userId,
+                userIdForDisplay,
             );
 
         const deepLink = webhookData.data.deepLink || '#';

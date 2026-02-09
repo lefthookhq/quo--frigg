@@ -1103,8 +1103,11 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 `[Quo] Registering message and call webhooks at: ${webhookUrl}`,
             );
 
+            await this._fetchAndStoreEnabledPhoneIds();
+            const phoneIds = this.config.enabledPhoneIds || [];
+
             const { messageWebhooks, callWebhooks, callSummaryWebhooks } =
-                await this._createQuoWebhooksWithPhoneIds(webhookUrl);
+                await this._createQuoWebhooksWithPhoneIds(webhookUrl, phoneIds);
 
             createdWebhooks.push(
                 ...messageWebhooks.map((wh) => ({
@@ -1906,7 +1909,9 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             phoneNumberDetails.data?.formattedNumber ||
             participants[callObject.direction === 'outgoing' ? 0 : 1];
 
-        const userDetails = await this.quo.api.getUser(callObject.userId);
+        // Use answeredBy (the user who answered) if available, otherwise fall back to userId (phone owner)
+        const userIdForDisplay = callObject.answeredBy || callObject.userId;
+        const userDetails = await this.quo.api.getUser(userIdForDisplay);
         const userName = QuoCallContentBuilder.buildUserName(userDetails);
 
         const wasAnswered =

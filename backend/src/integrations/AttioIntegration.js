@@ -1315,10 +1315,11 @@ class AttioIntegration extends BaseCRMIntegration {
             // STEP 1: Fetch phone numbers and store IDs in config
             console.log('[Quo] Fetching phone numbers for webhook filtering');
             await this._fetchAndStoreEnabledPhoneIds();
+            const phoneIds = this.config.enabledPhoneIds || [];
 
             // STEP 2: Create webhooks with phone number IDs as resourceIds
             const { messageWebhooks, callWebhooks, callSummaryWebhooks } =
-                await this._createQuoWebhooksWithPhoneIds(webhookUrl);
+                await this._createQuoWebhooksWithPhoneIds(webhookUrl, phoneIds);
 
             createdWebhooks.push(
                 ...messageWebhooks.map((wh) => ({
@@ -1992,9 +1993,11 @@ class AttioIntegration extends BaseCRMIntegration {
             };
         }
 
+        // Use answeredBy (the user who answered) if available, otherwise fall back to userId (phone owner)
+        const userIdForDisplay = call.answeredBy || call.userId;
         const [phoneNumberDetails, userDetails] = await Promise.all([
             this.quo.api.getPhoneNumber(call.phoneNumberId),
-            this.quo.api.getUser(call.userId),
+            this.quo.api.getUser(userIdForDisplay),
         ]);
 
         const inboxName =
@@ -2147,9 +2150,11 @@ class AttioIntegration extends BaseCRMIntegration {
         }
 
         // Fetch metadata once for all participants
+        // Use answeredBy (the user who answered) if available, otherwise fall back to userId (phone owner)
+        const userIdForDisplay = call.answeredBy || call.userId;
         const [phoneNumberDetails, userDetails] = await Promise.all([
             this.quo.api.getPhoneNumber(call.phoneNumberId),
-            this.quo.api.getUser(call.userId),
+            this.quo.api.getUser(userIdForDisplay),
         ]);
 
         const inboxName =
