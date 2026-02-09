@@ -648,7 +648,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             // Use provided jobId or generate new one with timestamp for uniqueness
             const jobId =
                 newJobId || `zoho-notif-renewal-${this.id}-${Date.now()}`;
-            const executionId = `exec-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            const executionId = `exec-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
             // Get queue URL from environment
             const queueUrl = process.env.ZOHO_QUEUE_URL;
@@ -705,19 +705,20 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
      * @returns {Promise<void>}
      */
     async _onRefreshWebhook({ data }) {
-        const { integrationId, executionId } = data || {};
+        const { executionId } = data || {};
+        const resolvedIntegrationId = data?.integrationId || this.id;
 
         console.log(
-            `[Zoho CRM] Processing REFRESH_WEBHOOK for integration ${integrationId || this.id} (executionId: ${executionId})`,
+            `[Zoho CRM] Processing REFRESH_WEBHOOK for integration ${resolvedIntegrationId} (executionId: ${executionId})`,
         );
 
         // 1. Load fresh integration context to get current state
         const result = await this.commands.loadIntegrationContextById(
-            integrationId || this.id,
+            resolvedIntegrationId,
         );
         if (result.error) {
             console.warn(
-                `[Zoho CRM] Integration not found: ${integrationId}, skipping renewal`,
+                `[Zoho CRM] Integration not found: ${resolvedIntegrationId}, skipping renewal`,
             );
             return;
         }
@@ -747,7 +748,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
 
         // 5. Create new schedule FIRST (before Zoho API call) for atomicity
         //    If Zoho call fails, we delete this new schedule
-        const newJobId = `zoho-notif-renewal-${this.id}-${Date.now()}`;
+        const newJobId = `zoho-notif-renewal-${resolvedIntegrationId}-${Date.now()}`;
         const oldJobId = config.zohoNotificationRefreshJobId;
         let newSchedule = null;
 
@@ -782,7 +783,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             };
 
             await this.commands.updateIntegrationConfig({
-                integrationId: this.id,
+                integrationId: resolvedIntegrationId,
                 config: updatedConfig,
             });
 
@@ -801,12 +802,12 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             }
 
             console.log(
-                `[Zoho CRM] ✓ Notification renewed for integration ${this.id}, expires ${newExpiry.toISOString()}`,
+                `[Zoho CRM] ✓ Notification renewed for integration ${resolvedIntegrationId}, expires ${newExpiry.toISOString()}`,
             );
         } catch (error) {
             // Rollback: delete the new schedule we just created
             console.error(
-                `[Zoho CRM] Renewal failed for integration ${this.id}: ${error.message}`,
+                `[Zoho CRM] Renewal failed for integration ${resolvedIntegrationId}: ${error.message}`,
             );
 
             if (newSchedule?.jobId) {
@@ -830,7 +831,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             };
 
             await this.commands.updateIntegrationConfig({
-                integrationId: this.id,
+                integrationId: resolvedIntegrationId,
                 config: failedConfig,
             });
 
