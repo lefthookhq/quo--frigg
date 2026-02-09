@@ -112,7 +112,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
     };
 
     static ZOHO_NOTIFICATION_CHANNEL_ID = 1735593600000; // Unique bigint channel ID for Zoho webhooks
-    static ZOHO_DEFAULT_RENEWAL_DAYS = 6; // Days before notification expiry to schedule renewal. In Zoho, notifications (webhooks) expire after 7 days.
+    static ZOHO_DEFAULT_RENEWAL_MINUTES = 10; // TODO: revert to 6 days (ZOHO_DEFAULT_RENEWAL_DAYS) after testing
 
     constructor(params) {
         super(params);
@@ -641,9 +641,9 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
      */
     async _scheduleNotificationRenewal(newJobId = null) {
         try {
-            const renewalDays = this.constructor.ZOHO_DEFAULT_RENEWAL_DAYS;
+            const renewalMinutes = this.constructor.ZOHO_DEFAULT_RENEWAL_MINUTES;
             const renewalDate = new Date();
-            renewalDate.setDate(renewalDate.getDate() + renewalDays);
+            renewalDate.setTime(renewalDate.getTime() + renewalMinutes * 60 * 1000);
 
             // Use provided jobId or generate new one with timestamp for uniqueness
             const jobId =
