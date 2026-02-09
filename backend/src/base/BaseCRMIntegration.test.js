@@ -1307,19 +1307,39 @@ describe('BaseCRMIntegration', () => {
                 .mockImplementation((phoneId) => {
                     const phones = {
                         'PN-1': {
-                            data: { id: 'PN-1', number: '+11111111111', name: 'Phone 1' },
+                            data: {
+                                id: 'PN-1',
+                                number: '+11111111111',
+                                name: 'Phone 1',
+                            },
                         },
                         'PN-2': {
-                            data: { id: 'PN-2', number: '+12222222222', name: 'Phone 2' },
+                            data: {
+                                id: 'PN-2',
+                                number: '+12222222222',
+                                name: 'Phone 2',
+                            },
                         },
                         'PN-new-1': {
-                            data: { id: 'PN-new-1', number: '+13333333333', name: 'New Phone 1' },
+                            data: {
+                                id: 'PN-new-1',
+                                number: '+13333333333',
+                                name: 'New Phone 1',
+                            },
                         },
                         'PN-new-2': {
-                            data: { id: 'PN-new-2', number: '+14444444444', name: 'New Phone 2' },
+                            data: {
+                                id: 'PN-new-2',
+                                number: '+14444444444',
+                                name: 'New Phone 2',
+                            },
                         },
                         'PN-new-3': {
-                            data: { id: 'PN-new-3', number: '+15555555555', name: 'New Phone 3' },
+                            data: {
+                                id: 'PN-new-3',
+                                number: '+15555555555',
+                                name: 'New Phone 3',
+                            },
                         },
                     };
                     return Promise.resolve(phones[phoneId] || { data: null });

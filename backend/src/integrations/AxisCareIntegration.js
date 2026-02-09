@@ -1385,7 +1385,9 @@ class AxisCareIntegration extends BaseCRMIntegration {
             );
         }
 
-        const userDetails = await this.quo.api.getUser(callObject.userId);
+        // Use answeredBy (the user who answered) if available, otherwise fall back to userId (phone owner)
+        const userIdForDisplay = callObject.answeredBy || callObject.userId;
+        const userDetails = await this.quo.api.getUser(userIdForDisplay);
         const userName = QuoCallContentBuilder.buildUserName(userDetails);
 
         // Use CallSummaryEnrichmentService to enrich the call log

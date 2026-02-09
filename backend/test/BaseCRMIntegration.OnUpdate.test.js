@@ -52,16 +52,32 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
             getPhoneNumber: jest.fn().mockImplementation((phoneId) => {
                 const phones = {
                     'phone-1': {
-                        data: { id: 'phone-1', number: '+15551111111', name: 'Phone 1' },
+                        data: {
+                            id: 'phone-1',
+                            number: '+15551111111',
+                            name: 'Phone 1',
+                        },
                     },
                     'phone-2': {
-                        data: { id: 'phone-2', number: '+15552222222', name: 'Phone 2' },
+                        data: {
+                            id: 'phone-2',
+                            number: '+15552222222',
+                            name: 'Phone 2',
+                        },
                     },
                     'phone-3': {
-                        data: { id: 'phone-3', number: '+15553333333', name: 'Phone 3' },
+                        data: {
+                            id: 'phone-3',
+                            number: '+15553333333',
+                            name: 'Phone 3',
+                        },
                     },
                     'phone-4': {
-                        data: { id: 'phone-4', number: '+15554444444', name: 'Phone 4' },
+                        data: {
+                            id: 'phone-4',
+                            number: '+15554444444',
+                            name: 'Phone 4',
+                        },
                     },
                 };
                 return Promise.resolve(phones[phoneId] || { data: null });
@@ -677,16 +693,24 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
 
             // Assert - all 6 old webhooks should be deleted
             expect(mockQuoApi.deleteWebhook).toHaveBeenCalledTimes(6);
-            expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith('msg-batch-1');
-            expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith('msg-batch-2');
+            expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith(
+                'msg-batch-1',
+            );
+            expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith(
+                'msg-batch-2',
+            );
             expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith(
                 'call-batch-1',
             );
             expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith(
                 'call-batch-2',
             );
-            expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith('sum-batch-1');
-            expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith('sum-batch-2');
+            expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith(
+                'sum-batch-1',
+            );
+            expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith(
+                'sum-batch-2',
+            );
         });
 
         it('should create new webhooks even if deletion of old ones fails', async () => {
@@ -861,7 +885,11 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
                     return Promise.reject(new Error('Phone not found'));
                 }
                 return Promise.resolve({
-                    data: { id: phoneId, number: '+15551111111', name: 'Phone 1' },
+                    data: {
+                        id: phoneId,
+                        number: '+15551111111',
+                        name: 'Phone 1',
+                    },
                 });
             });
 
@@ -953,7 +981,9 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
             expect(persistedConfig).not.toHaveProperty('quoMessageWebhookKey');
             expect(persistedConfig).not.toHaveProperty('quoCallWebhookId');
             expect(persistedConfig).not.toHaveProperty('quoCallWebhookKey');
-            expect(persistedConfig).not.toHaveProperty('quoCallSummaryWebhookId');
+            expect(persistedConfig).not.toHaveProperty(
+                'quoCallSummaryWebhookId',
+            );
             expect(persistedConfig).not.toHaveProperty(
                 'quoCallSummaryWebhookKey',
             );
