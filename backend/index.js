@@ -83,6 +83,7 @@ const appDefinition = {
         CLIO_CLIENT_ID: true,
         CLIO_CLIENT_SECRET: true,
         SCALE_TEST_API_KEY: true,
+        SCHEDULER_PROVIDER: true,
     },
 };
 
