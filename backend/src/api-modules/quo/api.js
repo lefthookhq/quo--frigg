@@ -133,16 +133,15 @@ class Api extends ApiKeyRequester {
 
     // Contact Management
     async listContacts(params = {}) {
-        // Build URL with proper array handling for externalIds[] and phoneNumbers[]
+        // Build URL with repeated keys for array params: key=val1&key=val2
         let url = this.baseUrl + this.URLs.contacts;
 
         const queryParts = [];
         for (const [key, value] of Object.entries(params)) {
             if (Array.isArray(value)) {
-                // Handle arrays with bracket notation: key[]=val1&key[]=val2
                 value.forEach((item) => {
                     queryParts.push(
-                        `${encodeURIComponent(key)}[]=${encodeURIComponent(item)}`,
+                        `${encodeURIComponent(key)}=${encodeURIComponent(item)}`,
                     );
                 });
             } else {

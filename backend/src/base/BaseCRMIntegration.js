@@ -1127,17 +1127,18 @@ class BaseCRMIntegration extends IntegrationBase {
     /**
      * Fetch contacts by external IDs with automatic pagination to respect API limits
      *
-     * The Quo API has a maxResults limit of 50. This method automatically handles
-     * pagination when fetching more than 50 contacts. All pages are fetched in parallel
-     * for optimal performance.
+     * The Quo API has a maxResults limit of 50, but OpenPhone's query parser
+     * (qs) has a default arrayLimit of 20. Beyond 20 repeated query params,
+     * arrays get converted to objects with numeric keys, causing 400 errors.
+     * This method automatically handles pagination. All pages are fetched in parallel.
      *
      * @param {string[]} externalIds - Array of external IDs to fetch
-     * @param {number} pageSize - Page size (default: 50, max: 50)
+     * @param {number} pageSize - Page size (default: 20, max: 20)
      * @returns {Promise<Object[]>} Array of fetched contacts
      * @private
      */
-    async _fetchContactsByExternalIds(externalIds, pageSize = 50) {
-        const maxPageSize = 50; // Quo API limit
+    async _fetchContactsByExternalIds(externalIds, pageSize = 20) {
+        const maxPageSize = 20; // OpenPhone's query parser array limit
         const effectivePageSize = Math.min(pageSize, maxPageSize);
 
         // Split externalIds into chunks

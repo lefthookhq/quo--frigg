@@ -118,10 +118,10 @@ describe('Bulk Sync Mapping Creation', () => {
                 contacts,
             );
 
-            // listContacts is now paginated with maxResults: 50 (API limit)
+            // listContacts is now paginated with maxResults: 20 (OpenPhone's array limit)
             expect(integration.quo.api.listContacts).toHaveBeenCalledWith({
                 externalIds: ['attio-person-1', 'attio-person-2'],
-                maxResults: 50,
+                maxResults: 20,
             });
 
             expect(integration.upsertMapping).toHaveBeenCalledTimes(2);

@@ -17,7 +17,7 @@ describe('QuoApi.listContacts - Array Query Parameter Handling', () => {
     });
 
     describe('Array parameter handling', () => {
-        it('should format externalIds array with bracket notation', async () => {
+        it('should format externalIds array with repeated keys', async () => {
             // Arrange
             const params = {
                 externalIds: ['id-1', 'id-2', 'id-3'],
@@ -29,13 +29,13 @@ describe('QuoApi.listContacts - Array Query Parameter Handling', () => {
 
             // Assert
             expect(mockGet).toHaveBeenCalledWith({
-                url: expect.stringContaining('externalIds[]=id-1'),
+                url: expect.stringContaining('externalIds=id-1'),
             });
             expect(mockGet).toHaveBeenCalledWith({
-                url: expect.stringContaining('externalIds[]=id-2'),
+                url: expect.stringContaining('externalIds=id-2'),
             });
             expect(mockGet).toHaveBeenCalledWith({
-                url: expect.stringContaining('externalIds[]=id-3'),
+                url: expect.stringContaining('externalIds=id-3'),
             });
             expect(mockGet).toHaveBeenCalledWith({
                 url: expect.stringContaining('maxResults=10'),
@@ -44,9 +44,11 @@ describe('QuoApi.listContacts - Array Query Parameter Handling', () => {
             // Verify NOT using comma-separated format
             const calledUrl = mockGet.mock.calls[0][0].url;
             expect(calledUrl).not.toContain('externalIds=id-1,id-2');
+            // Verify NOT using bracket notation (which gets double-encoded by encodeURI)
+            expect(calledUrl).not.toContain('externalIds[]');
         });
 
-        it('should format phoneNumbers array with bracket notation', async () => {
+        it('should format phoneNumbers array with repeated keys', async () => {
             // Arrange
             const params = {
                 phoneNumbers: ['+12125551234', '+19175555678'],
@@ -56,12 +58,10 @@ describe('QuoApi.listContacts - Array Query Parameter Handling', () => {
             await quoApi.listContacts(params);
 
             // Assert
-            expect(mockGet).toHaveBeenCalledWith({
-                url: expect.stringContaining('phoneNumbers[]='),
-            });
-            expect(mockGet).toHaveBeenCalledWith({
-                url: expect.stringContaining('%2B12125551234'), // URL encoded +
-            });
+            const calledUrl = mockGet.mock.calls[0][0].url;
+            expect(calledUrl).toContain('phoneNumbers=%2B12125551234');
+            expect(calledUrl).toContain('phoneNumbers=%2B19175555678');
+            expect(calledUrl).not.toContain('phoneNumbers[]');
         });
 
         it('should handle mix of array and non-array parameters', async () => {
@@ -78,11 +78,12 @@ describe('QuoApi.listContacts - Array Query Parameter Handling', () => {
             // Assert
             const calledUrl = mockGet.mock.calls[0][0].url;
 
-            // Arrays should use bracket notation
-            expect(calledUrl).toContain('externalIds[]=id-1');
-            expect(calledUrl).toContain('externalIds[]=id-2');
+            // Arrays should use repeated keys
+            expect(calledUrl).toContain('externalIds=id-1');
+            expect(calledUrl).toContain('externalIds=id-2');
+            expect(calledUrl).not.toContain('externalIds[]');
 
-            // Regular params should not
+            // Regular params should be unchanged
             expect(calledUrl).toContain('maxResults=5');
             expect(calledUrl).toContain('includePhoneNumbers=true');
             expect(calledUrl).not.toContain('maxResults[]');
@@ -130,9 +131,9 @@ describe('QuoApi.listContacts - Array Query Parameter Handling', () => {
             await quoApi.listContacts(params);
 
             // Assert
-            expect(mockGet).toHaveBeenCalledWith({
-                url: expect.stringContaining('externalIds[]=single-id'),
-            });
+            const calledUrl = mockGet.mock.calls[0][0].url;
+            expect(calledUrl).toContain('externalIds=single-id');
+            expect(calledUrl).not.toContain('externalIds[]');
         });
     });
 
@@ -194,12 +195,15 @@ describe('QuoApi.listContacts - Array Query Parameter Handling', () => {
             // Assert
             const calledUrl = mockGet.mock.calls[0][0].url;
 
-            // Each ID should be a separate parameter
+            // Each ID should be a separate repeated key parameter
             params.externalIds.forEach((id) => {
-                expect(calledUrl).toContain(`externalIds[]=${id}`);
+                expect(calledUrl).toContain(`externalIds=${id}`);
             });
 
-            // Should NOT be comma-separated (which caused the 75 char limit error)
+            // Should NOT use bracket notation (double-encoded by encodeURI)
+            expect(calledUrl).not.toContain('externalIds[]');
+
+            // Should NOT be comma-separated
             expect(calledUrl).not.toContain(
                 '0e77bdf3-2c4a-41be-801e-c1a47e8af171,7893b79c',
             );
@@ -207,7 +211,7 @@ describe('QuoApi.listContacts - Array Query Parameter Handling', () => {
             // Each individual param should be under 75 chars
             const idParams = calledUrl
                 .split('&')
-                .filter((p) => p.includes('externalIds[]'));
+                .filter((p) => p.startsWith('externalIds='));
             idParams.forEach((param) => {
                 const value = param.split('=')[1];
                 expect(value.length).toBeLessThanOrEqual(75);
