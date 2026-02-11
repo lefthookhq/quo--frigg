@@ -25,7 +25,7 @@ const BASE_URL = USE_DEV
 if (!API_KEY) {
     console.error('Usage: node test-quo-api.js <API_KEY> [operation]');
     console.error(
-        'Operations: bulk-create, list-contacts, single-create, create-duplicate, duplicate-externalid, test-webhooks, test-webhook-v2',
+        'Operations: bulk-create, list-contacts, single-create, create-duplicate, duplicate-externalid, test-webhooks, test-webhook-v4',
     );
     process.exit(1);
 }
@@ -35,8 +35,8 @@ function makeRequest(method, path, body = null) {
         const hostname = USE_DEV
             ? 'dev-public-api.openphone.dev'
             : 'api.openphone.com';
-        // If path starts with /v2, use it as-is, otherwise prepend /v1
-        const fullPath = path.startsWith('/v2') ? path : `/v1${path}`;
+        // If path starts with /v4, use it as-is, otherwise prepend /v1
+        const fullPath = path.startsWith('/v4') ? path : `/v1${path}`;
         const options = {
             hostname: hostname,
             port: 443,
@@ -308,11 +308,11 @@ async function testDuplicateExternalId() {
 }
 
 async function testWebhookEndpoints() {
-    console.log('\n🧪 Testing Webhook Endpoints (v1 vs v2)\n');
+    console.log('\n🧪 Testing Webhook Endpoints (v1 vs v4)\n');
 
     const results = {
         v1: {},
-        v2: {},
+        v4: {},
     };
 
     // Test v1 endpoints
@@ -338,27 +338,27 @@ async function testWebhookEndpoints() {
         results.v1.calls = { error: e.message };
     }
 
-    // Test v2 endpoints
-    console.log('\n\n--- Testing v2 webhook endpoints ---');
+    // Test v4 endpoints
+    console.log('\n\n--- Testing v4 webhook endpoints ---');
     try {
-        console.log('GET /v2/webhooks');
-        results.v2.webhooks = await makeRequest('GET', '/v2/webhooks');
+        console.log('GET /v4/webhooks');
+        results.v4.webhooks = await makeRequest('GET', '/v4/webhooks');
     } catch (e) {
-        results.v2.webhooks = { error: e.message };
+        results.v4.webhooks = { error: e.message };
     }
 
     try {
-        console.log('\nGET /v2/webhooks/messages');
-        results.v2.messages = await makeRequest('GET', '/v2/webhooks/messages');
+        console.log('\nGET /v4/webhooks/messages');
+        results.v4.messages = await makeRequest('GET', '/v4/webhooks/messages');
     } catch (e) {
-        results.v2.messages = { error: e.message };
+        results.v4.messages = { error: e.message };
     }
 
     try {
-        console.log('\nGET /v2/webhooks/calls');
-        results.v2.calls = await makeRequest('GET', '/v2/webhooks/calls');
+        console.log('\nGET /v4/webhooks/calls');
+        results.v4.calls = await makeRequest('GET', '/v4/webhooks/calls');
     } catch (e) {
-        results.v2.calls = { error: e.message };
+        results.v4.calls = { error: e.message };
     }
 
     // Summary
@@ -383,48 +383,48 @@ async function testWebhookEndpoints() {
     );
     console.log('');
     console.log(
-        'v2/webhooks:',
-        results.v2.webhooks.status === 200
+        'v4/webhooks:',
+        results.v4.webhooks.status === 200
             ? '✅ Works'
-            : `❌ ${results.v2.webhooks.status || 'Error'}`,
+            : `❌ ${results.v4.webhooks.status || 'Error'}`,
     );
     console.log(
-        'v2/webhooks/messages:',
-        results.v2.messages.status === 200
+        'v4/webhooks/messages:',
+        results.v4.messages.status === 200
             ? '✅ Works'
-            : `❌ ${results.v2.messages.status || 'Error'}`,
+            : `❌ ${results.v4.messages.status || 'Error'}`,
     );
     console.log(
-        'v2/webhooks/calls:',
-        results.v2.calls.status === 200
+        'v4/webhooks/calls:',
+        results.v4.calls.status === 200
             ? '✅ Works'
-            : `❌ ${results.v2.calls.status || 'Error'}`,
+            : `❌ ${results.v4.calls.status || 'Error'}`,
     );
 
     return results;
 }
 
-async function testWebhookV2CreateDelete() {
-    console.log('\n🧪 Testing v2 Webhook Create & Delete\n');
+async function testWebhookV4CreateDelete() {
+    console.log('\n🧪 Testing v4 Webhook Create & Delete\n');
 
     let createdMessageWebhookId = null;
     let createdCallWebhookId = null;
 
     try {
-        // Step 1: Create MESSAGE webhook on v2
+        // Step 1: Create MESSAGE webhook on v4
         console.log(
-            '--- Step 1: Creating MESSAGE webhook on v2/webhooks/messages ---',
+            '--- Step 1: Creating MESSAGE webhook on v4/webhooks/messages ---',
         );
         const messageWebhookPayload = {
             url: 'https://test-webhook-endpoint.example.com/test-messages',
             events: ['message.received', 'message.delivered'],
-            label: 'Test Message Webhook v2',
+            label: 'Test Message Webhook v4',
             status: 'enabled',
         };
 
         const createMessageResult = await makeRequest(
             'POST',
-            '/v2/webhooks/messages',
+            '/v4/webhooks/messages',
             messageWebhookPayload,
         );
 
@@ -449,20 +449,20 @@ async function testWebhookV2CreateDelete() {
             };
         }
 
-        // Step 2: Create CALL webhook on v2
+        // Step 2: Create CALL webhook on v4
         console.log(
-            '\n--- Step 2: Creating CALL webhook on v2/webhooks/calls ---',
+            '\n--- Step 2: Creating CALL webhook on v4/webhooks/calls ---',
         );
         const callWebhookPayload = {
             url: 'https://test-webhook-endpoint.example.com/test-calls',
             events: ['call.completed'],
-            label: 'Test Call Webhook v2',
+            label: 'Test Call Webhook v4',
             status: 'enabled',
         };
 
         const createCallResult = await makeRequest(
             'POST',
-            '/v2/webhooks/calls',
+            '/v4/webhooks/calls',
             callWebhookPayload,
         );
 
@@ -484,9 +484,9 @@ async function testWebhookV2CreateDelete() {
             };
         }
 
-        // Step 3: List all v2 webhooks to verify
-        console.log('\n--- Step 3: Listing v2 webhooks ---');
-        const listResult = await makeRequest('GET', '/v2/webhooks');
+        // Step 3: List all v4 webhooks to verify
+        console.log('\n--- Step 3: Listing v4 webhooks ---');
+        const listResult = await makeRequest('GET', '/v4/webhooks');
 
         if (listResult.status === 200) {
             const messageWebhook = listResult.data?.data?.find(
@@ -500,12 +500,12 @@ async function testWebhookV2CreateDelete() {
             if (callWebhook) console.log(`✅ Call webhook found in list`);
         }
 
-        // Step 4: Delete message webhook (uses unified /v2/webhooks/{id} endpoint)
+        // Step 4: Delete message webhook (uses unified /v4/webhooks/{id} endpoint)
         if (createdMessageWebhookId) {
             console.log('\n--- Step 4: Deleting message webhook ---');
             const deleteMessageResult = await makeRequest(
                 'DELETE',
-                `/v2/webhooks/${createdMessageWebhookId}`,
+                `/v4/webhooks/${createdMessageWebhookId}`,
             );
 
             if (
@@ -522,12 +522,12 @@ async function testWebhookV2CreateDelete() {
             }
         }
 
-        // Step 5: Delete call webhook (uses unified /v2/webhooks/{id} endpoint)
+        // Step 5: Delete call webhook (uses unified /v4/webhooks/{id} endpoint)
         if (createdCallWebhookId) {
             console.log('\n--- Step 5: Deleting call webhook ---');
             const deleteCallResult = await makeRequest(
                 'DELETE',
-                `/v2/webhooks/${createdCallWebhookId}`,
+                `/v4/webhooks/${createdCallWebhookId}`,
             );
 
             if (
@@ -546,7 +546,7 @@ async function testWebhookV2CreateDelete() {
 
         // Step 6: Verify deletion
         console.log('\n--- Step 6: Verifying deletion ---');
-        const verifyResult = await makeRequest('GET', '/v2/webhooks');
+        const verifyResult = await makeRequest('GET', '/v4/webhooks');
 
         if (verifyResult.status === 200) {
             const messageWebhook = verifyResult.data?.data?.find(
@@ -563,7 +563,7 @@ async function testWebhookV2CreateDelete() {
         }
 
         console.log(
-            '\n🎯 Result: v2 webhook endpoints ' +
+            '\n🎯 Result: v4 webhook endpoints ' +
                 (createdMessageWebhookId || createdCallWebhookId
                     ? 'WORK!'
                     : 'DO NOT WORK'),
@@ -582,13 +582,13 @@ async function testWebhookV2CreateDelete() {
             try {
                 await makeRequest(
                     'DELETE',
-                    `/v2/webhooks/${createdMessageWebhookId}`,
+                    `/v4/webhooks/${createdMessageWebhookId}`,
                 );
                 console.log('✅ Message webhook cleanup successful');
             } catch (cleanupError) {
                 console.error('⚠️  Cleanup failed:', cleanupError.message);
                 console.error(
-                    `⚠️  Manual cleanup needed: DELETE /v2/webhooks/${createdMessageWebhookId}`,
+                    `⚠️  Manual cleanup needed: DELETE /v4/webhooks/${createdMessageWebhookId}`,
                 );
             }
         }
@@ -598,13 +598,13 @@ async function testWebhookV2CreateDelete() {
             try {
                 await makeRequest(
                     'DELETE',
-                    `/v2/webhooks/${createdCallWebhookId}`,
+                    `/v4/webhooks/${createdCallWebhookId}`,
                 );
                 console.log('✅ Call webhook cleanup successful');
             } catch (cleanupError) {
                 console.error('⚠️  Cleanup failed:', cleanupError.message);
                 console.error(
-                    `⚠️  Manual cleanup needed: DELETE /v2/webhooks/${createdCallWebhookId}`,
+                    `⚠️  Manual cleanup needed: DELETE /v4/webhooks/${createdCallWebhookId}`,
                 );
             }
         }
@@ -645,8 +645,8 @@ async function testWebhookV2CreateDelete() {
             case 'test-webhooks':
                 await testWebhookEndpoints();
                 break;
-            case 'test-webhook-v2':
-                await testWebhookV2CreateDelete();
+            case 'test-webhook-v4':
+                await testWebhookV4CreateDelete();
                 break;
             default:
                 console.error('Unknown operation:', OPERATION);

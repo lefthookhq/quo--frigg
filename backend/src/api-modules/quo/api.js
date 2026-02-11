@@ -62,12 +62,12 @@ class Api extends ApiKeyRequester {
             userById: (userId) => `/v1/users/${userId}`,
 
             // Webhook endpoints
-            webhooks: '/v2/webhooks',
-            webhookById: (id) => `/v2/webhooks/${id}`,
-            webhookCalls: '/v2/webhooks/calls',
-            webhookMessages: '/v2/webhooks/messages',
-            webhookCallSummaries: '/v2/webhooks/call-summaries',
-            webhookCallTranscripts: '/v2/webhooks/call-transcripts',
+            webhooks: '/v4/webhooks',
+            webhookById: (id) => `/v4/webhooks/${id}`,
+            webhookCalls: '/v4/webhooks/calls',
+            webhookMessages: '/v4/webhooks/messages',
+            webhookCallSummaries: '/v4/webhooks/call-summaries',
+            webhookCallTranscripts: '/v4/webhooks/call-transcripts',
 
             // Frigg-specific endpoints (require x-frigg-api-key header)
             friggContacts: '/frigg/contact',
