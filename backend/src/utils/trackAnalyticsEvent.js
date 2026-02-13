@@ -29,36 +29,33 @@ async function trackAnalyticsEvent(integration, event, data = {}) {
     }
 
     try {
+        const quoModuleName = integration.constructor.Definition.modules.quo.definition.getName();
 
-         const credential = await integration.commands.findCredential(
-            {userId: integration.userId},
-         );
-        
-        if (!credential) {
+        const quoEntity = await integration.commands.findEntity({
+            userId: integration.userId,
+            moduleName: quoModuleName,
+        });
+
+        if (!quoEntity) {
             console.warn(
-                `[Analytics][${integrationName}] No credential found for user ${integration.userId}, skipping tracking`,
+                `[Analytics][${integrationName}] No Quo entity found for user ${integration.userId}, skipping tracking`,
             );
+            return;
         }
 
         const user = await integration.commands.findOrganizationUserById(
             integration.userId,
         );
 
-        if (!user) {
-            console.warn(
-                `[Analytics][${integrationName}] User ${integration.userId} not found for analytics tracking`,
-            );
-        }
-
         await integration.quo.api.sendAnalyticsEvent({
             orgId: user?.appOrgId || null,
-            userId: credential.externalId || null,
+            userId: quoEntity.externalId || null,
             integration: integrationName,
             event,
             data,
         });
 
-        console.log(`[Analytics][${integrationName}] ✓ Tracked ${event}`);
+        console.log(`[Analytics][${integrationName}] Tracked ${event}`);
     } catch (error) {
         console.warn(
             `[Analytics][${integrationName}] Failed to track ${event}: ${error.message}`,
