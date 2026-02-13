@@ -1,5 +1,3 @@
-//todo: add await to the calls to this function
-
 /**
  * Track an analytics event to Quo's analytics API (fire-and-forget)
  *

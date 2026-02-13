@@ -1328,7 +1328,7 @@ class ClioIntegration extends BaseCRMIntegration {
             }
 
             // Track analytics event
-            trackAnalyticsEvent(
+            await trackAnalyticsEvent(
                 this,
                 QUO_ANALYTICS_EVENTS.CLICK_TO_CALL_INITIATED,
                 {
@@ -1790,8 +1790,8 @@ class ClioIntegration extends BaseCRMIntegration {
                 get: (id) => this.getMapping(id),
                 upsert: (id, data) => this.upsertMapping(id, data),
             },
-            onActivityCreated: ({ messageId }) => {
-                trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.MESSAGE_LOGGED, {
+            onActivityCreated: async ({ messageId }) => {
+                await trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.MESSAGE_LOGGED, {
                     messageId,
                 });
             },
@@ -1840,8 +1840,8 @@ class ClioIntegration extends BaseCRMIntegration {
                 get: (id) => this.getMapping(id),
                 upsert: (id, data) => this.upsertMapping(id, data),
             },
-            onActivityCreated: ({ callId, activityId }) => {
-                trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.CALL_LOGGED, {
+            onActivityCreated: async ({ callId, activityId }) => {
+                await trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.CALL_LOGGED, {
                     callId,
                     communicationId: activityId,
                 });

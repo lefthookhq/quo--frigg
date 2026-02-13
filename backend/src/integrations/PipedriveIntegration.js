@@ -1374,7 +1374,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                     console.log(
                         `[Pipedrive] ✓ Deleted Quo contact ${exactMatch.id} for person ${person.id}`,
                     );
-                    trackAnalyticsEvent(
+                    await trackAnalyticsEvent(
                         this,
                         QUO_ANALYTICS_EVENTS.CONTACT_DELETED,
                         { contactId: String(person.id) },
@@ -1399,7 +1399,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 result.action === 'created'
                     ? QUO_ANALYTICS_EVENTS.CONTACT_IMPORT
                     : QUO_ANALYTICS_EVENTS.CONTACT_UPDATED;
-            trackAnalyticsEvent(this, analyticsEvent, {
+            await trackAnalyticsEvent(this, analyticsEvent, {
                 contactId: String(person.id),
             });
 
@@ -1409,7 +1409,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 `[Pipedrive] Failed to sync person ${person.id}:`,
                 error.message,
             );
-            trackAnalyticsEvent(
+            await trackAnalyticsEvent(
                 this,
                 QUO_ANALYTICS_EVENTS.CONTACT_SYNC_FAILED,
                 {
@@ -1464,7 +1464,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
             console.error('[Quo Webhook] Processing error:', error);
 
             if (eventType.startsWith('message.')) {
-                trackAnalyticsEvent(
+                await trackAnalyticsEvent(
                     this,
                     QUO_ANALYTICS_EVENTS.MESSAGE_LOG_FAILED,
                     {
@@ -1473,7 +1473,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                     },
                 );
             } else if (eventType.startsWith('call.')) {
-                trackAnalyticsEvent(
+                await trackAnalyticsEvent(
                     this,
                     QUO_ANALYTICS_EVENTS.CALL_LOG_FAILED,
                     {
@@ -1539,8 +1539,8 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 get: (id) => this.getMapping(id),
                 upsert: (id, data) => this.upsertMapping(id, data),
             },
-            onActivityCreated: ({ callId }) => {
-                trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.CALL_LOGGED, {
+            onActivityCreated: async ({ callId }) => {
+                await trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.CALL_LOGGED, {
                     callId,
                 });
             },
@@ -1585,8 +1585,8 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 get: (id) => this.getMapping(id),
                 upsert: (id, data) => this.upsertMapping(id, data),
             },
-            onActivityCreated: ({ messageId }) => {
-                trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.MESSAGE_LOGGED, {
+            onActivityCreated: async ({ messageId }) => {
+                await trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.MESSAGE_LOGGED, {
                     messageId,
                 });
             },
@@ -1772,7 +1772,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
 
         // Track analytics if at least one note was created
         if (results.some((r) => r.logged)) {
-            trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.CALL_LOGGED, {
+            await trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.CALL_LOGGED, {
                 callId,
             });
         }
@@ -2286,7 +2286,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
             }
 
             // Step 8: Track analytics event
-            trackAnalyticsEvent(
+            await trackAnalyticsEvent(
                 this,
                 QUO_ANALYTICS_EVENTS.INTEGRATION_DISCONNECTED ||
                     'integration.disconnected',

@@ -647,7 +647,7 @@ class AttioIntegration extends BaseCRMIntegration {
                     );
                 }
 
-                trackAnalyticsEvent(
+                await trackAnalyticsEvent(
                     this,
                     QUO_ANALYTICS_EVENTS.CONTACT_DELETED,
                     { contactId: record_id },
@@ -668,7 +668,7 @@ class AttioIntegration extends BaseCRMIntegration {
             );
 
             if (objectType === 'people') {
-                trackAnalyticsEvent(
+                await trackAnalyticsEvent(
                     this,
                     QUO_ANALYTICS_EVENTS.CONTACT_SYNC_FAILED,
                     { contactId: record_id, error: error.message },
@@ -1826,7 +1826,7 @@ class AttioIntegration extends BaseCRMIntegration {
                 eventType === QuoWebhookEvents.MESSAGE_DELIVERED
             ) {
                 const messageId = body.data?.object?.id;
-                trackAnalyticsEvent(
+                await trackAnalyticsEvent(
                     this,
                     QUO_ANALYTICS_EVENTS.MESSAGE_LOG_FAILED,
                     { messageId, error: error.message },
@@ -1837,7 +1837,7 @@ class AttioIntegration extends BaseCRMIntegration {
             ) {
                 const callId =
                     body.data?.object?.id || body.data?.object?.callId;
-                trackAnalyticsEvent(
+                await trackAnalyticsEvent(
                     this,
                     QUO_ANALYTICS_EVENTS.CALL_LOG_FAILED,
                     { callId, error: error.message },
@@ -1894,8 +1894,8 @@ class AttioIntegration extends BaseCRMIntegration {
                 get: (id) => this.getMapping(id),
                 upsert: (id, data) => this.upsertMapping(id, data),
             },
-            onActivityCreated: ({ callId }) => {
-                trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.CALL_LOGGED, {
+            onActivityCreated: async ({ callId }) => {
+                await trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.CALL_LOGGED, {
                     callId,
                 });
             },
@@ -1938,8 +1938,8 @@ class AttioIntegration extends BaseCRMIntegration {
                 get: (id) => this.getMapping(id),
                 upsert: (id, data) => this.upsertMapping(id, data),
             },
-            onActivityCreated: ({ messageId }) => {
-                trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.MESSAGE_LOGGED, {
+            onActivityCreated: async ({ messageId }) => {
+                await trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.MESSAGE_LOGGED, {
                     messageId,
                 });
             },
@@ -2244,7 +2244,7 @@ class AttioIntegration extends BaseCRMIntegration {
                 hasVoicemail: enrichmentResult.hasVoicemail,
             });
 
-            trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.CALL_LOGGED, {
+            await trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.CALL_LOGGED, {
                 callId,
             });
 
@@ -2551,7 +2551,7 @@ class AttioIntegration extends BaseCRMIntegration {
                 action === 'created'
                     ? QUO_ANALYTICS_EVENTS.CONTACT_IMPORT
                     : QUO_ANALYTICS_EVENTS.CONTACT_UPDATED;
-            trackAnalyticsEvent(this, analyticsEvent, {
+            await trackAnalyticsEvent(this, analyticsEvent, {
                 contactId: quoContact.externalId,
             });
 
@@ -2564,7 +2564,7 @@ class AttioIntegration extends BaseCRMIntegration {
                 error.message,
             );
 
-            trackAnalyticsEvent(
+            await trackAnalyticsEvent(
                 this,
                 QUO_ANALYTICS_EVENTS.CONTACT_SYNC_FAILED,
                 { contactId: externalId, error: error.message },
