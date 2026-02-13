@@ -1497,9 +1497,13 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 upsert: (id, data) => this.upsertMapping(id, data),
             },
             onActivityCreated: async ({ messageId }) => {
-                await trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.MESSAGE_LOGGED, {
-                    messageId,
-                });
+                await trackAnalyticsEvent(
+                    this,
+                    QUO_ANALYTICS_EVENTS.MESSAGE_LOGGED,
+                    {
+                        messageId,
+                    },
+                );
             },
         });
 

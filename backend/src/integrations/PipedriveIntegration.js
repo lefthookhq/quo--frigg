@@ -1540,9 +1540,13 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 upsert: (id, data) => this.upsertMapping(id, data),
             },
             onActivityCreated: async ({ callId }) => {
-                await trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.CALL_LOGGED, {
-                    callId,
-                });
+                await trackAnalyticsEvent(
+                    this,
+                    QUO_ANALYTICS_EVENTS.CALL_LOGGED,
+                    {
+                        callId,
+                    },
+                );
             },
         });
 
@@ -1586,9 +1590,13 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 upsert: (id, data) => this.upsertMapping(id, data),
             },
             onActivityCreated: async ({ messageId }) => {
-                await trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.MESSAGE_LOGGED, {
-                    messageId,
-                });
+                await trackAnalyticsEvent(
+                    this,
+                    QUO_ANALYTICS_EVENTS.MESSAGE_LOGGED,
+                    {
+                        messageId,
+                    },
+                );
             },
         });
 

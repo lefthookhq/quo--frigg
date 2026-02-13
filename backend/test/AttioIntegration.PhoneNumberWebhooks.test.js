@@ -12,13 +12,25 @@ describe('BaseCRMIntegration - Phone Number ID Webhook Subscriptions', () => {
             getPhoneNumber: jest.fn().mockImplementation((phoneId) => {
                 const phones = {
                     'phone-id-1': {
-                        data: { id: 'phone-id-1', phoneNumber: '+12125551234', name: 'Main Line' },
+                        data: {
+                            id: 'phone-id-1',
+                            phoneNumber: '+12125551234',
+                            name: 'Main Line',
+                        },
                     },
                     'phone-id-2': {
-                        data: { id: 'phone-id-2', phoneNumber: '+19175555678', name: 'Support Line' },
+                        data: {
+                            id: 'phone-id-2',
+                            phoneNumber: '+19175555678',
+                            name: 'Support Line',
+                        },
                     },
                     'phone-id-3': {
-                        data: { id: 'phone-id-3', phoneNumber: '+14155559999', name: 'Sales Line' },
+                        data: {
+                            id: 'phone-id-3',
+                            phoneNumber: '+14155559999',
+                            name: 'Sales Line',
+                        },
                     },
                 };
                 return Promise.resolve(phones[phoneId] || { data: null });

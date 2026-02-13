@@ -1791,9 +1791,13 @@ class ClioIntegration extends BaseCRMIntegration {
                 upsert: (id, data) => this.upsertMapping(id, data),
             },
             onActivityCreated: async ({ messageId }) => {
-                await trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.MESSAGE_LOGGED, {
-                    messageId,
-                });
+                await trackAnalyticsEvent(
+                    this,
+                    QUO_ANALYTICS_EVENTS.MESSAGE_LOGGED,
+                    {
+                        messageId,
+                    },
+                );
             },
         });
 
@@ -1841,10 +1845,14 @@ class ClioIntegration extends BaseCRMIntegration {
                 upsert: (id, data) => this.upsertMapping(id, data),
             },
             onActivityCreated: async ({ callId, activityId }) => {
-                await trackAnalyticsEvent(this, QUO_ANALYTICS_EVENTS.CALL_LOGGED, {
-                    callId,
-                    communicationId: activityId,
-                });
+                await trackAnalyticsEvent(
+                    this,
+                    QUO_ANALYTICS_EVENTS.CALL_LOGGED,
+                    {
+                        callId,
+                        communicationId: activityId,
+                    },
+                );
             },
         });
 

@@ -29,7 +29,8 @@ async function trackAnalyticsEvent(integration, event, data = {}) {
     }
 
     try {
-        const quoModuleName = integration.constructor.Definition.modules.quo.definition.getName();
+        const quoModuleName =
+            integration.constructor.Definition.modules.quo.definition.getName();
 
         const quoEntity = await integration.commands.findEntity({
             userId: integration.userId,
