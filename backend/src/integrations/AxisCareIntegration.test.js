@@ -227,50 +227,10 @@ describe('AxisCareIntegration', () => {
         });
 
         describe('setupWebhooks', () => {
-            it('should setup Quo webhooks', async () => {
-                // Mock _fetchAndStoreEnabledPhoneIds (inherited from BaseCRMIntegration)
-                integration._fetchAndStoreEnabledPhoneIds = jest
-                    .fn()
-                    .mockResolvedValue(['phone-id-1', 'phone-id-2']);
-
-                // Mock the Quo API webhook creation
-                mockQuoApi.api.createCallWebhook = jest.fn().mockResolvedValue({
-                    data: {
-                        id: 'call-webhook-123',
-                        key: 'call-webhook-key',
-                    },
-                });
-                mockQuoApi.api.createCallSummaryWebhook = jest
-                    .fn()
-                    .mockResolvedValue({
-                        data: {
-                            id: 'callsummary-webhook-123',
-                            key: 'callsummary-webhook-key',
-                        },
-                    });
-
-                // Mock commands.updateIntegrationConfig
-                integration.commands.updateIntegrationConfig = jest
-                    .fn()
-                    .mockResolvedValue({});
-
-                // Set BASE_URL for webhook URL generation
-                process.env.BASE_URL = 'https://test.com';
-
+            it('should be a no-op (webhooks managed per-phone-mapping)', async () => {
                 const result = await integration.setupWebhooks();
 
-                expect(result.overallStatus).toBe('success');
-                expect(result.quo.status).toBe('configured');
-                expect(
-                    integration._fetchAndStoreEnabledPhoneIds,
-                ).toHaveBeenCalled();
-                expect(mockQuoApi.api.createCallWebhook).toHaveBeenCalled();
-                expect(
-                    mockQuoApi.api.createCallSummaryWebhook,
-                ).toHaveBeenCalled();
-
-                // Cleanup
-                delete process.env.BASE_URL;
+                expect(result.overallStatus).toBe('skipped');
             });
         });
     });

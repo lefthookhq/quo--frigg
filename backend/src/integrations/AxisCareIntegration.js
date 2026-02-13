@@ -789,6 +789,8 @@ class AxisCareIntegration extends BaseCRMIntegration {
      * @returns {Promise<void>}
      * @throws {Error} If signature is invalid or missing
      */
+    // TODO: When re-enabled, use chunked webhook keys from phoneNumberWebhookSubscriptions
+    // instead of the removed global keys (quoCallWebhookKey / quoCallSummaryWebhookKey).
     async _verifyQuoWebhookSignature(headers, body, eventType) {
         const signatureHeader = headers['openphone-signature'];
 
@@ -1714,242 +1716,16 @@ class AxisCareIntegration extends BaseCRMIntegration {
     }
 
     /**
-     * Setup webhooks for both AxisCare and Quo
-     * AxisCare webhooks are configured manually via AxisCare admin UI
-     * Quo webhooks are created programmatically via this method
-     *
-     * @returns {Promise<Object>} Setup results
+     * No-op override. Quo webhooks are managed per-phone-mapping
+     * via _managePhoneWebhookSubscriptions(), not globally at setup time.
      */
     async setupWebhooks() {
-        const results = {
-            axiscare: null,
-            quo: null,
-            overallStatus: 'success',
-        };
-
-        try {
-            results.quo = await this.setupQuoWebhook();
-
-            if (results.quo.status === 'failed') {
-                results.overallStatus = 'failed';
-                throw new Error(
-                    'Quo webhook setup failed. Quo webhooks are required for call/SMS logging to AxisCare.',
-                );
-            }
-
-            console.log(
-                '[Webhook Setup] ✓ Quo webhooks configured successfully',
-            );
-            return results;
-        } catch (error) {
-            console.error('[Webhook Setup] Failed:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Setup Quo webhooks (call and call-summary webhooks)
-     * Registers webhooks with Quo API and stores webhook IDs + keys in config
-     * Uses atomic pattern: creates all webhooks before saving config, with rollback on failure
-     * @private
-     * @returns {Promise<Object>} Setup result with status, webhookIds, webhookUrls, etc.
-     */
-    async setupQuoWebhook() {
-        const createdWebhooks = [];
-
-        try {
-            if (
-                this.config?.quoCallWebhookId &&
-                this.config?.quoCallSummaryWebhookId
-            ) {
-                console.log(
-                    `[Quo] Webhooks already registered: call=${this.config.quoCallWebhookId}, callSummary=${this.config.quoCallSummaryWebhookId}`,
-                );
-                return {
-                    status: 'already_configured',
-                    callWebhookId: this.config.quoCallWebhookId,
-                    callSummaryWebhookId: this.config.quoCallSummaryWebhookId,
-                    webhookUrl: this.config.quoWebhooksUrl,
-                };
-            }
-
-            const hasPartialConfig =
-                this.config?.quoCallWebhookId ||
-                this.config?.quoCallSummaryWebhookId;
-
-            if (hasPartialConfig) {
-                console.warn(
-                    '[Quo] Partial webhook configuration detected - cleaning up before retry',
-                );
-
-                if (this.config?.quoCallWebhookId) {
-                    try {
-                        await this.quo.api.deleteWebhook(
-                            this.config.quoCallWebhookId,
-                        );
-                        console.log(
-                            `[Quo] Cleaned up orphaned call webhook: ${this.config.quoCallWebhookId}`,
-                        );
-                    } catch (cleanupError) {
-                        console.warn(
-                            `[Quo] Could not clean up call webhook (may have been deleted): ${cleanupError.message}`,
-                        );
-                    }
-                }
-
-                if (this.config?.quoCallSummaryWebhookId) {
-                    try {
-                        await this.quo.api.deleteWebhook(
-                            this.config.quoCallSummaryWebhookId,
-                        );
-                        console.log(
-                            `[Quo] Cleaned up orphaned call-summary webhook: ${this.config.quoCallSummaryWebhookId}`,
-                        );
-                    } catch (cleanupError) {
-                        console.warn(
-                            `[Quo] Could not clean up call-summary webhook (may have been deleted): ${cleanupError.message}`,
-                        );
-                    }
-                }
-            }
-
-            const webhookUrl = this._generateWebhookUrl(`/webhooks/${this.id}`);
-
-            console.log(`[Quo] Registering call webhooks at: ${webhookUrl}`);
-
-            // Fetch and store phone numbers metadata for webhook filtering and phone mapping
-            // Non-critical: if this fails, phone mapping can still fetch lazily later
-            try {
-                await this._fetchAndStoreEnabledPhoneIds();
-            } catch (error) {
-                console.warn(
-                    '[Quo] Failed to fetch phone numbers metadata (non-critical):',
-                    error.message,
-                );
-            }
-
-            const callWebhookResponse = await this.quo.api.createCallWebhook({
-                url: webhookUrl,
-                events: this.constructor.WEBHOOK_EVENTS.QUO_CALLS,
-                label: this.constructor.WEBHOOK_LABELS.QUO_CALLS,
-                status: 'enabled',
-            });
-
-            if (!callWebhookResponse?.data?.id) {
-                throw new Error(
-                    'Invalid Quo call webhook response: missing webhook ID',
-                );
-            }
-
-            if (!callWebhookResponse.data.key) {
-                throw new Error(
-                    'Invalid Quo call webhook response: missing webhook key',
-                );
-            }
-
-            const callWebhookId = callWebhookResponse.data.id;
-            const callWebhookKey = callWebhookResponse.data.key;
-
-            createdWebhooks.push({
-                type: 'call',
-                id: callWebhookId,
-            });
-
-            console.log(
-                `[Quo] ✓ Call webhook registered with ID: ${callWebhookId}`,
-            );
-
-            const callSummaryWebhookResponse =
-                await this.quo.api.createCallSummaryWebhook({
-                    url: webhookUrl,
-                    events: this.constructor.WEBHOOK_EVENTS.QUO_CALL_SUMMARIES,
-                    label: this.constructor.WEBHOOK_LABELS.QUO_CALL_SUMMARIES,
-                    status: 'enabled',
-                });
-
-            if (!callSummaryWebhookResponse?.data?.id) {
-                throw new Error(
-                    'Invalid Quo call-summary webhook response: missing webhook ID',
-                );
-            }
-
-            if (!callSummaryWebhookResponse.data.key) {
-                throw new Error(
-                    'Invalid Quo call-summary webhook response: missing webhook key',
-                );
-            }
-
-            const callSummaryWebhookId = callSummaryWebhookResponse.data.id;
-            const callSummaryWebhookKey = callSummaryWebhookResponse.data.key;
-
-            createdWebhooks.push({
-                type: 'callSummary',
-                id: callSummaryWebhookId,
-            });
-
-            console.log(
-                `[Quo] ✓ Call-summary webhook registered with ID: ${callSummaryWebhookId}`,
-            );
-
-            const updatedConfig = {
-                ...this.config,
-                quoCallWebhookId: callWebhookId,
-                quoCallWebhookKey: callWebhookKey,
-                quoCallSummaryWebhookId: callSummaryWebhookId,
-                quoCallSummaryWebhookKey: callSummaryWebhookKey,
-                quoWebhooksUrl: webhookUrl,
-                quoWebhooksCreatedAt: new Date().toISOString(),
-            };
-
-            await this.commands.updateIntegrationConfig({
-                integrationId: this.id,
-                config: updatedConfig,
-            });
-
-            this.config = updatedConfig;
-
-            console.log(`[Quo] ✓ Keys stored securely (encrypted at rest)`);
-
-            return {
-                status: 'configured',
-                callWebhookId: callWebhookId,
-                callSummaryWebhookId: callSummaryWebhookId,
-                webhookUrl: webhookUrl,
-            };
-        } catch (error) {
-            console.error('[Quo] Failed to setup webhooks:', error);
-
-            if (createdWebhooks.length > 0) {
-                console.warn(
-                    `[Quo] Rolling back ${createdWebhooks.length} created webhook(s)`,
-                );
-
-                for (const webhook of createdWebhooks) {
-                    try {
-                        await this.quo.api.deleteWebhook(webhook.id);
-                        console.log(
-                            `[Quo] ✓ Rolled back ${webhook.type} webhook ${webhook.id}`,
-                        );
-                    } catch (rollbackError) {
-                        console.error(
-                            `[Quo] Failed to rollback ${webhook.type} webhook ${webhook.id}:`,
-                            rollbackError.message,
-                        );
-                    }
-                }
-            }
-
-            return {
-                status: 'failed',
-                error: error.message,
-            };
-        }
+        return { overallStatus: 'skipped' };
     }
 
     /**
      * Override handlePostCreateSetup to skip automatic sync for AxisCare
      * AxisCare requires manual sync per siteNumber via syncClientsToQuo action
-     * Webhooks are still set up for call logging
      *
      * @param {Object} params
      * @param {Object} params.data - Event data containing integrationId
@@ -1962,10 +1738,8 @@ class AxisCareIntegration extends BaseCRMIntegration {
             `[AxisCare] Running post-create setup for integration ${integrationId}`,
         );
 
-        // Set up Quo webhooks (still needed for call logging)
-        await this.setupWebhooks();
-
         // Skip automatic initial sync - AxisCare requires manual sync per siteNumber
+        // Quo webhooks are created per-phone-mapping via _managePhoneWebhookSubscriptions()
         console.log(
             '[AxisCare] Skipping automatic initial sync - use manual sync per siteNumber',
         );
