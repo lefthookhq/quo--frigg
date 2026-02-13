@@ -164,14 +164,14 @@ API key modules use a simple 2-step process:
 **Using JWT Token:**
 
 ```bash
-curl -X GET "${FRIGG_URL}/api/authorize?entityType=quo" \
+curl -X GET "${FRIGG_URL}/api/authorize?entityType=quo-axisCare" \
   -H "Authorization: Bearer ${FRIGG_JWT_TOKEN}"
 ```
 
 **Using Shared Secret:**
 
 ```bash
-curl -X GET "${FRIGG_URL}/api/authorize?entityType=quo" \
+curl -X GET "${FRIGG_URL}/api/authorize?entityType=quo-attio" \
   -H 'x-frigg-api-key: '"${FRIGG_API_KEY}" \
   -H "x-frigg-appuserid: ${FRIGG_APP_USER_ID}" \
   -H "x-frigg-apporgid: ${FRIGG_APP_ORG_ID}"
@@ -204,7 +204,7 @@ curl -X POST "${FRIGG_URL}/api/authorize" \
   -H "Authorization: Bearer ${FRIGG_JWT_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
-    "entityType": "quo",
+    "entityType": "quo-zoho",
     "data": {
       "apiKey": "'"${QUO_API_KEY}"'"
     }
@@ -220,7 +220,7 @@ curl -X POST "${FRIGG_URL}/api/authorize" \
   -H "x-frigg-appuserid: ${FRIGG_APP_USER_ID}" \
   -H "Content-Type: application/json" \
   -d '{
-    "entityType": "quo",
+    "entityType": "quo-axisCare",
     "data": {
       "apiKey": "'"${QUO_API_KEY}"'"
     }
@@ -233,7 +233,7 @@ curl -X POST "${FRIGG_URL}/api/authorize" \
 {
   "entity_id": "7",
   "credential_id": "12",
-  "entityType": "quo"
+  "entityType": "quo-attio"
 }
 ```
 
@@ -332,11 +332,11 @@ curl -X POST "${FRIGG_URL}/api/integrations" \
 
 The `config.type` field determines which integration class is used:
 
-| Type           | API Modules     | Description                      |
-| -------------- | --------------- | -------------------------------- |
-| `axiscare`     | quo + axiscare  | AxisCare to Quo client sync      |
-| `attio`        | quo + attio     | Attio to Quo person/company sync |
-| `scaling-test` | quo + scaletest | Development/testing integration  |
+| Type           | API Modules               | Description                      |
+| -------------- | ------------------------- | -------------------------------- |
+| `axiscare`     | quo-axisCare + axiscare   | AxisCare to Quo client sync      |
+| `attio`        | quo-attio + attio         | Attio to Quo person/company sync |
+| `scaling-test` | quo-scaletest + scaletest | Development/testing integration  |
 
 ### Get Integration Details
 
