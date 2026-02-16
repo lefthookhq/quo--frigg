@@ -18,7 +18,7 @@
  * @param {Object} [data={}] - Event-specific data (contactId, messageId, callId, error)
  * @returns {void}
  */
-function trackAnalyticsEvent(integration, event, data = {}) {
+async function trackAnalyticsEvent(integration, event, data = {}) {
     const integrationName = integration.constructor.Definition.name;
 
     if (!integration?.quo?.api || !integration?.commands) {
@@ -28,31 +28,40 @@ function trackAnalyticsEvent(integration, event, data = {}) {
         return;
     }
 
-    integration.commands
-        .findOrganizationUserById(integration.userId)
-        .then((user) => {
-            if (!user) {
-                console.warn(
-                    `[Analytics][${integrationName}] User ${integration.userId} not found for analytics tracking`,
-                );
-            }
+    try {
+        const quoModuleName =
+            integration.constructor.Definition.modules.quo.definition.getName();
 
-            return integration.quo.api.sendAnalyticsEvent({
-                orgId: user?.appOrgId || null,
-                userId: user?.id || null,
-                integration: integrationName,
-                event,
-                data,
-            });
-        })
-        .then(() => {
-            console.log(`[Analytics][${integrationName}] ✓ Tracked ${event}`);
-        })
-        .catch((error) => {
-            console.warn(
-                `[Analytics][${integrationName}] Failed to track ${event}: ${error.message}`,
-            );
+        const quoEntity = await integration.commands.findEntity({
+            userId: integration.userId,
+            moduleName: quoModuleName,
         });
+
+        if (!quoEntity) {
+            console.warn(
+                `[Analytics][${integrationName}] No Quo entity found for user ${integration.userId}, skipping tracking`,
+            );
+            return;
+        }
+
+        const user = await integration.commands.findOrganizationUserById(
+            integration.userId,
+        );
+
+        await integration.quo.api.sendAnalyticsEvent({
+            orgId: user?.appOrgId || null,
+            userId: quoEntity.externalId || null,
+            integration: integrationName,
+            event,
+            data,
+        });
+
+        console.log(`[Analytics][${integrationName}] Tracked ${event}`);
+    } catch (error) {
+        console.warn(
+            `[Analytics][${integrationName}] Failed to track ${event}: ${error.message}`,
+        );
+    }
 }
 
 module.exports = {
