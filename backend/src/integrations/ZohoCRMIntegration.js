@@ -242,7 +242,10 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         const source = 'openphone-zoho';
 
         // Generate sourceUrl for linking back to Zoho CRM
-        const sourceUrl = `https://crm.zoho.com/crm/org/tab/Contacts/${externalId}`;
+        const orgDomainName = await this._getZohoOrgDomainName();
+        const crmBase = this.zoho.api.getCrmBaseUrl();
+        const tab = `${objectType}s`;
+        const sourceUrl = `${crmBase}/crm/${orgDomainName}/tab/${tab}/${externalId}`;
 
         return {
             externalId,
@@ -297,6 +300,18 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             return person.Parent_Account?.name || null;
         }
         return person.Account_Name?.name || null;
+    }
+
+    async _getZohoOrgDomainName() {
+        if (this._zohoOrgDomainName) return this._zohoOrgDomainName;
+        try {
+            const orgResponse = await this.zoho.api.getOrg();
+            this._zohoOrgDomainName = orgResponse.org?.[0]?.domain_name || 'org';
+        } catch (error) {
+            console.warn('[Zoho CRM] Failed to fetch org info:', error.message);
+            this._zohoOrgDomainName = 'org';
+        }
+        return this._zohoOrgDomainName;
     }
 
     async logSMSToActivity(activity) {
