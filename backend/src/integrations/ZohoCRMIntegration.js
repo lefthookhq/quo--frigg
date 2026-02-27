@@ -306,7 +306,8 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         if (this._zohoOrgDomainName) return this._zohoOrgDomainName;
         try {
             const orgResponse = await this.zoho.api.getOrg();
-            this._zohoOrgDomainName = orgResponse.org?.[0]?.domain_name || 'org';
+            this._zohoOrgDomainName =
+                orgResponse.org?.[0]?.domain_name || 'org';
         } catch (error) {
             console.warn('[Zoho CRM] Failed to fetch org info:', error.message);
             this._zohoOrgDomainName = 'org';

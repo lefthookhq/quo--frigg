@@ -267,19 +267,17 @@ describe('bulkUpsertToQuo - Pagination', () => {
                     if (callCount === 2) {
                         const returnedContacts = externalIds.slice(0, 10);
                         return {
-                            data: returnedContacts.map(
-                                (externalId, index) => ({
-                                    id: `quo-${externalId}`,
-                                    externalId,
-                                    defaultFields: {
-                                        phoneNumbers: [
-                                            {
-                                                value: `+155501${String(index + 20).padStart(4, '0')}`,
-                                            },
-                                        ],
-                                    },
-                                }),
-                            ),
+                            data: returnedContacts.map((externalId, index) => ({
+                                id: `quo-${externalId}`,
+                                externalId,
+                                defaultFields: {
+                                    phoneNumbers: [
+                                        {
+                                            value: `+155501${String(index + 20).padStart(4, '0')}`,
+                                        },
+                                    ],
+                                },
+                            })),
                         };
                     }
                 });

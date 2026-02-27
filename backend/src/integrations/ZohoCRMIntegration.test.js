@@ -59,8 +59,12 @@ describe('ZohoCRMIntegration (Refactored)', () => {
                 createNote: jest.fn(),
                 enableNotification: jest.fn(),
                 disableNotification: jest.fn(),
-                getOrg: jest.fn().mockResolvedValue({ org: [{ domain_name: 'org12345' }] }),
-                getCrmBaseUrl: jest.fn().mockReturnValue('https://crm.zoho.com'),
+                getOrg: jest
+                    .fn()
+                    .mockResolvedValue({ org: [{ domain_name: 'org12345' }] }),
+                getCrmBaseUrl: jest
+                    .fn()
+                    .mockReturnValue('https://crm.zoho.com'),
                 leads: {
                     getAll: jest.fn(),
                     get: jest.fn(),
