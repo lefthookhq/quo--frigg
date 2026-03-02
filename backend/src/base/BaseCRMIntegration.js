@@ -1104,7 +1104,7 @@ class BaseCRMIntegration extends IntegrationBase {
                 externalId: quoContact.externalId,
                 quoContactId,
                 phoneNumber,
-                entityType: 'people',
+                entityType: quoContact.sourceEntityType || 'people',
                 lastSyncedAt: new Date().toISOString(),
                 syncMethod: 'upsert',
                 action,
