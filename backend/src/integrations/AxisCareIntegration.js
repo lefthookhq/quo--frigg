@@ -1579,8 +1579,13 @@ class AxisCareIntegration extends BaseCRMIntegration {
                     .replace(/Z$/, '+00:00');
             };
 
+            const VALID_TAG_TYPES = ['client', 'lead', 'caregiver', 'applicant'];
+            const tagType = VALID_TAG_TYPES.includes(activity.contactType?.toLowerCase())
+                ? activity.contactType.toLowerCase()
+                : 'client';
+
             const callLogData = {
-                callerName: activity.callerName,
+                callerName: activity.callerName || activity.callerPhone || 'Unknown',
                 callerPhone: activity.callerPhone,
                 followUp: false,
                 dateTime: formatDateTime(activity.timestamp),
@@ -1590,7 +1595,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 notes: activity.summary || 'Phone call',
                 tags: [
                     {
-                        type: activity.contactType,
+                        type: tagType,
                         entityId: parseInt(activity.contactId, 10),
                     },
                 ],
@@ -1599,7 +1604,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
             const response = await api.createCallLog(callLogData);
 
             console.log(
-                `[Quo Webhook] ✓ Call logged to AxisCare ${activity.contactType} ${activity.contactId}` +
+                `[Quo Webhook] ✓ Call logged to AxisCare ${tagType} ${activity.contactId}` +
                     (targetSiteNumber ? ` (site: ${targetSiteNumber})` : ''),
             );
 
