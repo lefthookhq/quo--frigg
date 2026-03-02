@@ -59,6 +59,12 @@ describe('ZohoCRMIntegration (Refactored)', () => {
                 createNote: jest.fn(),
                 enableNotification: jest.fn(),
                 disableNotification: jest.fn(),
+                getOrg: jest
+                    .fn()
+                    .mockResolvedValue({ org: [{ domain_name: 'org12345' }] }),
+                getCrmBaseUrl: jest
+                    .fn()
+                    .mockReturnValue('https://crm.zoho.com'),
                 leads: {
                     getAll: jest.fn(),
                     get: jest.fn(),
@@ -334,7 +340,7 @@ describe('ZohoCRMIntegration (Refactored)', () => {
                 expect(result.externalId).toBe('contact-123');
                 expect(result.source).toBe('openphone-zoho');
                 expect(result.sourceUrl).toBe(
-                    'https://crm.zoho.com/crm/org/tab/Contacts/contact-123',
+                    'https://crm.zoho.com/crm/org12345/tab/Contacts/contact-123',
                 );
                 expect(result.defaultFields.firstName).toBe('John');
                 expect(result.defaultFields.lastName).toBe('Doe');
@@ -361,7 +367,7 @@ describe('ZohoCRMIntegration (Refactored)', () => {
 
                 expect(result.source).toBe('openphone-zoho');
                 expect(result.sourceUrl).toBe(
-                    'https://crm.zoho.com/crm/org/tab/Contacts/account-456',
+                    'https://crm.zoho.com/crm/org12345/tab/Accounts/account-456',
                 );
                 expect(result.externalId).toBe('account-456');
                 expect(result.defaultFields.firstName).toBe('Smith Industries');

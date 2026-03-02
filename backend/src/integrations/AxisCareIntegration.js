@@ -1579,13 +1579,21 @@ class AxisCareIntegration extends BaseCRMIntegration {
                     .replace(/Z$/, '+00:00');
             };
 
-            const VALID_TAG_TYPES = ['client', 'lead', 'caregiver', 'applicant'];
-            const tagType = VALID_TAG_TYPES.includes(activity.contactType?.toLowerCase())
+            const VALID_TAG_TYPES = [
+                'client',
+                'lead',
+                'caregiver',
+                'applicant',
+            ];
+            const tagType = VALID_TAG_TYPES.includes(
+                activity.contactType?.toLowerCase(),
+            )
                 ? activity.contactType.toLowerCase()
                 : 'client';
 
             const callLogData = {
-                callerName: activity.callerName || activity.callerPhone || 'Unknown',
+                callerName:
+                    activity.callerName || activity.callerPhone || 'Unknown',
                 callerPhone: activity.callerPhone,
                 followUp: false,
                 dateTime: formatDateTime(activity.timestamp),
