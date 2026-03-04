@@ -27,14 +27,15 @@ The `phoneNumberSiteMappings` object uses **AxisCare site numbers as keys** with
 
 ## PATCH Semantics
 
-| Element | Behavior |
-|---------|----------|
-| **Sites** | **Merged** - New sites are added, existing sites are updated |
+| Element          | Behavior                                                                     |
+| ---------------- | ---------------------------------------------------------------------------- |
+| **Sites**        | **Merged** - New sites are added, existing sites are updated                 |
 | **Phone arrays** | **Replaced** - The `quoPhoneNumbers` array is replaced entirely (not merged) |
 
 ### Example
 
 **Existing config:**
+
 ```json
 {
   "site1": { "quoPhoneNumbers": ["phone1", "phone2", "phone3"] },
@@ -43,6 +44,7 @@ The `phoneNumberSiteMappings` object uses **AxisCare site numbers as keys** with
 ```
 
 **PATCH request:**
+
 ```json
 {
   "site1": { "quoPhoneNumbers": ["phone1", "phone2"] },
@@ -51,6 +53,7 @@ The `phoneNumberSiteMappings` object uses **AxisCare site numbers as keys** with
 ```
 
 **Result:**
+
 ```json
 {
   "site1": { "quoPhoneNumbers": ["phone1", "phone2"] },
@@ -92,11 +95,11 @@ Send an empty array to remove all phones from a site:
 }
 ```
 
-| Field | Description |
-|-------|-------------|
-| `sitesCount` | Total number of sites configured |
-| `totalPhoneCount` | Total phone numbers across all sites |
-| `updatedSites` | Sites modified in this request |
+| Field                | Description                                    |
+| -------------------- | ---------------------------------------------- |
+| `sitesCount`         | Total number of sites configured               |
+| `totalPhoneCount`    | Total phone numbers across all sites           |
+| `updatedSites`       | Sites modified in this request                 |
 | `webhookSync.status` | `success`, `no_phones`, `skipped`, or `failed` |
 
 ## Curl Examples
@@ -174,18 +177,31 @@ curl -X POST "$BASE_URL/api/axisCare-integration/$INTEGRATION_ID/phone-mapping/s
 
 ## Validation Errors
 
-| Error | Cause |
-|-------|-------|
-| `phoneNumberSiteMappings is required` | Missing request body field |
-| `phoneNumberSiteMappings must be an object` | Sent array instead of object |
+| Error                                           | Cause                                 |
+| ----------------------------------------------- | ------------------------------------- |
+| `phoneNumberSiteMappings is required`           | Missing request body field            |
+| `phoneNumberSiteMappings must be an object`     | Sent array instead of object          |
 | `quoPhoneNumbers must be an array for site 'X'` | Site config missing `quoPhoneNumbers` |
-| `Invalid phone number in site 'X'` | Empty string in phone array |
+| `Invalid phone number in site 'X'`              | Empty string in phone array           |
+
+## Automatic Webhook Wiring
+
+Every phone mapping POST automatically triggers a full webhook reconciliation. After saving the mappings, the endpoint:
+
+1. **Resolves phone numbers to Quo phone IDs** — refreshes phone metadata from the Quo API, then matches each mapped phone number to its Quo ID using normalized comparison
+2. **Creates new webhook subscriptions** — registers `call.completed` and `call.summary.completed` webhooks on Quo, scoped to the resolved phone IDs. Phone IDs are chunked into groups of 10 (max per webhook), creating multiple webhooks if needed
+3. **Deletes old webhooks** — removes the previous webhook subscriptions only after the new ones are confirmed (create-first, delete-after for atomicity)
+4. **Persists subscriptions** — saves all webhook IDs and keys to the integration config for cleanup on deletion
+
+If creation fails partway through, newly created webhooks are rolled back and the old ones remain active.
+
+This means you do **not** need to call the `sync-webhooks` endpoint after updating mappings — it happens automatically. The `sync-webhooks` endpoint exists for manual reconciliation (e.g., if webhooks were deleted externally).
 
 ## Webhook Sync Status
 
-| Status | Meaning |
-|--------|---------|
-| `success` | Webhooks created/updated successfully |
+| Status      | Meaning                                |
+| ----------- | -------------------------------------- |
+| `success`   | Webhooks created/updated successfully  |
 | `no_phones` | Phone numbers not found in Quo account |
-| `skipped` | Quo API not available |
-| `failed` | Error occurred (check `error` field) |
+| `skipped`   | Quo API not available                  |
+| `failed`    | Error occurred (check `error` field)   |
