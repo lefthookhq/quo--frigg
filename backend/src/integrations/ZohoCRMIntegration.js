@@ -1930,8 +1930,12 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         // Use answeredBy (the user who answered) if available, otherwise fall back to userId (phone owner)
         // Skip getUser for Sona (AI agent) calls — Sona's userId is not a valid user ID
         const isSonaCall = callObject.aiHandled === 'ai-agent';
-        const userIdForDisplay = isSonaCall ? null : (callObject.answeredBy || callObject.userId);
-        const userDetails = userIdForDisplay ? await this.quo.api.getUser(userIdForDisplay) : null;
+        const userIdForDisplay = isSonaCall
+            ? null
+            : callObject.answeredBy || callObject.userId;
+        const userDetails = userIdForDisplay
+            ? await this.quo.api.getUser(userIdForDisplay)
+            : null;
         const userName = QuoCallContentBuilder.buildUserName(userDetails);
 
         const wasAnswered =
