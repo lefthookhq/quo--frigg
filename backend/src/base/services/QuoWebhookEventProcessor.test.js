@@ -532,5 +532,20 @@ describe('QuoWebhookEventProcessor', () => {
             expect(result.inboxNumber).toBe('');
             expect(result.userName).toBe('Quo User');
         });
+
+        it('skips getUser and returns default userName when userId is null', async () => {
+            const mockQuoApi = createMockQuoApi();
+
+            const result = await QuoWebhookEventProcessor.fetchCallMetadata(
+                mockQuoApi,
+                'phone_123',
+                null,
+            );
+
+            expect(mockQuoApi.getUser).not.toHaveBeenCalled();
+            expect(result.inboxName).toBe('📞 Sales');
+            expect(result.inboxNumber).toBe('+15551234567');
+            expect(result.userName).toBe('Quo User');
+        });
     });
 });

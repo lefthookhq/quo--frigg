@@ -1654,11 +1654,17 @@ class PipedriveIntegration extends BaseCRMIntegration {
 
         // Fetch metadata once for all participants
         // Use answeredBy (the user who answered) if available, otherwise fall back to userId (phone owner)
-        const userIdForDisplay = callObject.answeredBy || callObject.userId;
-        const [phoneNumberDetails, userDetails] = await Promise.all([
-            this.quo.api.getPhoneNumber(callObject.phoneNumberId),
-            this.quo.api.getUser(userIdForDisplay),
-        ]);
+        // Skip getUser for Sona (AI agent) calls — Sona's userId is not a valid user ID
+        const isSonaCall = callObject.aiHandled === 'ai-agent';
+        const userIdForDisplay = isSonaCall
+            ? null
+            : callObject.answeredBy || callObject.userId;
+        const phoneNumberDetails = await this.quo.api.getPhoneNumber(
+            callObject.phoneNumberId,
+        );
+        const userDetails = userIdForDisplay
+            ? await this.quo.api.getUser(userIdForDisplay)
+            : null;
 
         const inboxName =
             QuoCallContentBuilder.buildInboxName(phoneNumberDetails);
