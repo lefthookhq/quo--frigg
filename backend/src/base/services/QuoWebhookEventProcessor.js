@@ -379,10 +379,8 @@ class QuoWebhookEventProcessor {
      * @returns {Promise<{inboxName: string, inboxNumber: string, userName: string}>}
      */
     static async fetchCallMetadata(quoApi, phoneNumberId, userId) {
-        const [phoneNumberDetails, userDetails] = await Promise.all([
-            quoApi.getPhoneNumber(phoneNumberId),
-            quoApi.getUser(userId),
-        ]);
+        const phoneNumberDetails = await quoApi.getPhoneNumber(phoneNumberId);
+        const userDetails = userId ? await quoApi.getUser(userId) : null;
 
         return {
             inboxName: QuoCallContentBuilder.buildInboxName(phoneNumberDetails),

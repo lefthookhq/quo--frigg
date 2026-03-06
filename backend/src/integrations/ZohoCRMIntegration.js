@@ -1658,11 +1658,12 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             `[Quo Webhook] Found ${externalParticipants.length} external participant(s)`,
         );
 
+        const isSonaCall = callObject.aiHandled === 'ai-agent';
         const { inboxName, inboxNumber, userName } =
             await QuoWebhookEventProcessor.fetchCallMetadata(
                 this.quo.api,
                 callObject.phoneNumberId,
-                callObject.userId,
+                isSonaCall ? null : callObject.userId,
             );
 
         const deepLink = webhookData.data.deepLink || '#';
@@ -1927,8 +1928,10 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             participants[callObject.direction === 'outgoing' ? 0 : 1];
 
         // Use answeredBy (the user who answered) if available, otherwise fall back to userId (phone owner)
-        const userIdForDisplay = callObject.answeredBy || callObject.userId;
-        const userDetails = await this.quo.api.getUser(userIdForDisplay);
+        // Skip getUser for Sona (AI agent) calls — Sona's userId is not a valid user ID
+        const isSonaCall = callObject.aiHandled === 'ai-agent';
+        const userIdForDisplay = isSonaCall ? null : (callObject.answeredBy || callObject.userId);
+        const userDetails = userIdForDisplay ? await this.quo.api.getUser(userIdForDisplay) : null;
         const userName = QuoCallContentBuilder.buildUserName(userDetails);
 
         const wasAnswered =
