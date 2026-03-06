@@ -2002,11 +2002,17 @@ class AttioIntegration extends BaseCRMIntegration {
         }
 
         // Use answeredBy (the user who answered) if available, otherwise fall back to userId (phone owner)
-        const userIdForDisplay = call.answeredBy || call.userId;
-        const [phoneNumberDetails, userDetails] = await Promise.all([
-            this.quo.api.getPhoneNumber(call.phoneNumberId),
-            this.quo.api.getUser(userIdForDisplay),
-        ]);
+        // Skip getUser for Sona (AI agent) calls — Sona's userId is not a valid user ID
+        const isSonaCall = call.aiHandled === 'ai-agent';
+        const userIdForDisplay = isSonaCall
+            ? null
+            : call.answeredBy || call.userId;
+        const phoneNumberDetails = await this.quo.api.getPhoneNumber(
+            call.phoneNumberId,
+        );
+        const userDetails = userIdForDisplay
+            ? await this.quo.api.getUser(userIdForDisplay)
+            : null;
 
         const inboxName =
             QuoCallContentBuilder.buildInboxName(phoneNumberDetails);
@@ -2159,11 +2165,17 @@ class AttioIntegration extends BaseCRMIntegration {
 
         // Fetch metadata once for all participants
         // Use answeredBy (the user who answered) if available, otherwise fall back to userId (phone owner)
-        const userIdForDisplay = call.answeredBy || call.userId;
-        const [phoneNumberDetails, userDetails] = await Promise.all([
-            this.quo.api.getPhoneNumber(call.phoneNumberId),
-            this.quo.api.getUser(userIdForDisplay),
-        ]);
+        // Skip getUser for Sona (AI agent) calls — Sona's userId is not a valid user ID
+        const isSonaCall = call.aiHandled === 'ai-agent';
+        const userIdForDisplay = isSonaCall
+            ? null
+            : call.answeredBy || call.userId;
+        const phoneNumberDetails = await this.quo.api.getPhoneNumber(
+            call.phoneNumberId,
+        );
+        const userDetails = userIdForDisplay
+            ? await this.quo.api.getUser(userIdForDisplay)
+            : null;
 
         const inboxName =
             QuoCallContentBuilder.buildInboxName(phoneNumberDetails);
