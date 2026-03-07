@@ -253,7 +253,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             sourceUrl,
             defaultFields: {
                 firstName,
-                lastName: person.Last_Name || '',
+                lastName: person.First_Name ? person.Last_Name || '' : '',
                 company,
                 phoneNumbers,
                 emails,
@@ -268,7 +268,9 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         if (objectType === 'Account') {
             return person.Account_Name || 'Unknown';
         }
-        return person.First_Name || 'Unknown';
+        // If First_Name is absent, fall back to Last_Name so the contact
+        // doesn't show as "Unknown" in Quo (Last_Name is mandatory in Zoho)
+        return person.First_Name || person.Last_Name || '';
     }
 
     _extractPhoneNumbers(person, objectType) {

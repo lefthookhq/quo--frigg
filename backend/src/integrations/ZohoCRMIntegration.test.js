@@ -387,6 +387,19 @@ describe('ZohoCRMIntegration (Refactored)', () => {
                 expect(result.defaultFields.phoneNumbers).toEqual([]);
                 expect(result.defaultFields.emails).toEqual([]);
             });
+
+            it('should use Last_Name as firstName and empty lastName when First_Name is absent', async () => {
+                const contactNoFirstName = {
+                    id: 'contact-nofirst',
+                    Last_Name: 'Smith',
+                };
+
+                const result =
+                    await integration.transformPersonToQuo(contactNoFirstName);
+
+                expect(result.defaultFields.firstName).toBe('Smith');
+                expect(result.defaultFields.lastName).toBe('');
+            });
         });
 
         describe('logSMSToActivity', () => {
