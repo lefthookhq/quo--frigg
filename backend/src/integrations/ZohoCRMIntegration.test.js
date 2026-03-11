@@ -97,6 +97,7 @@ describe('ZohoCRMIntegration (Refactored)', () => {
                 createCallWebhook: jest.fn(),
                 createCallSummaryWebhook: jest.fn(),
                 deleteWebhook: jest.fn(),
+                getCallRecordings: jest.fn().mockResolvedValue({ data: [] }),
             },
         };
 
@@ -444,6 +445,138 @@ describe('ZohoCRMIntegration (Refactored)', () => {
                 expect(consoleSpy).toHaveBeenCalledWith(
                     'Call activity logging not supported - Zoho CRM API module lacks activities endpoint',
                 );
+
+                consoleSpy.mockRestore();
+            });
+        });
+
+        describe('_handleQuoCallEvent - Voice_Recording__s', () => {
+            let mockWebhookData;
+
+            beforeEach(() => {
+                mockWebhookData = {
+                    type: 'call.completed',
+                    data: {
+                        object: {
+                            id: 'call-123',
+                            status: 'completed',
+                            direction: 'inbound',
+                            duration: 120,
+                            createdAt: '2025-01-01T12:00:00Z',
+                            answeredAt: '2025-01-01T12:00:05Z',
+                            phoneNumberId: 'phone-id-1',
+                            userId: 'user-id-1',
+                            participants: [
+                                { phoneNumber: '+15550001111', type: 'user' },
+                                {
+                                    phoneNumber: '+15550002222',
+                                    type: 'external',
+                                },
+                            ],
+                        },
+                        deepLink: 'https://app.openphone.com/calls/call-123',
+                    },
+                };
+
+                integration.config = {
+                    phoneNumbersMetadata: [{ phoneNumber: '+15550001111' }],
+                };
+                integration._findZohoContactByPhone = jest
+                    .fn()
+                    .mockResolvedValue('zoho-contact-id');
+                integration.upsertMapping = jest.fn().mockResolvedValue({});
+                integration._verifyQuoWebhookSignature = jest
+                    .fn()
+                    .mockResolvedValue();
+
+                mockQuoApi.api.getCall = jest.fn().mockResolvedValue({
+                    data: mockWebhookData.data.object,
+                });
+                mockQuoApi.api.getPhoneNumber = jest.fn().mockResolvedValue({
+                    data: { number: '+15550001111', name: 'Sales' },
+                });
+                mockQuoApi.api.getUser = jest.fn().mockResolvedValue({
+                    data: { firstName: 'John', lastName: 'Doe' },
+                });
+                mockZohoCrm.api.logCall = jest.fn().mockResolvedValue({
+                    data: [
+                        { details: { id: 'zoho-call-id' }, code: 'SUCCESS' },
+                    ],
+                });
+            });
+
+            it('should set Voice_Recording__s when a recording URL is available', async () => {
+                mockQuoApi.api.getCallRecordings = jest.fn().mockResolvedValue({
+                    data: [
+                        {
+                            id: 'rec-1',
+                            url: 'https://recordings.example.com/rec-1.mp3',
+                            duration: 120,
+                        },
+                    ],
+                });
+
+                await integration._handleQuoCallEvent(mockWebhookData);
+
+                expect(mockZohoCrm.api.logCall).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        Voice_Recording__s:
+                            'https://recordings.example.com/rec-1.mp3',
+                    }),
+                );
+            });
+
+            it('should not set Voice_Recording__s when no recording is available', async () => {
+                mockQuoApi.api.getCallRecordings = jest
+                    .fn()
+                    .mockResolvedValue({ data: [] });
+
+                await integration._handleQuoCallEvent(mockWebhookData);
+
+                const logCallArg = mockZohoCrm.api.logCall.mock.calls[0][0];
+                expect(logCallArg.Voice_Recording__s).toBeUndefined();
+            });
+
+            it('should set Voice_Recording__s from voicemail URL for missed calls', async () => {
+                mockWebhookData.data.object.direction = 'inbound';
+                mockWebhookData.data.object.answeredAt = null;
+                mockWebhookData.data.object.duration = 0;
+                mockWebhookData.data.object.voicemail = {
+                    url: 'https://recordings.example.com/vm-1.mp3',
+                    duration: 30,
+                };
+
+                mockQuoApi.api.getCall = jest.fn().mockResolvedValue({
+                    data: mockWebhookData.data.object,
+                });
+                mockQuoApi.api.getCallRecordings = jest.fn();
+
+                await integration._handleQuoCallEvent(mockWebhookData);
+
+                expect(mockQuoApi.api.getCallRecordings).not.toHaveBeenCalled();
+                expect(mockZohoCrm.api.logCall).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        Voice_Recording__s:
+                            'https://recordings.example.com/vm-1.mp3',
+                    }),
+                );
+            });
+
+            it('should not crash when getCallRecordings fails', async () => {
+                mockQuoApi.api.getCallRecordings = jest
+                    .fn()
+                    .mockRejectedValue(new Error('API error'));
+                const consoleSpy = jest
+                    .spyOn(console, 'warn')
+                    .mockImplementation();
+
+                await integration._handleQuoCallEvent(mockWebhookData);
+
+                expect(consoleSpy).toHaveBeenCalledWith(
+                    expect.stringContaining('Could not fetch recordings'),
+                );
+                const logCallArg = mockZohoCrm.api.logCall.mock.calls[0][0];
+                expect(logCallArg.Voice_Recording__s).toBeUndefined();
 
                 consoleSpy.mockRestore();
             });
