@@ -64,6 +64,8 @@ class CallSummaryEnrichmentService {
 
         const recordings = recordingsResponse?.data || [];
         const voicemail = voicemailsResponse?.data;
+        const firstRecordingUrl =
+            recordings[0]?.url || voicemail?.recordingUrl || null;
 
         console.log(
             `[CallEnrichment] Found ${recordings.length} recording(s), ${voicemail ? '1 voicemail' : 'no voicemail'}`,
@@ -106,6 +108,7 @@ class CallSummaryEnrichmentService {
                 await crmAdapter.updateNote(oldNoteId, {
                     content: enrichedContent.content,
                     title: enrichedContent.title,
+                    voiceRecordingUrl: firstRecordingUrl,
                 });
                 newNoteId = oldNoteId; // Same note, just updated
                 console.log(`[CallEnrichment] ✓ Updated note ${newNoteId}`);
@@ -116,6 +119,7 @@ class CallSummaryEnrichmentService {
                     content: enrichedContent.content,
                     title: enrichedContent.title,
                     timestamp: callDetails.createdAt,
+                    voiceRecordingUrl: firstRecordingUrl,
                 });
                 console.log(`[CallEnrichment] ✓ Created new note ${newNoteId}`);
             }
@@ -133,6 +137,7 @@ class CallSummaryEnrichmentService {
                     content: enrichedContent.content,
                     title: enrichedContent.title,
                     timestamp: callDetails.createdAt,
+                    voiceRecordingUrl: firstRecordingUrl,
                 });
 
                 if (!newNoteId) {
@@ -186,6 +191,7 @@ class CallSummaryEnrichmentService {
             enrichedContent,
             recordingsCount: recordings.length,
             hasVoicemail: !!voicemail,
+            firstRecordingUrl,
         };
     }
 

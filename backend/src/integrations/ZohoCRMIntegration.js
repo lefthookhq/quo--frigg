@@ -1694,6 +1694,19 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 : callObject.duration,
         );
 
+        let callRecordingUrl = null;
+        if (callType !== 'Missed') {
+            try {
+                const recordingsResponse =
+                    await this.quo.api.getCallRecordings(callId);
+                callRecordingUrl = recordingsResponse?.data?.[0]?.url || null;
+            } catch (err) {
+                console.warn(
+                    `[Quo Webhook] Could not fetch recordings for ${callId}: ${err.message}`,
+                );
+            }
+        }
+
         const results = [];
         for (const contactPhone of externalParticipants) {
             const zohoContactId =
@@ -1757,8 +1770,10 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 $se_module: 'Contacts',
             };
 
-            if (callType === 'Missed' && callObject.voicemail?.url) {
-                callPayload.Voice_Recording__s = callObject.voicemail.url;
+            const voiceRecordingUrl =
+                callRecordingUrl || callObject.voicemail?.url;
+            if (voiceRecordingUrl) {
+                callPayload.Voice_Recording__s = voiceRecordingUrl;
             }
 
             const callResponse = await this.zoho.api.logCall(callPayload);
@@ -1985,8 +2000,13 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                     quoApi: this.quo.api,
                     crmAdapter: {
                         canUpdateNote: () => true, // Zoho CRM supports call updates!
-                        createNote: async ({ contactId, content, title }) => {
-                            const callResponse = await this.zoho.api.logCall({
+                        createNote: async ({
+                            contactId,
+                            content,
+                            title,
+                            voiceRecordingUrl,
+                        }) => {
+                            const logCallPayload = {
                                 Subject: title,
                                 Call_Type: callType,
                                 Call_Start_Time: this._formatDateTimeForZoho(
@@ -1997,14 +2017,31 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                                 Description: content,
                                 Who_Id: contactId,
                                 $se_module: 'Contacts',
-                            });
+                            };
+                            if (voiceRecordingUrl) {
+                                logCallPayload.Voice_Recording__s =
+                                    voiceRecordingUrl;
+                            }
+                            const callResponse =
+                                await this.zoho.api.logCall(logCallPayload);
                             return callResponse?.data?.[0]?.details?.id || null;
                         },
-                        updateNote: async (zohoCallId, { content, title }) => {
-                            return await this.zoho.api.updateCall(zohoCallId, {
+                        updateNote: async (
+                            zohoCallId,
+                            { content, title, voiceRecordingUrl },
+                        ) => {
+                            const updatePayload = {
                                 Subject: title,
                                 Description: content,
-                            });
+                            };
+                            if (voiceRecordingUrl) {
+                                updatePayload.Voice_Recording__s =
+                                    voiceRecordingUrl;
+                            }
+                            return await this.zoho.api.updateCall(
+                                zohoCallId,
+                                updatePayload,
+                            );
                         },
                     },
                     mappingRepo: {
