@@ -346,7 +346,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
             if (person.homePhone) {
                 phones.push({
                     name: 'phone',
-                    value: person.phone,
+                    value: person.homePhone,
                     primary: true,
                 });
             }
