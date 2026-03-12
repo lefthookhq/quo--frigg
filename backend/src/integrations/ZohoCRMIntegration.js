@@ -11,6 +11,7 @@ const QuoCallContentBuilder = require('../base/services/QuoCallContentBuilder');
 const { QUO_ANALYTICS_EVENTS, QuoWebhookEvents } = require('../base/constants');
 const { trackAnalyticsEvent } = require('../utils/trackAnalyticsEvent');
 const { filterExternalParticipants } = require('../utils/participantFilter');
+const stripEmoji = require('../utils/stripEmoji');
 
 class ZohoCRMIntegration extends BaseCRMIntegration {
     static Definition = {
@@ -1725,13 +1726,15 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 continue;
             }
 
-            const subject = QuoCallContentBuilder.buildCallTitle({
-                call: callObject,
-                inboxName,
-                inboxNumber,
-                contactPhone,
-                formatOptions,
-            });
+            const subject = stripEmoji(
+                QuoCallContentBuilder.buildCallTitle({
+                    call: callObject,
+                    inboxName,
+                    inboxNumber,
+                    contactPhone,
+                    formatOptions,
+                }),
+            );
 
             let description = statusDescription;
 
@@ -2058,13 +2061,15 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                                 userName,
                             }),
                         formatTitle: (callData) =>
-                            QuoCallContentBuilder.buildCallTitle({
-                                call: callData,
-                                inboxName,
-                                inboxNumber,
-                                contactPhone,
-                                formatOptions,
-                            }),
+                            stripEmoji(
+                                QuoCallContentBuilder.buildCallTitle({
+                                    call: callData,
+                                    inboxName,
+                                    inboxNumber,
+                                    contactPhone,
+                                    formatOptions,
+                                }),
+                            ),
                         formatDeepLink: () =>
                             QuoCallContentBuilder.buildDeepLink({
                                 deepLink,
