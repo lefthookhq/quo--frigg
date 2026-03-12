@@ -1173,6 +1173,8 @@ class AxisCareIntegration extends BaseCRMIntegration {
         let axiscareContactDetails = null;
         let currentContactPhone = null;
         let resolvedSiteNumber = null;
+        let inboxNumber = null;
+        let inboxName = null;
 
         // Resolve siteNumber from the Quo inbox phone that handled this call
         const callObject = webhookData?.data?.object;
@@ -1181,7 +1183,8 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 const phoneDetails = await this.quo.api.getPhoneNumber(
                     callObject.phoneNumberId,
                 );
-                const inboxNumber = phoneDetails?.data?.number;
+                inboxNumber = phoneDetails?.data?.number;
+                inboxName = QuoCallContentBuilder.buildInboxName(phoneDetails);
                 if (inboxNumber) {
                     resolvedSiteNumber =
                         this._resolveSiteNumberFromPhone(inboxNumber);
@@ -1234,9 +1237,10 @@ class AxisCareIntegration extends BaseCRMIntegration {
                     axiscareContactDetails =
                         await this._findAxisCareContactByPhone(phone);
 
-                    // If callerName not set (incoming call from AxisCare contact), fetch from AxisCare
+                    // For inbound calls, use AxisCare contact name as caller
                     if (
                         !callerName &&
+                        callObject.direction !== 'outgoing' &&
                         axiscareContactDetails?.id &&
                         axiscareContactDetails?.type
                     ) {
@@ -1252,17 +1256,21 @@ class AxisCareIntegration extends BaseCRMIntegration {
                     contactId,
                     { title, content, timestamp, duration, direction },
                 ) => {
+                    const isOutbound = direction === 'outgoing';
                     return await this.logCallToActivity({
                         contactId,
                         contactType: axiscareContactDetails?.type,
-                        direction:
-                            direction === 'outgoing' ? 'outbound' : 'inbound',
+                        direction: isOutbound ? 'outbound' : 'inbound',
                         timestamp: callObject?.completedAt || timestamp,
                         duration,
                         subject: title,
                         summary: content,
-                        callerPhone: currentContactPhone,
-                        callerName,
+                        callerPhone: isOutbound
+                            ? inboxNumber
+                            : currentContactPhone,
+                        callerName: isOutbound
+                            ? callerName || inboxName
+                            : callerName || currentContactPhone,
                         siteNumber: resolvedSiteNumber,
                     });
                 },
@@ -1319,6 +1327,10 @@ class AxisCareIntegration extends BaseCRMIntegration {
 
         // Filter out Quo phone numbers to get only external participants
         const participants = callObject.participants || [];
+        console.log(
+            '[Quo Webhook] Number of participants:',
+            participants.length,
+        );
         const externalParticipants = filterExternalParticipants(
             participants,
             this.config?.phoneNumbersMetadata || [],
@@ -1413,19 +1425,25 @@ class AxisCareIntegration extends BaseCRMIntegration {
                         title,
                         timestamp,
                     }) => {
+                        const isOutbound =
+                            callObject.direction === 'outgoing';
                         const activityData = {
                             contactId: axiscareContact.id,
                             contactType: axiscareContact.type,
-                            direction:
-                                callObject.direction === 'outgoing'
-                                    ? 'outbound'
-                                    : 'inbound',
+                            direction: isOutbound ? 'outbound' : 'inbound',
                             timestamp: callObject.completedAt || timestamp,
                             duration: callObject.duration,
                             subject: title,
                             summary: content,
-                            callerPhone: contactPhone,
-                            callerName: userName,
+                            callerPhone: isOutbound
+                                ? inboxNumber
+                                : contactPhone,
+                            callerName: isOutbound
+                                ? userName || inboxName
+                                : (await this._fetchAxisCareContactName(
+                                      axiscareContact.id,
+                                      axiscareContact.type,
+                                  )) || contactPhone,
                             siteNumber: resolvedSiteNumber,
                         };
                         return await this.logCallToActivity(activityData);

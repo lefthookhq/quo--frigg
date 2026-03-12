@@ -67,6 +67,9 @@ function filterExternalParticipants(participants, phoneNumbersMetadata) {
         !Array.isArray(participants) ||
         participants.length === 0
     ) {
+        console.log(
+            '[ParticipantFilter] This call has no participants, returning empty array',
+        );
         return [];
     }
 
