@@ -6,15 +6,15 @@ describe('stripEmoji', () => {
     });
 
     it('removes emoji prefix from call title', () => {
-        expect(stripEmoji('☎️  Call +15706231762 → 📞 Primary +12406701788')).toBe(
-            'Call +15706231762 → Primary +12406701788',
-        );
+        expect(
+            stripEmoji('☎️  Call +15706231762 → 📞 Primary +12406701788'),
+        ).toBe('Call +15706231762 → Primary +12406701788');
     });
 
     it('removes message emoji', () => {
-        expect(stripEmoji('💬 Message +15706231762 → 📞 Primary +12406701788')).toBe(
-            'Message +15706231762 → Primary +12406701788',
-        );
+        expect(
+            stripEmoji('💬 Message +15706231762 → 📞 Primary +12406701788'),
+        ).toBe('Message +15706231762 → Primary +12406701788');
     });
 
     it('removes recording and voicemail emoji', () => {
