@@ -901,6 +901,52 @@ describe('AxisCareIntegration', () => {
         });
     });
 
+    describe('_findAxisCareContactByPhone', () => {
+        it('should find contact with exact E.164 match', async () => {
+            integration.getMapping = jest.fn().mockResolvedValue({
+                mapping: { externalId: '531', entityType: 'client' },
+            });
+
+            const result =
+                await integration._findAxisCareContactByPhone('+15551234567');
+
+            expect(result).toEqual({ id: '531', type: 'client' });
+            expect(integration.getMapping).toHaveBeenCalledWith('+15551234567');
+        });
+
+        it('should return null when no mapping exists', async () => {
+            integration.getMapping = jest.fn().mockResolvedValue(null);
+
+            const result =
+                await integration._findAxisCareContactByPhone('+15559999999');
+
+            expect(result).toBeNull();
+        });
+
+        it('should fallback to normalized format when E.164 lookup fails', async () => {
+            integration.getMapping = jest
+                .fn()
+                .mockResolvedValueOnce(null)
+                .mockResolvedValueOnce({
+                    mapping: { externalId: '999', entityType: 'lead' },
+                });
+
+            const result =
+                await integration._findAxisCareContactByPhone('+15551234567');
+
+            expect(result).toEqual({ id: '999', type: 'lead' });
+            expect(integration.getMapping).toHaveBeenCalledTimes(2);
+            expect(integration.getMapping).toHaveBeenNthCalledWith(
+                1,
+                '+15551234567',
+            );
+            expect(integration.getMapping).toHaveBeenNthCalledWith(
+                2,
+                '15551234567',
+            );
+        });
+    });
+
     describe('_deleteAllWebhooks', () => {
         beforeEach(() => {
             integration.quo = {

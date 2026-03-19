@@ -1516,7 +1516,15 @@ class AxisCareIntegration extends BaseCRMIntegration {
             `[Quo Webhook] Looking up AxisCare contact by phone: ${phoneNumber}`,
         );
 
-        const result = await this.getMapping(phoneNumber);
+        // phoneNumber is E.164 from Quo webhook (e.g. "+15551234567")
+        // normalized is digits-only with country code (e.g. "15551234567")
+        const normalized = this._normalizePhoneNumber(phoneNumber);
+
+        let result = await this.getMapping(phoneNumber);
+
+        if (!result && normalized !== phoneNumber) {
+            result = await this.getMapping(normalized);
+        }
 
         if (!result) {
             console.log(

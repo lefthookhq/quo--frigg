@@ -1097,20 +1097,26 @@ class BaseCRMIntegration extends IntegrationBase {
         }
 
         const quoContactId = result.id;
-        const phoneNumber = quoContact.defaultFields?.phoneNumbers?.[0]?.value;
+        const phoneNumbers = result.defaultFields?.phoneNumbers
+            || quoContact.defaultFields?.phoneNumbers
+            || [];
 
-        if (phoneNumber) {
-            const mappingData = {
-                externalId: quoContact.externalId,
-                quoContactId,
-                phoneNumber,
-                entityType: quoContact.sourceEntityType || 'people',
-                lastSyncedAt: new Date().toISOString(),
-                syncMethod: 'upsert',
-                action,
-            };
+        if (phoneNumbers.length > 0) {
+            for (const phone of phoneNumbers) {
+                if (phone.value) {
+                    const mappingData = {
+                        externalId: quoContact.externalId,
+                        quoContactId,
+                        phoneNumber: phone.value,
+                        entityType: quoContact.sourceEntityType || 'people',
+                        lastSyncedAt: new Date().toISOString(),
+                        syncMethod: 'upsert',
+                        action,
+                    };
 
-            await this.upsertMapping(phoneNumber, mappingData);
+                    await this.upsertMapping(phone.value, mappingData);
+                }
+            }
         } else {
             console.warn(
                 `No phone number for ${quoContact.externalId}, skipping mapping`,
@@ -1205,30 +1211,32 @@ class BaseCRMIntegration extends IntegrationBase {
             if (fetchedContactsData) {
                 for (const createdContact of fetchedContactsData) {
                     try {
-                        const phoneNumber =
-                            createdContact.defaultFields?.phoneNumbers?.[0]
-                                ?.value;
+                        const phoneNumbers =
+                            createdContact.defaultFields?.phoneNumbers || [];
 
-                        if (phoneNumber) {
+                        if (phoneNumbers.length > 0) {
                             const originalContact = contacts.find(
                                 (c) =>
                                     c.externalId === createdContact.externalId,
                             );
 
-                            // Store mapping by phone number (contains both IDs)
-                            const mappingData = {
-                                externalId: createdContact.externalId,
-                                quoContactId: createdContact.id,
-                                phoneNumber: phoneNumber,
-                                entityType:
-                                    originalContact?.sourceEntityType ||
-                                    'people',
-                                lastSyncedAt: new Date().toISOString(),
-                                syncMethod: 'bulk',
-                                action: 'created',
-                            };
+                            for (const phone of phoneNumbers) {
+                                if (phone.value) {
+                                    const mappingData = {
+                                        externalId: createdContact.externalId,
+                                        quoContactId: createdContact.id,
+                                        phoneNumber: phone.value,
+                                        entityType:
+                                            originalContact?.sourceEntityType ||
+                                            'people',
+                                        lastSyncedAt: new Date().toISOString(),
+                                        syncMethod: 'bulk',
+                                        action: 'created',
+                                    };
 
-                            await this.upsertMapping(phoneNumber, mappingData);
+                                    await this.upsertMapping(phone.value, mappingData);
+                                }
+                            }
                             successCount++;
                         } else {
                             console.warn(
