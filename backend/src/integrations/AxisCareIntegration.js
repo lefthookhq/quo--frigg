@@ -465,6 +465,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
      */
     _resolvePhoneToQuoId(phoneNumber) {
         const normalized = normalizeToE164(phoneNumber);
+        if (!normalized) return null;
         const metadata = this.config?.phoneNumbersMetadata || [];
         const found = metadata.find(
             (p) => normalizeToE164(p.number) === normalized,
@@ -482,6 +483,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
      */
     _resolveSiteNumberFromPhone(phoneNumber) {
         const normalized = normalizeToE164(phoneNumber);
+        if (!normalized) return null;
         const mappings = this.config?.phoneNumberSiteMappings || {};
 
         for (const [siteNumber, siteConfig] of Object.entries(mappings)) {
@@ -1500,7 +1502,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
 
         let result = await this.getMapping(phoneNumber);
 
-        if (!result && normalized !== phoneNumber) {
+        if (!result && normalized && normalized !== phoneNumber) {
             result = await this.getMapping(normalized);
         }
 
