@@ -298,7 +298,11 @@ class AxisCareIntegration extends BaseCRMIntegration {
     async transformPersonToQuo(person) {
         const objectType = person.objectType || 'Client';
 
-        const phoneNumbers = this._extractPhoneNumbers(person, objectType, person.id);
+        const phoneNumbers = this._extractPhoneNumbers(
+            person,
+            objectType,
+            person.id,
+        );
         const emails = this._extractEmails(person);
         const firstName = this._extractFirstName(person, objectType);
 
@@ -1427,8 +1431,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
                         title,
                         timestamp,
                     }) => {
-                        const isOutbound =
-                            callObject.direction === 'outgoing';
+                        const isOutbound = callObject.direction === 'outgoing';
                         const activityData = {
                             contactId: axiscareContact.id,
                             contactType: axiscareContact.type,
@@ -1441,7 +1444,9 @@ class AxisCareIntegration extends BaseCRMIntegration {
                                 ? inboxNumber
                                 : contactPhone,
                             callerName: isOutbound
-                                ? [userName, inboxName].filter(Boolean).join(' ')
+                                ? [userName, inboxName]
+                                      .filter(Boolean)
+                                      .join(' ')
                                 : (await this._fetchAxisCareContactName(
                                       axiscareContact.id,
                                       axiscareContact.type,

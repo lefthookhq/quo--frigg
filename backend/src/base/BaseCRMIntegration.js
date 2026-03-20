@@ -1247,7 +1247,10 @@ class BaseCRMIntegration extends IntegrationBase {
                                         action: 'created',
                                     };
 
-                                    await this.upsertMapping(phone.value, mappingData);
+                                    await this.upsertMapping(
+                                        phone.value,
+                                        mappingData,
+                                    );
                                 }
                             }
                             successCount++;

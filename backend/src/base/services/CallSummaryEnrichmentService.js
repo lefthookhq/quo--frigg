@@ -59,9 +59,13 @@ class CallSummaryEnrichmentService {
             quoApi.getCallVoicemails(callId).catch((err) => {
                 const status = err.statusCode || err.status;
                 if (status === 404) {
-                    console.log(`[CallEnrichment] No voicemail for call ${callId}`);
+                    console.log(
+                        `[CallEnrichment] No voicemail for call ${callId}`,
+                    );
                 } else {
-                    console.warn(`[CallEnrichment] Failed to fetch voicemails for call ${callId}: ${status || err.message}`);
+                    console.warn(
+                        `[CallEnrichment] Failed to fetch voicemails for call ${callId}: ${status || err.message}`,
+                    );
                 }
                 return { data: null };
             }),

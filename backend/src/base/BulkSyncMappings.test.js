@@ -156,9 +156,7 @@ describe('Bulk Sync Mapping Creation', () => {
         });
 
         it('should create mappings for ALL phone numbers per contact in bulk sync', async () => {
-            const contacts = [
-                buildQuoContact({ externalId: 'multi-phone-1' }),
-            ];
+            const contacts = [buildQuoContact({ externalId: 'multi-phone-1' })];
 
             integration.quo = {
                 api: {

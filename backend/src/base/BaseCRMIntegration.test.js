@@ -1131,9 +1131,7 @@ describe('BaseCRMIntegration', () => {
                 externalId: 'crm-format-test',
                 defaultFields: {
                     firstName: 'FormatTest',
-                    phoneNumbers: [
-                        { name: 'home', value: '555-1234' },
-                    ],
+                    phoneNumbers: [{ name: 'home', value: '555-1234' }],
                 },
             };
 
@@ -1143,9 +1141,7 @@ describe('BaseCRMIntegration', () => {
                     id: 'quo-format-id',
                     externalId: 'crm-format-test',
                     defaultFields: {
-                        phoneNumbers: [
-                            { name: 'home', value: '+15551234' },
-                        ],
+                        phoneNumbers: [{ name: 'home', value: '+15551234' }],
                     },
                 },
             });
@@ -1177,9 +1173,7 @@ describe('BaseCRMIntegration', () => {
                     id: 'quo-existing-999',
                     externalId: 'crm-999',
                     defaultFields: {
-                        phoneNumbers: [
-                            { name: 'home', value: '+15553334444' },
-                        ],
+                        phoneNumbers: [{ name: 'home', value: '+15553334444' }],
                     },
                 },
             });

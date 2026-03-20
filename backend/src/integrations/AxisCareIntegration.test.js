@@ -220,8 +220,12 @@ describe('AxisCareIntegration', () => {
                 expect(result.defaultFields.firstName).toBe('John');
                 expect(result.defaultFields.lastName).toBe('Doe');
                 expect(result.defaultFields.phoneNumbers).toHaveLength(2);
-                expect(result.defaultFields.phoneNumbers[0].value).toBe('+15551234567');
-                expect(result.defaultFields.phoneNumbers[1].value).toBe('+15555678901');
+                expect(result.defaultFields.phoneNumbers[0].value).toBe(
+                    '+15551234567',
+                );
+                expect(result.defaultFields.phoneNumbers[1].value).toBe(
+                    '+15555678901',
+                );
                 expect(result.defaultFields.emails).toHaveLength(1);
                 expect(result.customFields).toEqual([]);
                 expect(result.sourceEntityType).toBe('client');
