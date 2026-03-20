@@ -205,8 +205,8 @@ describe('AxisCareIntegration', () => {
                     firstName: 'John',
                     lastName: 'Doe',
                     personalEmail: 'john@example.com',
-                    homePhone: '555-1234',
-                    mobilePhone: '555-5678',
+                    homePhone: '(555) 123-4567',
+                    mobilePhone: '555-567-8901',
                     status: 'active',
                     dateOfBirth: '1950-01-01',
                     residentialAddress: '123 Main St',
@@ -220,9 +220,53 @@ describe('AxisCareIntegration', () => {
                 expect(result.defaultFields.firstName).toBe('John');
                 expect(result.defaultFields.lastName).toBe('Doe');
                 expect(result.defaultFields.phoneNumbers).toHaveLength(2);
+                expect(result.defaultFields.phoneNumbers[0].value).toBe('+15551234567');
+                expect(result.defaultFields.phoneNumbers[1].value).toBe('+15555678901');
                 expect(result.defaultFields.emails).toHaveLength(1);
                 expect(result.customFields).toEqual([]);
                 expect(result.sourceEntityType).toBe('client');
+            });
+        });
+
+        describe('_extractPhoneNumbers - validation and E.164 normalization', () => {
+            it('should normalize valid phones to E.164 and filter out invalid ones', async () => {
+                const client = {
+                    id: 456,
+                    firstName: 'Bad',
+                    lastName: 'Phones',
+                    homePhone: '555-123-4567',
+                    mobilePhone: '+189',
+                    otherPhone: '858-877-7382 832432232',
+                    objectType: 'Client',
+                };
+
+                const result = await integration.transformPersonToQuo(client);
+
+                expect(result.defaultFields.phoneNumbers).toHaveLength(1);
+                expect(result.defaultFields.phoneNumbers[0].value).toBe(
+                    '+15551234567',
+                );
+            });
+
+            it('should normalize various valid formats to E.164', async () => {
+                const client = {
+                    id: 789,
+                    firstName: 'Formats',
+                    lastName: 'Test',
+                    homePhone: '(817) 569-8900',
+                    mobilePhone: '817-569-8901',
+                    objectType: 'Client',
+                };
+
+                const result = await integration.transformPersonToQuo(client);
+
+                expect(result.defaultFields.phoneNumbers).toHaveLength(2);
+                expect(result.defaultFields.phoneNumbers[0].value).toBe(
+                    '+18175698900',
+                );
+                expect(result.defaultFields.phoneNumbers[1].value).toBe(
+                    '+18175698901',
+                );
             });
         });
 
@@ -923,7 +967,8 @@ describe('AxisCareIntegration', () => {
             expect(result).toBeNull();
         });
 
-        it('should fallback to normalized format when E.164 lookup fails', async () => {
+        it('should fallback to normalized E.164 when raw format lookup fails', async () => {
+            // Simulates a non-E.164 input (e.g. from a different code path)
             integration.getMapping = jest
                 .fn()
                 .mockResolvedValueOnce(null)
@@ -932,17 +977,17 @@ describe('AxisCareIntegration', () => {
                 });
 
             const result =
-                await integration._findAxisCareContactByPhone('+15551234567');
+                await integration._findAxisCareContactByPhone('(555) 123-4567');
 
             expect(result).toEqual({ id: '999', type: 'lead' });
             expect(integration.getMapping).toHaveBeenCalledTimes(2);
             expect(integration.getMapping).toHaveBeenNthCalledWith(
                 1,
-                '+15551234567',
+                '(555) 123-4567',
             );
             expect(integration.getMapping).toHaveBeenNthCalledWith(
                 2,
-                '15551234567',
+                '+15551234567',
             );
         });
     });

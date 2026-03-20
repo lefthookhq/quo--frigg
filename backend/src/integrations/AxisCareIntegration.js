@@ -7,6 +7,7 @@ const QuoCallContentBuilder = require('../base/services/QuoCallContentBuilder');
 const QuoWebhookEventProcessor = require('../base/services/QuoWebhookEventProcessor');
 const { QuoWebhookEvents } = require('../base/constants');
 const { filterExternalParticipants } = require('../utils/participantFilter');
+const { normalizeToE164 } = require('../utils/phoneUtils');
 
 /**
  * AxisCareIntegration - Refactored to extend BaseCRMIntegration
@@ -382,7 +383,12 @@ class AxisCareIntegration extends BaseCRMIntegration {
             }
         }
 
-        return phones;
+        return phones
+            .map((p) => {
+                const normalized = normalizeToE164(p.value);
+                return normalized ? { ...p, value: normalized } : null;
+            })
+            .filter(Boolean);
     }
 
     /**
@@ -437,34 +443,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
     }
 
     /**
-     * Normalize phone number for consistent matching
-     * Strips formatting and ensures E.164-like format for comparison
-     * Assumes US (+1) country code if not present
-     *
-     * @private
-     * @param {string} phone - Phone number to normalize
-     * @returns {string} Normalized phone number (digits only, with country code)
-     */
-    _normalizePhoneNumber(phone) {
-        if (!phone || typeof phone !== 'string') return phone;
-
-        // Remove all non-digit characters except leading +
-        let normalized = phone.replace(/[^\d+]/g, '');
-
-        // If starts with +, remove it and keep digits
-        if (normalized.startsWith('+')) {
-            normalized = normalized.substring(1);
-        }
-
-        // If it's a 10-digit US number (no country code), prepend 1
-        if (normalized.length === 10) {
-            normalized = '1' + normalized;
-        }
-
-        return normalized;
-    }
-
-    /**
      * Split an array into chunks of specified size
      * @private
      * @param {Array} array - Array to chunk
@@ -486,10 +464,10 @@ class AxisCareIntegration extends BaseCRMIntegration {
      * @returns {string|null} Quo phone ID or null if not found
      */
     _resolvePhoneToQuoId(phoneNumber) {
-        const normalized = this._normalizePhoneNumber(phoneNumber);
+        const normalized = normalizeToE164(phoneNumber);
         const metadata = this.config?.phoneNumbersMetadata || [];
         const found = metadata.find(
-            (p) => this._normalizePhoneNumber(p.number) === normalized,
+            (p) => normalizeToE164(p.number) === normalized,
         );
         return found?.id || null;
     }
@@ -503,12 +481,12 @@ class AxisCareIntegration extends BaseCRMIntegration {
      * @returns {string|null} AxisCare siteNumber or null if not found
      */
     _resolveSiteNumberFromPhone(phoneNumber) {
-        const normalized = this._normalizePhoneNumber(phoneNumber);
+        const normalized = normalizeToE164(phoneNumber);
         const mappings = this.config?.phoneNumberSiteMappings || {};
 
         for (const [siteNumber, siteConfig] of Object.entries(mappings)) {
             const phones = (siteConfig.quoPhoneNumbers || []).map((p) =>
-                this._normalizePhoneNumber(p),
+                normalizeToE164(p),
             );
             if (phones.includes(normalized)) {
                 return siteNumber;
@@ -1517,8 +1495,8 @@ class AxisCareIntegration extends BaseCRMIntegration {
         );
 
         // phoneNumber is E.164 from Quo webhook (e.g. "+15551234567")
-        // normalized is digits-only with country code (e.g. "15551234567")
-        const normalized = this._normalizePhoneNumber(phoneNumber);
+        // normalized is also E.164 via phone library — used as fallback for stale mappings
+        const normalized = normalizeToE164(phoneNumber);
 
         let result = await this.getMapping(phoneNumber);
 
