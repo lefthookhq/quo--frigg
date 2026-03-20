@@ -1102,7 +1102,15 @@ describe('BaseCRMIntegration', () => {
 
             integration.quo.api.listContacts.mockResolvedValue({ data: [] });
             integration.quo.api.createFriggContact.mockResolvedValue({
-                data: { id: 'quo-new-id', externalId: 'crm-789' },
+                data: {
+                    id: 'quo-new-id',
+                    externalId: 'crm-789',
+                    defaultFields: {
+                        phoneNumbers: [
+                            { name: 'mobile', value: '+15551112222' },
+                        ],
+                    },
+                },
             });
 
             await integration.upsertContactToQuo(quoContact);
@@ -1165,7 +1173,15 @@ describe('BaseCRMIntegration', () => {
                 data: [{ id: 'quo-existing-999', externalId: 'crm-999' }],
             });
             integration.quo.api.updateFriggContact.mockResolvedValue({
-                data: { id: 'quo-existing-999', externalId: 'crm-999' },
+                data: {
+                    id: 'quo-existing-999',
+                    externalId: 'crm-999',
+                    defaultFields: {
+                        phoneNumbers: [
+                            { name: 'home', value: '+15553334444' },
+                        ],
+                    },
+                },
             });
 
             await integration.upsertContactToQuo(quoContact);

@@ -1097,9 +1097,7 @@ class BaseCRMIntegration extends IntegrationBase {
         }
 
         const quoContactId = result.id;
-        const phoneNumbers = result.defaultFields?.phoneNumbers
-            || quoContact.defaultFields?.phoneNumbers
-            || [];
+        const phoneNumbers = result.defaultFields?.phoneNumbers || [];
 
         if (phoneNumbers.length > 0) {
             for (const phone of phoneNumbers) {
