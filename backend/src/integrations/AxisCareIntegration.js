@@ -446,7 +446,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
      * @returns {string} Normalized phone number (digits only, with country code)
      */
     _normalizePhoneNumber(phone) {
-        if (!phone) return phone;
+        if (!phone || typeof phone !== 'string') return phone;
 
         // Remove all non-digit characters except leading +
         let normalized = phone.replace(/[^\d+]/g, '');
