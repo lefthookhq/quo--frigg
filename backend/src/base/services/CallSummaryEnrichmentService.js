@@ -57,7 +57,12 @@ class CallSummaryEnrichmentService {
                 return { data: [] };
             }),
             quoApi.getCallVoicemails(callId).catch((err) => {
-                console.warn(`Failed to fetch voicemails: ${err.message}`);
+                const status = err.statusCode || err.status;
+                if (status === 404) {
+                    console.log(`[CallEnrichment] No voicemail for call ${callId}`);
+                } else {
+                    console.warn(`[CallEnrichment] Failed to fetch voicemails for call ${callId}: ${status || err.message}`);
+                }
                 return { data: null };
             }),
         ]);
@@ -227,7 +232,7 @@ class CallSummaryEnrichmentService {
                 callDetails.duration,
                 { formatMethod },
             );
-            content += ' / ' + formattedRecordings;
+            content += nlnl + formattedRecordings;
         }
 
         if (voicemail) {

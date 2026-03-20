@@ -114,7 +114,7 @@ describe('AxisCareIntegration - Caller Fields by Direction', () => {
             expect(mockAxisCareApi.api.createCallLog).toHaveBeenCalledWith(
                 expect.objectContaining({
                     callerPhone: INBOX_PHONE,
-                    callerName: QUO_USER_NAME,
+                    callerName: `${QUO_USER_NAME} ${INBOX_NAME}`,
                 }),
             );
         });
@@ -132,7 +132,7 @@ describe('AxisCareIntegration - Caller Fields by Direction', () => {
     });
 
     describe('_handleQuoCallEvent - outbound without initiatedBy', () => {
-        it('should fall back to inbox name when initiatedBy is null', async () => {
+        it('should fall back to userId when initiatedBy is null', async () => {
             const outgoingNoInitiator = {
                 data: {
                     ...mockGetCall.completedOutgoing.data,
@@ -145,10 +145,11 @@ describe('AxisCareIntegration - Caller Fields by Direction', () => {
                 buildCallWebhook(outgoingNoInitiator),
             );
 
+            // userId resolves to QUO_USER_NAME, combined with inbox name
             expect(mockAxisCareApi.api.createCallLog).toHaveBeenCalledWith(
                 expect.objectContaining({
                     callerPhone: INBOX_PHONE,
-                    callerName: INBOX_NAME,
+                    callerName: `${QUO_USER_NAME} ${INBOX_NAME}`,
                 }),
             );
             expect(integration._fetchAxisCareContactName).not.toHaveBeenCalled();

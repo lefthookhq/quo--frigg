@@ -356,19 +356,17 @@ describe('bulkUpsertToQuo - Pagination', () => {
 
             const result = await integration.bulkUpsertToQuo(contacts);
 
-            // Should call listContacts 4 times (75 contacts = 3×20 + 15)
+            // 8 input contacts have no phone (indices 0,10,20,30,40,50,60,70) — skipped before Quo
+            // 67 valid contacts sent to Quo, paginated as 4 pages (20, 20, 20, 7)
+            // Quo mock returns 7 of those without phones (contactNum % 10 === 0) — no mapping created
             expect(mockListContacts).toHaveBeenCalledTimes(4);
 
-            // Contacts without phone: person-10, person-20, person-30, person-40, person-50, person-60, person-70 (7 contacts)
-            // Because contactNum % 10 === 0 is checked on the contact number (not the index)
-            expect(result.successCount).toBe(68); // 75 - 7
+            expect(result.successCount).toBe(60);
             expect(result.errorCount).toBe(7);
-
-            // Verify error messages for no phone number
-            const noPhoneErrors = result.errors.filter(
-                (e) => e.error === 'No phone number available',
-            );
-            expect(noPhoneErrors).toHaveLength(7);
+            expect(result.errors).toHaveLength(7);
+            result.errors.forEach((e) => {
+                expect(e.error).toBe('No phone number available');
+            });
         });
     });
 

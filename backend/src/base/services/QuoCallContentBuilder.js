@@ -289,7 +289,8 @@ class QuoCallContentBuilder {
             ? `${emoji.recording} Recording`
             : 'Recording';
 
-        return ` / ${recordingLabel} (${durationFormatted})`;
+        const { lineBreakDouble } = formatOptions;
+        return `${lineBreakDouble}${recordingLabel} (${durationFormatted})`;
     }
 
     /**

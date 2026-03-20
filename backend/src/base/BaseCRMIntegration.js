@@ -1195,14 +1195,29 @@ class BaseCRMIntegration extends IntegrationBase {
         let errorCount = 0;
         const errors = [];
 
+        // Skip contacts with no phone numbers — they can't be matched by webhooks
+        const validContacts = contacts.filter(
+            (c) => c.defaultFields?.phoneNumbers?.length > 0,
+        );
+        const skipped = contacts.length - validContacts.length;
+        if (skipped > 0) {
+            console.warn(
+                `[BulkSync] Skipping ${skipped}/${contacts.length} contact(s) with no valid phone numbers`,
+            );
+        }
+
+        if (validContacts.length === 0) {
+            return { successCount: 0, errorCount: 0, errors: [] };
+        }
+
         try {
             // Call bulkCreateContacts with contacts
-            await this.quo.api.bulkCreateContacts(contacts);
+            await this.quo.api.bulkCreateContacts(validContacts);
 
             await new Promise((resolve) => setTimeout(resolve, 1000));
 
             // Fetch created contacts using paginated helper
-            const externalIds = contacts.map((c) => c.externalId);
+            const externalIds = validContacts.map((c) => c.externalId);
             const fetchedContactsData =
                 await this._fetchContactsByExternalIds(externalIds);
 
@@ -1213,7 +1228,7 @@ class BaseCRMIntegration extends IntegrationBase {
                             createdContact.defaultFields?.phoneNumbers || [];
 
                         if (phoneNumbers.length > 0) {
-                            const originalContact = contacts.find(
+                            const originalContact = validContacts.find(
                                 (c) =>
                                     c.externalId === createdContact.externalId,
                             );
@@ -1260,11 +1275,11 @@ class BaseCRMIntegration extends IntegrationBase {
                 }
             }
 
-            if (fetchedContactsData?.length < contacts.length) {
+            if (fetchedContactsData?.length < validContacts.length) {
                 const createdExternalIds = new Set(
                     fetchedContactsData.map((c) => c.externalId),
                 );
-                const failedContacts = contacts.filter(
+                const failedContacts = validContacts.filter(
                     (c) => !createdExternalIds.has(c.externalId),
                 );
 
@@ -1277,12 +1292,12 @@ class BaseCRMIntegration extends IntegrationBase {
                 });
             }
         } catch (error) {
-            errorCount = contacts.length;
+            errorCount = validContacts.length;
             console.error('Bulk upsert error:', error);
             errors.push({
                 error: error.message,
                 timestamp: new Date().toISOString(),
-                contactCount: contacts.length,
+                contactCount: validContacts.length,
             });
         }
 

@@ -298,7 +298,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
     async transformPersonToQuo(person) {
         const objectType = person.objectType || 'Client';
 
-        const phoneNumbers = this._extractPhoneNumbers(person, objectType);
+        const phoneNumbers = this._extractPhoneNumbers(person, objectType, person.id);
         const emails = this._extractEmails(person);
         const firstName = this._extractFirstName(person, objectType);
 
@@ -337,9 +337,10 @@ class AxisCareIntegration extends BaseCRMIntegration {
      * @private
      * @param {Object} person - AxisCare person object
      * @param {string} objectType - Person type (Client, Lead, Caregiver, Applicant)
+     * @param {string|number} externalId - AxisCare person ID for logging
      * @returns {Array<{name: string, value: string, primary: boolean}>} Phone numbers
      */
-    _extractPhoneNumbers(person, objectType) {
+    _extractPhoneNumbers(person, objectType, externalId) {
         const phones = [];
 
         if (objectType === 'Lead') {
@@ -386,7 +387,13 @@ class AxisCareIntegration extends BaseCRMIntegration {
         return phones
             .map((p) => {
                 const normalized = normalizeToE164(p.value);
-                return normalized ? { ...p, value: normalized } : null;
+                if (!normalized) {
+                    console.error(
+                        `[AxisCare] User with external ID ${externalId} has an invalid phone number: "${p.value}" (integration: ${this.id}). This user will be ignored in the syncing process.`,
+                    );
+                    return null;
+                }
+                return { ...p, value: normalized };
             })
             .filter(Boolean);
     }
@@ -1187,10 +1194,13 @@ class AxisCareIntegration extends BaseCRMIntegration {
         }
 
         let callerName = null;
-        const initiatedBy = callObject?.initiatedBy;
-        if (initiatedBy) {
+        const isSonaCall = callObject?.aiHandled === 'ai-agent';
+        const callerUserId = isSonaCall
+            ? null
+            : callObject?.initiatedBy || callObject?.userId;
+        if (callerUserId) {
             try {
-                const userResponse = await this.quo.api.getUser(initiatedBy);
+                const userResponse = await this.quo.api.getUser(callerUserId);
                 const user = userResponse?.data;
                 if (user) {
                     callerName =
@@ -1199,7 +1209,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 }
             } catch (error) {
                 console.warn(
-                    `[Quo Webhook] Could not fetch user ${initiatedBy}:`,
+                    `[Quo Webhook] Could not fetch user ${callerUserId}:`,
                     error.message,
                 );
             }
@@ -1219,7 +1229,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
 
                     // For inbound calls, use AxisCare contact name as caller
                     if (
-                        !callerName &&
                         callObject.direction !== 'outgoing' &&
                         axiscareContactDetails?.id &&
                         axiscareContactDetails?.type
@@ -1249,7 +1258,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
                             ? inboxNumber
                             : currentContactPhone,
                         callerName: isOutbound
-                            ? callerName || inboxName
+                            ? [callerName, inboxName].filter(Boolean).join(' ')
                             : callerName || currentContactPhone,
                         siteNumber: resolvedSiteNumber,
                     });
@@ -1379,16 +1388,29 @@ class AxisCareIntegration extends BaseCRMIntegration {
             );
         }
 
-        // Use answeredBy (the user who answered) if available, otherwise fall back to userId (phone owner)
-        // Skip getUser for Sona (AI agent) calls — Sona's userId is not a valid user ID
+        // Use initiatedBy (the user who placed the call), fall back to userId (phone owner)
+        // Skip for Sona (AI agent) calls — userId may not be a valid user ID
         const isSonaCall = callObject.aiHandled === 'ai-agent';
-        const userIdForDisplay = isSonaCall
+        const callerUserId = isSonaCall
             ? null
-            : callObject.answeredBy || callObject.userId;
-        const userDetails = userIdForDisplay
-            ? await this.quo.api.getUser(userIdForDisplay)
-            : null;
-        const userName = QuoCallContentBuilder.buildUserName(userDetails);
+            : callObject.initiatedBy || callObject.userId;
+        let userName = null;
+        if (callerUserId) {
+            try {
+                const userResponse = await this.quo.api.getUser(callerUserId);
+                const user = userResponse?.data;
+                if (user) {
+                    userName =
+                        `${user.firstName || ''} ${user.lastName || ''}`.trim() ||
+                        null;
+                }
+            } catch (error) {
+                console.warn(
+                    `[Quo Webhook] Could not fetch user ${callerUserId}:`,
+                    error.message,
+                );
+            }
+        }
 
         // Use CallSummaryEnrichmentService to enrich the call log
         const enrichmentResult =
@@ -1419,7 +1441,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
                                 ? inboxNumber
                                 : contactPhone,
                             callerName: isOutbound
-                                ? userName || inboxName
+                                ? [userName, inboxName].filter(Boolean).join(' ')
                                 : (await this._fetchAxisCareContactName(
                                       axiscareContact.id,
                                       axiscareContact.type,
@@ -1628,8 +1650,8 @@ class AxisCareIntegration extends BaseCRMIntegration {
                     (targetSiteNumber ? ` (site: ${targetSiteNumber})` : ''),
             );
 
-            // Return the created call log ID
-            return response?.id || null;
+            // AxisCare response shape: { results: { data: { id: 123, ... } } }
+            return response?.results?.data?.id || null;
         } catch (error) {
             console.error('Failed to log call activity to AxisCare:', error);
             throw error;

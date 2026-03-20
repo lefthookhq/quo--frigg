@@ -380,7 +380,17 @@ class QuoWebhookEventProcessor {
      */
     static async fetchCallMetadata(quoApi, phoneNumberId, userId) {
         const phoneNumberDetails = await quoApi.getPhoneNumber(phoneNumberId);
-        const userDetails = userId ? await quoApi.getUser(userId) : null;
+
+        let userDetails = null;
+        if (userId) {
+            try {
+                userDetails = await quoApi.getUser(userId);
+            } catch (error) {
+                console.warn(
+                    `[QuoEventProcessor] Could not fetch user ${userId}: ${error.statusCode || error.message}`,
+                );
+            }
+        }
 
         return {
             inboxName: QuoCallContentBuilder.buildInboxName(phoneNumberDetails),
