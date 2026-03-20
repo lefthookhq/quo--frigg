@@ -1102,7 +1102,15 @@ describe('BaseCRMIntegration', () => {
 
             integration.quo.api.listContacts.mockResolvedValue({ data: [] });
             integration.quo.api.createFriggContact.mockResolvedValue({
-                data: { id: 'quo-new-id', externalId: 'crm-789' },
+                data: {
+                    id: 'quo-new-id',
+                    externalId: 'crm-789',
+                    defaultFields: {
+                        phoneNumbers: [
+                            { name: 'mobile', value: '+15551112222' },
+                        ],
+                    },
+                },
             });
 
             await integration.upsertContactToQuo(quoContact);
@@ -1114,6 +1122,36 @@ describe('BaseCRMIntegration', () => {
                     quoContactId: 'quo-new-id',
                     phoneNumber: '+15551112222',
                     action: 'created',
+                }),
+            );
+        });
+
+        it('should use E.164 phone from Quo API response as mapping sourceId, not raw input format', async () => {
+            const quoContact = {
+                externalId: 'crm-format-test',
+                defaultFields: {
+                    firstName: 'FormatTest',
+                    phoneNumbers: [{ name: 'home', value: '555-1234' }],
+                },
+            };
+
+            integration.quo.api.listContacts.mockResolvedValue({ data: [] });
+            integration.quo.api.createFriggContact.mockResolvedValue({
+                data: {
+                    id: 'quo-format-id',
+                    externalId: 'crm-format-test',
+                    defaultFields: {
+                        phoneNumbers: [{ name: 'home', value: '+15551234' }],
+                    },
+                },
+            });
+
+            await integration.upsertContactToQuo(quoContact);
+
+            expect(integration.upsertMapping).toHaveBeenCalledWith(
+                '+15551234',
+                expect.objectContaining({
+                    phoneNumber: '+15551234',
                 }),
             );
         });
@@ -1131,7 +1169,13 @@ describe('BaseCRMIntegration', () => {
                 data: [{ id: 'quo-existing-999', externalId: 'crm-999' }],
             });
             integration.quo.api.updateFriggContact.mockResolvedValue({
-                data: { id: 'quo-existing-999', externalId: 'crm-999' },
+                data: {
+                    id: 'quo-existing-999',
+                    externalId: 'crm-999',
+                    defaultFields: {
+                        phoneNumbers: [{ name: 'home', value: '+15553334444' }],
+                    },
+                },
             });
 
             await integration.upsertContactToQuo(quoContact);
@@ -1144,6 +1188,52 @@ describe('BaseCRMIntegration', () => {
                     phoneNumber: '+15553334444',
                     action: 'updated',
                 }),
+            );
+        });
+
+        it('should store mappings for ALL phone numbers, not just the first', async () => {
+            const quoContact = {
+                externalId: 'crm-multi',
+                sourceEntityType: 'client',
+                defaultFields: {
+                    firstName: 'MultiPhone',
+                    phoneNumbers: [
+                        { name: 'home', value: '555-1111' },
+                        { name: 'mobile', value: '555-2222' },
+                        { name: 'other', value: '555-3333' },
+                    ],
+                },
+            };
+
+            integration.quo.api.listContacts.mockResolvedValue({ data: [] });
+            integration.quo.api.createFriggContact.mockResolvedValue({
+                data: {
+                    id: 'quo-multi-id',
+                    externalId: 'crm-multi',
+                    defaultFields: {
+                        phoneNumbers: [
+                            { name: 'home', value: '+15551111' },
+                            { name: 'mobile', value: '+15552222' },
+                            { name: 'other', value: '+15553333' },
+                        ],
+                    },
+                },
+            });
+
+            await integration.upsertContactToQuo(quoContact);
+
+            expect(integration.upsertMapping).toHaveBeenCalledTimes(3);
+            expect(integration.upsertMapping).toHaveBeenCalledWith(
+                '+15551111',
+                expect.objectContaining({ phoneNumber: '+15551111' }),
+            );
+            expect(integration.upsertMapping).toHaveBeenCalledWith(
+                '+15552222',
+                expect.objectContaining({ phoneNumber: '+15552222' }),
+            );
+            expect(integration.upsertMapping).toHaveBeenCalledWith(
+                '+15553333',
+                expect.objectContaining({ phoneNumber: '+15553333' }),
             );
         });
 

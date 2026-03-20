@@ -155,6 +155,64 @@ describe('Bulk Sync Mapping Creation', () => {
             });
         });
 
+        it('should create mappings for ALL phone numbers per contact in bulk sync', async () => {
+            const contacts = [buildQuoContact({ externalId: 'multi-phone-1' })];
+
+            integration.quo = {
+                api: {
+                    bulkCreateContacts: jest
+                        .fn()
+                        .mockResolvedValue({ status: 202 }),
+                    listContacts: jest.fn().mockResolvedValue({
+                        data: [
+                            {
+                                id: 'quo-multi-1',
+                                externalId: 'multi-phone-1',
+                                source: 'test-crm',
+                                createdAt: new Date().toISOString(),
+                                defaultFields: {
+                                    phoneNumbers: [
+                                        { value: '+15551111111' },
+                                        { value: '+15552222222' },
+                                        { value: '+15553333333' },
+                                    ],
+                                },
+                            },
+                        ],
+                        totalItems: 1,
+                    }),
+                },
+            };
+
+            integration.upsertMapping = jest.fn().mockResolvedValue();
+
+            const result = await integration.bulkUpsertToQuo(contacts);
+
+            expect(integration.upsertMapping).toHaveBeenCalledTimes(3);
+            expect(integration.upsertMapping).toHaveBeenCalledWith(
+                '+15551111111',
+                expect.objectContaining({
+                    externalId: 'multi-phone-1',
+                    phoneNumber: '+15551111111',
+                }),
+            );
+            expect(integration.upsertMapping).toHaveBeenCalledWith(
+                '+15552222222',
+                expect.objectContaining({
+                    externalId: 'multi-phone-1',
+                    phoneNumber: '+15552222222',
+                }),
+            );
+            expect(integration.upsertMapping).toHaveBeenCalledWith(
+                '+15553333333',
+                expect.objectContaining({
+                    externalId: 'multi-phone-1',
+                    phoneNumber: '+15553333333',
+                }),
+            );
+            expect(result.successCount).toBe(1);
+        });
+
         it('should handle partial failures when fetching created contacts', async () => {
             const contacts = [
                 buildQuoContact({ externalId: 'attio-person-1' }),

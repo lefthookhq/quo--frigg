@@ -32,7 +32,9 @@ describe('AxisCareIntegration - Caller Fields by Direction', () => {
     beforeEach(() => {
         mockAxisCareApi = {
             api: {
-                createCallLog: jest.fn().mockResolvedValue({ id: 'call-log-1' }),
+                createCallLog: jest
+                    .fn()
+                    .mockResolvedValue({ id: 'call-log-1' }),
                 updateCallLog: jest.fn().mockResolvedValue({}),
                 getClient: jest.fn(),
             },
@@ -43,7 +45,9 @@ describe('AxisCareIntegration - Caller Fields by Direction', () => {
                 getCall: jest.fn(),
                 getCallRecordings: jest.fn().mockResolvedValue({ data: [] }),
                 getCallVoicemails: jest.fn().mockResolvedValue({ data: null }),
-                getPhoneNumber: jest.fn().mockResolvedValue(mockGetPhoneNumber.salesLine),
+                getPhoneNumber: jest
+                    .fn()
+                    .mockResolvedValue(mockGetPhoneNumber.salesLine),
                 getUser: jest.fn().mockResolvedValue(mockGetUser.johnSmith),
             },
         };
@@ -55,17 +59,23 @@ describe('AxisCareIntegration - Caller Fields by Direction', () => {
 
         integration.axisCare = mockAxisCareApi;
         integration.quo = mockQuoApi;
-        integration.commands = { updateIntegrationConfig: jest.fn().mockResolvedValue({}) };
+        integration.commands = {
+            updateIntegrationConfig: jest.fn().mockResolvedValue({}),
+        };
         integration.config = {
-            phoneNumbersMetadata: [
-                { id: 'PN_TEST_001', number: INBOX_PHONE },
-            ],
+            phoneNumbersMetadata: [{ id: 'PN_TEST_001', number: INBOX_PHONE }],
         };
         integration.upsertMapping = jest.fn().mockResolvedValue({});
         integration.getMapping = jest.fn().mockResolvedValue(null);
-        integration._findAxisCareContactByPhone = jest.fn().mockResolvedValue({ id: '123', type: 'client' });
-        integration._fetchAxisCareContactName = jest.fn().mockResolvedValue(CONTACT_NAME);
-        integration.updateIntegrationMessages = { execute: jest.fn().mockResolvedValue({}) };
+        integration._findAxisCareContactByPhone = jest
+            .fn()
+            .mockResolvedValue({ id: '123', type: 'client' });
+        integration._fetchAxisCareContactName = jest
+            .fn()
+            .mockResolvedValue(CONTACT_NAME);
+        integration.updateIntegrationMessages = {
+            execute: jest.fn().mockResolvedValue({}),
+        };
     });
 
     function buildCallWebhook(callFixture) {
@@ -101,7 +111,9 @@ describe('AxisCareIntegration - Caller Fields by Direction', () => {
             mockQuoApi.api.getCall.mockResolvedValue(callFixture);
 
             if (method === '_handleQuoCallEvent') {
-                return integration._handleQuoCallEvent(buildCallWebhook(callFixture));
+                return integration._handleQuoCallEvent(
+                    buildCallWebhook(callFixture),
+                );
             }
             return integration._handleQuoCallSummaryEvent(
                 buildSummaryWebhook(callFixture.data.id),
@@ -114,7 +126,7 @@ describe('AxisCareIntegration - Caller Fields by Direction', () => {
             expect(mockAxisCareApi.api.createCallLog).toHaveBeenCalledWith(
                 expect.objectContaining({
                     callerPhone: INBOX_PHONE,
-                    callerName: QUO_USER_NAME,
+                    callerName: `${QUO_USER_NAME} ${INBOX_NAME}`,
                 }),
             );
         });
@@ -132,7 +144,7 @@ describe('AxisCareIntegration - Caller Fields by Direction', () => {
     });
 
     describe('_handleQuoCallEvent - outbound without initiatedBy', () => {
-        it('should fall back to inbox name when initiatedBy is null', async () => {
+        it('should fall back to userId when initiatedBy is null', async () => {
             const outgoingNoInitiator = {
                 data: {
                     ...mockGetCall.completedOutgoing.data,
@@ -145,20 +157,25 @@ describe('AxisCareIntegration - Caller Fields by Direction', () => {
                 buildCallWebhook(outgoingNoInitiator),
             );
 
+            // userId resolves to QUO_USER_NAME, combined with inbox name
             expect(mockAxisCareApi.api.createCallLog).toHaveBeenCalledWith(
                 expect.objectContaining({
                     callerPhone: INBOX_PHONE,
-                    callerName: INBOX_NAME,
+                    callerName: `${QUO_USER_NAME} ${INBOX_NAME}`,
                 }),
             );
-            expect(integration._fetchAxisCareContactName).not.toHaveBeenCalled();
+            expect(
+                integration._fetchAxisCareContactName,
+            ).not.toHaveBeenCalled();
         });
     });
 
     describe('inbound - contact name lookup fails', () => {
         it('should fall back to contact phone when _fetchAxisCareContactName returns null', async () => {
             integration._fetchAxisCareContactName.mockResolvedValue(null);
-            mockQuoApi.api.getCall.mockResolvedValue(mockGetCall.completedIncoming);
+            mockQuoApi.api.getCall.mockResolvedValue(
+                mockGetCall.completedIncoming,
+            );
 
             await integration._handleQuoCallEvent(
                 buildCallWebhook(mockGetCall.completedIncoming),
@@ -174,7 +191,9 @@ describe('AxisCareIntegration - Caller Fields by Direction', () => {
 
         it('should fall back to contact phone in summary path when name lookup fails', async () => {
             integration._fetchAxisCareContactName.mockResolvedValue(null);
-            mockQuoApi.api.getCall.mockResolvedValue(mockGetCall.completedIncoming);
+            mockQuoApi.api.getCall.mockResolvedValue(
+                mockGetCall.completedIncoming,
+            );
 
             await integration._handleQuoCallSummaryEvent(
                 buildSummaryWebhook(mockGetCall.completedIncoming.data.id),

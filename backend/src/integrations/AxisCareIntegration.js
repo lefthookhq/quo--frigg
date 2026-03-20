@@ -7,6 +7,7 @@ const QuoCallContentBuilder = require('../base/services/QuoCallContentBuilder');
 const QuoWebhookEventProcessor = require('../base/services/QuoWebhookEventProcessor');
 const { QuoWebhookEvents } = require('../base/constants');
 const { filterExternalParticipants } = require('../utils/participantFilter');
+const { normalizeToE164 } = require('../utils/phoneUtils');
 
 /**
  * AxisCareIntegration - Refactored to extend BaseCRMIntegration
@@ -297,7 +298,11 @@ class AxisCareIntegration extends BaseCRMIntegration {
     async transformPersonToQuo(person) {
         const objectType = person.objectType || 'Client';
 
-        const phoneNumbers = this._extractPhoneNumbers(person, objectType);
+        const phoneNumbers = this._extractPhoneNumbers(
+            person,
+            objectType,
+            person.id,
+        );
         const emails = this._extractEmails(person);
         const firstName = this._extractFirstName(person, objectType);
 
@@ -336,9 +341,10 @@ class AxisCareIntegration extends BaseCRMIntegration {
      * @private
      * @param {Object} person - AxisCare person object
      * @param {string} objectType - Person type (Client, Lead, Caregiver, Applicant)
+     * @param {string|number} externalId - AxisCare person ID for logging
      * @returns {Array<{name: string, value: string, primary: boolean}>} Phone numbers
      */
-    _extractPhoneNumbers(person, objectType) {
+    _extractPhoneNumbers(person, objectType, externalId) {
         const phones = [];
 
         if (objectType === 'Lead') {
@@ -382,7 +388,18 @@ class AxisCareIntegration extends BaseCRMIntegration {
             }
         }
 
-        return phones;
+        return phones
+            .map((p) => {
+                const normalized = normalizeToE164(p.value);
+                if (!normalized) {
+                    console.error(
+                        `[AxisCare] User with external ID ${externalId} has an invalid phone number: "${p.value}" (integration: ${this.id}). This user will be ignored in the syncing process.`,
+                    );
+                    return null;
+                }
+                return { ...p, value: normalized };
+            })
+            .filter(Boolean);
     }
 
     /**
@@ -437,34 +454,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
     }
 
     /**
-     * Normalize phone number for consistent matching
-     * Strips formatting and ensures E.164-like format for comparison
-     * Assumes US (+1) country code if not present
-     *
-     * @private
-     * @param {string} phone - Phone number to normalize
-     * @returns {string} Normalized phone number (digits only, with country code)
-     */
-    _normalizePhoneNumber(phone) {
-        if (!phone) return phone;
-
-        // Remove all non-digit characters except leading +
-        let normalized = phone.replace(/[^\d+]/g, '');
-
-        // If starts with +, remove it and keep digits
-        if (normalized.startsWith('+')) {
-            normalized = normalized.substring(1);
-        }
-
-        // If it's a 10-digit US number (no country code), prepend 1
-        if (normalized.length === 10) {
-            normalized = '1' + normalized;
-        }
-
-        return normalized;
-    }
-
-    /**
      * Split an array into chunks of specified size
      * @private
      * @param {Array} array - Array to chunk
@@ -486,10 +475,11 @@ class AxisCareIntegration extends BaseCRMIntegration {
      * @returns {string|null} Quo phone ID or null if not found
      */
     _resolvePhoneToQuoId(phoneNumber) {
-        const normalized = this._normalizePhoneNumber(phoneNumber);
+        const normalized = normalizeToE164(phoneNumber);
+        if (!normalized) return null;
         const metadata = this.config?.phoneNumbersMetadata || [];
         const found = metadata.find(
-            (p) => this._normalizePhoneNumber(p.number) === normalized,
+            (p) => normalizeToE164(p.number) === normalized,
         );
         return found?.id || null;
     }
@@ -503,12 +493,13 @@ class AxisCareIntegration extends BaseCRMIntegration {
      * @returns {string|null} AxisCare siteNumber or null if not found
      */
     _resolveSiteNumberFromPhone(phoneNumber) {
-        const normalized = this._normalizePhoneNumber(phoneNumber);
+        const normalized = normalizeToE164(phoneNumber);
+        if (!normalized) return null;
         const mappings = this.config?.phoneNumberSiteMappings || {};
 
         for (const [siteNumber, siteConfig] of Object.entries(mappings)) {
             const phones = (siteConfig.quoPhoneNumbers || []).map((p) =>
-                this._normalizePhoneNumber(p),
+                normalizeToE164(p),
             );
             if (phones.includes(normalized)) {
                 return siteNumber;
@@ -1207,10 +1198,13 @@ class AxisCareIntegration extends BaseCRMIntegration {
         }
 
         let callerName = null;
-        const initiatedBy = callObject?.initiatedBy;
-        if (initiatedBy) {
+        const isSonaCall = callObject?.aiHandled === 'ai-agent';
+        const callerUserId = isSonaCall
+            ? null
+            : callObject?.initiatedBy || callObject?.userId;
+        if (callerUserId) {
             try {
-                const userResponse = await this.quo.api.getUser(initiatedBy);
+                const userResponse = await this.quo.api.getUser(callerUserId);
                 const user = userResponse?.data;
                 if (user) {
                     callerName =
@@ -1219,7 +1213,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 }
             } catch (error) {
                 console.warn(
-                    `[Quo Webhook] Could not fetch user ${initiatedBy}:`,
+                    `[Quo Webhook] Could not fetch user ${callerUserId}:`,
                     error.message,
                 );
             }
@@ -1239,7 +1233,6 @@ class AxisCareIntegration extends BaseCRMIntegration {
 
                     // For inbound calls, use AxisCare contact name as caller
                     if (
-                        !callerName &&
                         callObject.direction !== 'outgoing' &&
                         axiscareContactDetails?.id &&
                         axiscareContactDetails?.type
@@ -1269,7 +1262,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
                             ? inboxNumber
                             : currentContactPhone,
                         callerName: isOutbound
-                            ? callerName || inboxName
+                            ? [callerName, inboxName].filter(Boolean).join(' ')
                             : callerName || currentContactPhone,
                         siteNumber: resolvedSiteNumber,
                     });
@@ -1399,16 +1392,29 @@ class AxisCareIntegration extends BaseCRMIntegration {
             );
         }
 
-        // Use answeredBy (the user who answered) if available, otherwise fall back to userId (phone owner)
-        // Skip getUser for Sona (AI agent) calls — Sona's userId is not a valid user ID
+        // Use initiatedBy (the user who placed the call), fall back to userId (phone owner)
+        // Skip for Sona (AI agent) calls — userId may not be a valid user ID
         const isSonaCall = callObject.aiHandled === 'ai-agent';
-        const userIdForDisplay = isSonaCall
+        const callerUserId = isSonaCall
             ? null
-            : callObject.answeredBy || callObject.userId;
-        const userDetails = userIdForDisplay
-            ? await this.quo.api.getUser(userIdForDisplay)
-            : null;
-        const userName = QuoCallContentBuilder.buildUserName(userDetails);
+            : callObject.initiatedBy || callObject.userId;
+        let userName = null;
+        if (callerUserId) {
+            try {
+                const userResponse = await this.quo.api.getUser(callerUserId);
+                const user = userResponse?.data;
+                if (user) {
+                    userName =
+                        `${user.firstName || ''} ${user.lastName || ''}`.trim() ||
+                        null;
+                }
+            } catch (error) {
+                console.warn(
+                    `[Quo Webhook] Could not fetch user ${callerUserId}:`,
+                    error.message,
+                );
+            }
+        }
 
         // Use CallSummaryEnrichmentService to enrich the call log
         const enrichmentResult =
@@ -1425,8 +1431,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
                         title,
                         timestamp,
                     }) => {
-                        const isOutbound =
-                            callObject.direction === 'outgoing';
+                        const isOutbound = callObject.direction === 'outgoing';
                         const activityData = {
                             contactId: axiscareContact.id,
                             contactType: axiscareContact.type,
@@ -1439,7 +1444,9 @@ class AxisCareIntegration extends BaseCRMIntegration {
                                 ? inboxNumber
                                 : contactPhone,
                             callerName: isOutbound
-                                ? userName || inboxName
+                                ? [userName, inboxName]
+                                      .filter(Boolean)
+                                      .join(' ')
                                 : (await this._fetchAxisCareContactName(
                                       axiscareContact.id,
                                       axiscareContact.type,
@@ -1516,7 +1523,15 @@ class AxisCareIntegration extends BaseCRMIntegration {
             `[Quo Webhook] Looking up AxisCare contact by phone: ${phoneNumber}`,
         );
 
-        const result = await this.getMapping(phoneNumber);
+        // phoneNumber is E.164 from Quo webhook (e.g. "+15551234567")
+        // normalized is also E.164 via phone library — used as fallback for stale mappings
+        const normalized = normalizeToE164(phoneNumber);
+
+        let result = await this.getMapping(phoneNumber);
+
+        if (!result && normalized && normalized !== phoneNumber) {
+            result = await this.getMapping(normalized);
+        }
 
         if (!result) {
             console.log(
@@ -1640,8 +1655,8 @@ class AxisCareIntegration extends BaseCRMIntegration {
                     (targetSiteNumber ? ` (site: ${targetSiteNumber})` : ''),
             );
 
-            // Return the created call log ID
-            return response?.id || null;
+            // AxisCare response shape: { results: { data: { id: 123, ... } } }
+            return response?.results?.data?.id || null;
         } catch (error) {
             console.error('Failed to log call activity to AxisCare:', error);
             throw error;

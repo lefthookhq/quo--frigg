@@ -318,7 +318,7 @@ class QuoWebhookEventProcessor {
 
     /**
      * Fetch full call details with voicemail handling for no-answer calls
-     * Centralizes the 3-second wait + fetch logic
+     * Centralizes the 10-second wait + fetch logic
      *
      * @param {Object} quoApi - Quo API client
      * @param {string} callId - Call ID to fetch
@@ -334,10 +334,10 @@ class QuoWebhookEventProcessor {
 
         if (call.status === 'no-answer') {
             console.log(
-                `[QuoEventProcessor] No-answer call ${callId}, waiting 3s for voicemail...`,
+                `[QuoEventProcessor] No-answer call ${callId}, waiting 10s for voicemail...`,
             );
 
-            await new Promise((resolve) => setTimeout(resolve, 3000));
+            await new Promise((resolve) => setTimeout(resolve, 10000));
 
             try {
                 const vmResponse = await quoApi.getCallVoicemails(callId);
@@ -380,7 +380,17 @@ class QuoWebhookEventProcessor {
      */
     static async fetchCallMetadata(quoApi, phoneNumberId, userId) {
         const phoneNumberDetails = await quoApi.getPhoneNumber(phoneNumberId);
-        const userDetails = userId ? await quoApi.getUser(userId) : null;
+
+        let userDetails = null;
+        if (userId) {
+            try {
+                userDetails = await quoApi.getUser(userId);
+            } catch (error) {
+                console.warn(
+                    `[QuoEventProcessor] Could not fetch user ${userId}: ${error.statusCode || error.message}`,
+                );
+            }
+        }
 
         return {
             inboxName: QuoCallContentBuilder.buildInboxName(phoneNumberDetails),

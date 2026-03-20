@@ -525,7 +525,7 @@ describe('QuoCallContentBuilder', () => {
                 formatOptions,
             });
 
-            expect(result).toBe(' / ▶️ Recording (2:05)');
+            expect(result).toBe('\n\n▶️ Recording (2:05)');
         });
 
         it('returns empty string for unanswered call', () => {
@@ -570,7 +570,7 @@ describe('QuoCallContentBuilder', () => {
                 formatOptions,
             });
 
-            expect(result).toBe(' / Recording (2:05)');
+            expect(result).toBe('\r\n\r\nRecording (2:05)');
             expect(result).not.toContain('▶️');
         });
     });

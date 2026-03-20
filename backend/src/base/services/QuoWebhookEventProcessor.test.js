@@ -446,8 +446,8 @@ describe('QuoWebhookEventProcessor', () => {
                     'call_123',
                 );
 
-            // Fast-forward the 3-second wait
-            await jest.advanceTimersByTimeAsync(3000);
+            // Fast-forward the 10-second wait
+            await jest.advanceTimersByTimeAsync(10000);
 
             const result = await fetchPromise;
 
@@ -489,7 +489,7 @@ describe('QuoWebhookEventProcessor', () => {
                     'call_123',
                 );
 
-            await jest.advanceTimersByTimeAsync(3000);
+            await jest.advanceTimersByTimeAsync(10000);
 
             const result = await fetchPromise;
 
