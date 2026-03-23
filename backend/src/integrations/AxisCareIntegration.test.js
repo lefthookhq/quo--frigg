@@ -75,6 +75,9 @@ describe('AxisCareIntegration', () => {
                     get: jest.fn(),
                 },
                 listClients: jest.fn(),
+                listLeads: jest.fn(),
+                listCaregivers: jest.fn(),
+                listApplicants: jest.fn(),
                 getClient: jest.fn(),
                 getFromUrl: jest.fn(),
             },
@@ -196,6 +199,218 @@ describe('AxisCareIntegration', () => {
                 expect(result.cursor).toBe(null);
                 expect(result.hasMore).toBe(false);
             });
+
+            it('should parse Caregivers dict response and convert to array', async () => {
+                const nextPageUrl =
+                    'https://10825.axiscare.com/api/caregivers?startAfterId=2&limit=50';
+                const mockResponse = {
+                    results: {
+                        caregivers: {
+                            '1': {
+                                id: 1,
+                                firstName: 'George',
+                                lastName: 'Washington',
+                            },
+                            '2': {
+                                id: 2,
+                                firstName: 'Jane',
+                                lastName: 'Doe',
+                            },
+                        },
+                        nextPage: nextPageUrl,
+                        caregiversNotFound: [],
+                    },
+                    success: true,
+                };
+
+                mockAxisCareApi.api.listCaregivers.mockResolvedValue(
+                    mockResponse,
+                );
+
+                const result = await integration.fetchPersonPage({
+                    objectType: 'Caregiver',
+                    cursor: null,
+                    limit: 50,
+                });
+
+                expect(result.data).toHaveLength(2);
+                expect(result.data[0].firstName).toBe('George');
+                expect(result.data[0].objectType).toBe('Caregiver');
+                expect(result.hasMore).toBe(true);
+                expect(result.cursor).toBe(nextPageUrl);
+            });
+
+            it('should parse Applicants dict response and convert to array', async () => {
+                const nextPageUrl =
+                    'https://10825.axiscare.com/api/applicants?statuses=active&startAfterId=907&limit=50';
+                const mockResponse = {
+                    results: {
+                        applicants: {
+                            '826': {
+                                id: 826,
+                                firstName: 'Taizee',
+                                lastName: 'Sarwee',
+                            },
+                        },
+                        nextPage: nextPageUrl,
+                        applicantsNotFound: [],
+                    },
+                    success: true,
+                };
+
+                mockAxisCareApi.api.listApplicants.mockResolvedValue(
+                    mockResponse,
+                );
+
+                const result = await integration.fetchPersonPage({
+                    objectType: 'Applicant',
+                    cursor: null,
+                    limit: 50,
+                });
+
+                expect(result.data).toHaveLength(1);
+                expect(result.data[0].firstName).toBe('Taizee');
+                expect(result.data[0].objectType).toBe('Applicant');
+                expect(result.hasMore).toBe(true);
+                expect(result.cursor).toBe(nextPageUrl);
+            });
+
+            it('should continue pagination when first page is empty but nextPage exists (Caregiver)', async () => {
+                const nextPageUrl =
+                    'https://10825.axiscare.com/api/caregivers?startAfterId=104&limit=50';
+                const mockResponse = {
+                    results: {
+                        caregivers: {},
+                        nextPage: nextPageUrl,
+                        caregiversNotFound: [],
+                    },
+                    success: true,
+                };
+
+                mockAxisCareApi.api.listCaregivers.mockResolvedValue(
+                    mockResponse,
+                );
+
+                const result = await integration.fetchPersonPage({
+                    objectType: 'Caregiver',
+                    cursor: null,
+                    limit: 50,
+                });
+
+                expect(result.data).toHaveLength(0);
+                expect(result.hasMore).toBe(true);
+                expect(result.cursor).toBe(nextPageUrl);
+            });
+
+            it('should handle Leads nextPageToken pagination', async () => {
+                const nextPageUrl =
+                    'https://10825.axiscare.com/api/leads?nextPageToken=ODEz&limit=50';
+                const mockResponse = {
+                    results: {
+                        leads: [
+                            { id: 1, firstName: 'Jane', lastName: 'Lead' },
+                        ],
+                        nextPage: nextPageUrl,
+                    },
+                };
+
+                mockAxisCareApi.api.listLeads.mockResolvedValue(mockResponse);
+
+                const result = await integration.fetchPersonPage({
+                    objectType: 'Lead',
+                    cursor: null,
+                    limit: 50,
+                });
+
+                expect(result.data).toHaveLength(1);
+                expect(result.hasMore).toBe(true);
+                expect(result.cursor).toBe(nextPageUrl);
+            });
+
+            it('should follow full URL cursor via getFromUrl on subsequent pages', async () => {
+                const cursorUrl =
+                    'https://10825.axiscare.com/api/clients?startAfterId=100&limit=50';
+                const mockResponse = {
+                    results: {
+                        clients: [
+                            { id: 101, firstName: 'Bob', lastName: 'Smith' },
+                        ],
+                    },
+                };
+
+                mockAxisCareApi.api.getFromUrl.mockResolvedValue(mockResponse);
+
+                const result = await integration.fetchPersonPage({
+                    objectType: 'Client',
+                    cursor: cursorUrl,
+                    limit: 50,
+                });
+
+                expect(mockAxisCareApi.api.getFromUrl).toHaveBeenCalledWith(
+                    cursorUrl,
+                );
+                expect(mockAxisCareApi.api.listClients).not.toHaveBeenCalled();
+                expect(result.data).toHaveLength(1);
+                expect(result.hasMore).toBe(false);
+                expect(result.cursor).toBe(null);
+            });
+
+            it('should parse Caregiver dict response via getFromUrl on subsequent pages', async () => {
+                const cursorUrl =
+                    'https://10825.axiscare.com/api/caregivers?startAfterId=104&limit=50';
+                const mockResponse = {
+                    results: {
+                        caregivers: {
+                            '105': {
+                                id: 105,
+                                firstName: 'Alice',
+                                lastName: 'Nurse',
+                            },
+                        },
+                        caregiversNotFound: [],
+                    },
+                    success: true,
+                };
+
+                mockAxisCareApi.api.getFromUrl.mockResolvedValue(mockResponse);
+
+                const result = await integration.fetchPersonPage({
+                    objectType: 'Caregiver',
+                    cursor: cursorUrl,
+                    limit: 50,
+                });
+
+                expect(mockAxisCareApi.api.getFromUrl).toHaveBeenCalledWith(
+                    cursorUrl,
+                );
+                expect(
+                    mockAxisCareApi.api.listCaregivers,
+                ).not.toHaveBeenCalled();
+                expect(result.data).toHaveLength(1);
+                expect(result.data[0].firstName).toBe('Alice');
+                expect(result.data[0].objectType).toBe('Caregiver');
+            });
+
+            it('should return hasMore=false when no nextPage URL', async () => {
+                const mockResponse = {
+                    results: {
+                        clients: [
+                            { id: 1, firstName: 'John', lastName: 'Doe' },
+                        ],
+                    },
+                };
+
+                mockAxisCareApi.api.listClients.mockResolvedValue(mockResponse);
+
+                const result = await integration.fetchPersonPage({
+                    objectType: 'Client',
+                    cursor: null,
+                    limit: 50,
+                });
+
+                expect(result.hasMore).toBe(false);
+                expect(result.cursor).toBe(null);
+            });
         });
 
         describe('transformPersonToQuo', () => {
@@ -215,7 +430,7 @@ describe('AxisCareIntegration', () => {
 
                 const result = await integration.transformPersonToQuo(client);
 
-                expect(result.externalId).toBe('123');
+                expect(result.externalId).toBe('client-123');
                 expect(result.source).toBe('axiscare');
                 expect(result.defaultFields.firstName).toBe('John');
                 expect(result.defaultFields.lastName).toBe('Doe');
@@ -745,7 +960,7 @@ describe('AxisCareIntegration', () => {
             expect(result[1].id).toBe(3);
 
             expect(consoleErrorSpy).toHaveBeenCalledWith(
-                expect.stringContaining('Failed to fetch client 2'),
+                expect.stringContaining('Failed to fetch Client 2'),
                 expect.any(String),
             );
 

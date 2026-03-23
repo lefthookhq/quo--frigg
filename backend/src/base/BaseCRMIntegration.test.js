@@ -969,6 +969,64 @@ describe('BaseCRMIntegration', () => {
             );
         });
 
+        it('should continue pagination when first page is empty but hasMore is true', async () => {
+            const nextPageUrl =
+                'https://10825.axiscare.com/api/caregivers?startAfterId=104&limit=50';
+
+            class EmptyButHasMoreIntegration extends BaseCRMIntegration {
+                static CRMConfig = {
+                    syncConfig: {
+                        paginationType: 'CURSOR_BASED',
+                        supportsTotal: false,
+                        returnFullRecords: true,
+                    },
+                };
+
+                async fetchPersonPage() {
+                    return {
+                        data: [],
+                        cursor: nextPageUrl,
+                        hasMore: true,
+                    };
+                }
+
+                transformPersonToQuo() {}
+                async logSMSToActivity() {}
+                async logCallToActivity() {}
+                async setupWebhooks() {}
+                async fetchPersonById() {}
+                async fetchPersonsByIds() {
+                    return [];
+                }
+            }
+
+            const emptyHasMoreIntegration = new EmptyButHasMoreIntegration();
+            emptyHasMoreIntegration._processManager = mockProcessManager;
+            emptyHasMoreIntegration._queueManager = mockQueueManager;
+
+            await emptyHasMoreIntegration.fetchPersonPageHandler({
+                data: {
+                    processId: 'test-proc',
+                    personObjectType: 'Caregiver',
+                    cursor: null,
+                    limit: 50,
+                },
+            });
+
+            expect(
+                mockQueueManager.queueCompleteSync,
+            ).not.toHaveBeenCalled();
+            expect(
+                mockQueueManager.queueFetchPersonPage,
+            ).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    processId: 'test-proc',
+                    personObjectType: 'Caregiver',
+                    cursor: nextPageUrl,
+                }),
+            );
+        });
+
         it('should continue to next page on processing error', async () => {
             const processId = 'test-proc';
 

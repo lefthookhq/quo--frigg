@@ -812,8 +812,8 @@ class BaseCRMIntegration extends IntegrationBase {
                 `[BaseCRM] Fetched ${persons.length} records, hasMore=${hasMore}`,
             );
 
-            // Handle empty first page
-            if (!cursor && persons.length === 0) {
+            // Handle empty page with no more results
+            if (persons.length === 0 && !hasMore) {
                 console.log('[BaseCRM] No records found, completing sync');
                 await this.processManager.updateTotal(processId, 0, 0);
                 await this.queueManager.queueCompleteSync(processId);

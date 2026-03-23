@@ -159,7 +159,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
      * Fetch a page of persons from AxisCare (Clients, Leads, Caregivers, or Applicants)
      * @param {Object} params
      * @param {string} params.objectType - CRM object type (Client, Lead, Caregiver, or Applicant)
-     * @param {string|null} [params.cursor] - Cursor for pagination (startAfterId)
+     * @param {string|null} [params.cursor] - Full nextPage URL from previous response, or null for first page
      * @param {number} params.limit - Records per page
      * @param {Date} [params.modifiedSince] - Filter by modification date
      * @param {boolean} [params.sortDesc=true] - Sort descending (ignored by AxisCare)
@@ -177,76 +177,65 @@ class AxisCareIntegration extends BaseCRMIntegration {
         try {
             const api = this._getAxisCareApiForSite(siteNumber);
 
-            const params = {
-                limit: limit || 50,
-            };
-
-            if (cursor) {
-                params.startAfterId = cursor;
-            }
-
-            if (modifiedSince) {
-                params.updated_since = modifiedSince.toISOString();
-            }
-
-            let response, persons;
-
             console.log(
-                `[AxisCare] Fetching ${objectType} page with cursor=${cursor}${siteNumber ? `, siteNumber=${siteNumber}` : ''}`,
+                `[AxisCare] Fetching ${objectType} page with cursor=${cursor ? 'yes' : 'null'}${siteNumber ? `, siteNumber=${siteNumber}` : ''}`,
             );
 
+            let response;
+            if (cursor) {
+                response = await api.getFromUrl(cursor);
+            } else {
+                const params = { limit: limit || 50 };
+                if (modifiedSince) {
+                    params.updated_since = modifiedSince.toISOString();
+                }
+
+                switch (objectType) {
+                    case 'Client':
+                        response = await api.listClients(params);
+                        break;
+                    case 'Lead':
+                        response = await api.listLeads(params);
+                        break;
+                    case 'Caregiver':
+                        response = await api.listCaregivers(params);
+                        break;
+                    case 'Applicant':
+                        response = await api.listApplicants(params);
+                        break;
+                    default:
+                        throw new Error(`Unknown objectType: ${objectType}`);
+                }
+            }
+
+            let persons;
             switch (objectType) {
                 case 'Client':
-                    response = await api.listClients(params);
                     persons = response.results?.clients || [];
                     break;
-
                 case 'Lead':
-                    response = await api.listLeads(params);
                     persons = response.results?.leads || [];
                     break;
-
-                case 'Caregiver':
-                    response = await api.listCaregivers(params);
-                    persons = response.caregivers || [];
+                case 'Caregiver': {
+                    const caregivers = response.results?.caregivers || {};
+                    persons = Array.isArray(caregivers)
+                        ? caregivers
+                        : Object.values(caregivers);
                     break;
-
-                case 'Applicant':
-                    response = await api.listApplicants(params);
-                    persons = response.applicants || [];
+                }
+                case 'Applicant': {
+                    const applicants = response.results?.applicants || {};
+                    persons = Array.isArray(applicants)
+                        ? applicants
+                        : Object.values(applicants);
                     break;
-
+                }
                 default:
                     throw new Error(`Unknown objectType: ${objectType}`);
             }
 
-            let nextCursor = null;
-            const nextPageUrl = response.results?.nextPage || response.nextPage;
-
-            if (nextPageUrl) {
-                console.log('[AxisCare] DEBUG nextPage:', nextPageUrl);
-                try {
-                    const url = new URL(nextPageUrl);
-                    console.log(
-                        '[AxisCare] DEBUG parsed URL searchParams:',
-                        url.searchParams.toString(),
-                    );
-                    nextCursor = url.searchParams.get('startAfterId');
-                    console.log(
-                        '[AxisCare] DEBUG extracted cursor:',
-                        nextCursor,
-                    );
-                } catch (error) {
-                    console.warn(
-                        '[AxisCare] Failed to parse nextPage URL:',
-                        error.message,
-                        'Raw nextPage:',
-                        nextPageUrl,
-                    );
-                }
-            } else {
-                console.log('[AxisCare] DEBUG no nextPage in response');
-            }
+            const nextPageUrl = response.results?.nextPage || null;
+            const hasMoreResults = !!nextPageUrl;
 
             const taggedPersons = persons.map((person) => ({
                 ...person,
@@ -254,17 +243,13 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 siteNumber: siteNumber,
             }));
 
-            // Stop pagination if no results returned, regardless of nextPage URL
-            // AxisCare uses a shared ID space, so nextPage may point to IDs that exist but aren't this entity type
-            const hasMoreResults = taggedPersons.length > 0 && !!nextPageUrl;
-
             console.log(
                 `[AxisCare] Fetched ${taggedPersons.length} ${objectType}(s), hasMore=${hasMoreResults}`,
             );
 
             return {
                 data: taggedPersons,
-                cursor: hasMoreResults ? nextCursor : null,
+                cursor: nextPageUrl || null,
                 hasMore: hasMoreResults,
             };
         } catch (error) {
@@ -307,7 +292,9 @@ class AxisCareIntegration extends BaseCRMIntegration {
         const firstName = this._extractFirstName(person, objectType);
 
         return {
-            externalId: person.id ? `${person.id}` : `${person.mobilePhone}`, // Todo: Applicants don't have an id, so we use the mobilePhone, confirm with Quo if that's ok
+            externalId: person.id
+                ? `${objectType.toLowerCase()}-${person.id}`
+                : `${objectType.toLowerCase()}-${person.mobilePhone}`,
             source: 'axiscare',
             defaultFields: {
                 firstName,
@@ -2371,6 +2358,8 @@ class AxisCareIntegration extends BaseCRMIntegration {
                     modifiedSince,
                     sortDesc,
                 });
+            } else if (persons.length === 0 && !hasMore) {
+                await this.queueManager.queueCompleteSync(processId);
             } else {
                 await this.processManager.updateState(
                     processId,
@@ -2400,6 +2389,9 @@ class AxisCareIntegration extends BaseCRMIntegration {
         const personObjectType = process?.context?.personObjectType;
         const entityType = personObjectType?.toLowerCase() || 'client';
 
+        // Store for fetchPersonsByIds/fetchPersonById to use
+        this._currentObjectType = personObjectType || 'Client';
+
         await super.processPersonBatchHandler({ data });
 
         if (siteNumber) {
@@ -2423,18 +2415,30 @@ class AxisCareIntegration extends BaseCRMIntegration {
     }
 
     /**
-     * Fetch a single client by ID
-     * @param {string} id - Client ID
+     * Fetch a single person by ID using the appropriate entity-type API
+     * @param {string} id - Person ID
      * @returns {Promise<Object>}
      */
     async fetchPersonById(id) {
-        return await this.axisCare.api.getClient(id);
+        const objectType = this._currentObjectType || 'Client';
+        switch (objectType) {
+            case 'Client':
+                return await this.axisCare.api.getClient(id);
+            case 'Lead':
+                return await this.axisCare.api.getLead(id);
+            case 'Caregiver':
+                return await this.axisCare.api.getCaregiver(id);
+            case 'Applicant':
+                return await this.axisCare.api.getApplicant(id);
+            default:
+                return await this.axisCare.api.getClient(id);
+        }
     }
 
     /**
-     * Fetch multiple clients by IDs (for webhook batch processing)
+     * Fetch multiple persons by IDs using the appropriate entity-type API
      * Optimized: Uses bulk API call when possible, falls back to sequential
-     * @param {string[]} ids - Array of client IDs
+     * @param {string[]} ids - Array of person IDs
      * @returns {Promise<Object[]>}
      */
     async fetchPersonsByIds(ids) {
@@ -2442,21 +2446,59 @@ class AxisCareIntegration extends BaseCRMIntegration {
             return [];
         }
 
-        try {
-            // Use bulk API call (much faster than sequential)
-            const response = await this.axisCare.api.listClients({
-                clientIds: ids.join(','),
-                limit: ids.length,
-            });
+        const objectType = this._currentObjectType || 'Client';
 
-            return response.results?.clients || [];
+        try {
+            let response, persons;
+            switch (objectType) {
+                case 'Client':
+                    response = await this.axisCare.api.listClients({
+                        clientIds: ids.join(','),
+                        limit: ids.length,
+                    });
+                    persons = response.results?.clients || [];
+                    break;
+                case 'Lead':
+                    response = await this.axisCare.api.listLeads({
+                        leadIds: ids.join(','),
+                        limit: ids.length,
+                    });
+                    persons = response.results?.leads || [];
+                    break;
+                case 'Caregiver':
+                    response = await this.axisCare.api.listCaregivers({
+                        caregiverIds: ids.join(','),
+                        limit: ids.length,
+                    });
+                    persons = Object.values(
+                        response.results?.caregivers || {},
+                    );
+                    break;
+                case 'Applicant':
+                    response = await this.axisCare.api.listApplicants({
+                        applicantIds: ids.join(','),
+                        limit: ids.length,
+                    });
+                    persons = Object.values(
+                        response.results?.applicants || {},
+                    );
+                    break;
+                default:
+                    response = await this.axisCare.api.listClients({
+                        clientIds: ids.join(','),
+                        limit: ids.length,
+                    });
+                    persons = response.results?.clients || [];
+                    break;
+            }
+
+            return persons.map((p) => ({ ...p, objectType }));
         } catch (error) {
             console.warn(
-                `Bulk fetch failed for ${ids.length} clients, falling back to sequential:`,
+                `Bulk fetch failed for ${ids.length} ${objectType}(s), falling back to sequential:`,
                 error.message,
             );
 
-            // Fallback: Fetch one-by-one (slower but more resilient)
             return await this._fetchPersonsByIdsSequential(ids);
         }
     }
@@ -2464,20 +2506,24 @@ class AxisCareIntegration extends BaseCRMIntegration {
     /**
      * Fallback method: Fetch clients sequentially
      * @private
-     * @param {string[]} ids - Array of client IDs
+     * @param {string[]} ids - Array of person IDs
      * @returns {Promise<Object[]>}
      */
     async _fetchPersonsByIdsSequential(ids) {
-        const clients = [];
+        const objectType = this._currentObjectType || 'Client';
+        const persons = [];
         for (const id of ids) {
             try {
-                const client = await this.fetchPersonById(id);
-                clients.push(client);
+                const person = await this.fetchPersonById(id);
+                persons.push({ ...person, objectType });
             } catch (error) {
-                console.error(`Failed to fetch client ${id}:`, error.message);
+                console.error(
+                    `Failed to fetch ${objectType} ${id}:`,
+                    error.message,
+                );
             }
         }
-        return clients;
+        return persons;
     }
 
     /**
