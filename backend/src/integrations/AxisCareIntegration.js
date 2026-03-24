@@ -1617,6 +1617,23 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 ? activity.contactType.toLowerCase()
                 : 'client';
 
+            const prefixPattern = VALID_TAG_TYPES.join('|');
+            const prefixRegex = new RegExp(
+                `^(?:${prefixPattern})-(\\d+)$`,
+            );
+            const parseEntityId = (contactId) => {
+                if (!contactId) return NaN;
+                const str = String(contactId);
+                const match = str.match(prefixRegex);
+                if (match) return parseInt(match[1], 10);
+                return /^\d+$/.test(str) ? parseInt(str, 10) : NaN;
+            };
+
+            const entityId = parseEntityId(activity.contactId);
+
+            const tags =
+                entityId > 0 ? [{ type: tagType, entityId }] : [];
+
             const callLogData = {
                 callerName:
                     activity.callerName || activity.callerPhone || 'Unknown',
@@ -1627,12 +1644,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
                     activity.subject ||
                     `Call: ${activity.direction} (${activity.duration}s)`,
                 notes: activity.summary || 'Phone call',
-                tags: [
-                    {
-                        type: tagType,
-                        entityId: parseInt(activity.contactId, 10),
-                    },
-                ],
+                tags,
             };
 
             const response = await api.createCallLog(callLogData);
