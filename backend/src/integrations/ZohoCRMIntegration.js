@@ -1590,10 +1590,8 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         );
 
         try {
-            const searchCriteria = `((Phone:equals:${normalizedPhone})or(Mobile:equals:${normalizedPhone}))`;
-
             const searchResults = await this.zoho.api.searchContacts({
-                criteria: searchCriteria,
+                phone: normalizedPhone,
             });
 
             if (searchResults?.data && searchResults.data.length > 0) {
