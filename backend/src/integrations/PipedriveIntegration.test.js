@@ -411,6 +411,39 @@ describe('PipedriveIntegration (Refactored)', () => {
                 });
             });
 
+            it('should set user_id when quoUserId resolves to a Pipedrive user', async () => {
+                const mockPerson = {
+                    data: { id: 123, first_name: 'John', last_name: 'Doe' },
+                };
+                mockPipedriveApi.api.getPerson.mockResolvedValue(mockPerson);
+                mockPipedriveApi.api.createNote.mockResolvedValue({
+                    data: { id: 456 },
+                });
+                mockQuoApi.api.getUser = jest.fn().mockResolvedValue({
+                    data: { firstName: 'Juan', lastName: 'Ladino', email: 'juan@happyclean.com' },
+                });
+                mockPipedriveApi.api.findUsers = jest.fn().mockResolvedValueOnce({
+                    success: true,
+                    data: [{ id: 888, name: 'Juan Ladino', email: 'juan@happyclean.com', active_flag: true }],
+                });
+
+                const activity = {
+                    contactExternalId: '123',
+                    direction: 'outbound',
+                    content: 'Test SMS message',
+                    timestamp: '2025-01-10T15:30:00Z',
+                    quoUserId: 'USjuan123',
+                };
+
+                await integration.logSMSToActivity(activity);
+
+                expect(mockPipedriveApi.api.createNote).toHaveBeenCalledWith({
+                    content: 'Test SMS message',
+                    person_id: 123,
+                    user_id: 888,
+                });
+            });
+
             it('should handle person not found gracefully', async () => {
                 mockPipedriveApi.api.getPerson.mockResolvedValue({
                     data: null,
@@ -472,6 +505,40 @@ describe('PipedriveIntegration (Refactored)', () => {
                 });
             });
 
+            it('should set owner_id when quoUserId resolves to a Pipedrive user', async () => {
+                const mockPerson = {
+                    data: { id: 123, first_name: 'John', last_name: 'Doe' },
+                };
+                mockPipedriveApi.api.getPerson.mockResolvedValue(mockPerson);
+                mockPipedriveApi.api.createActivity.mockResolvedValue({
+                    data: { id: 456 },
+                });
+                mockQuoApi.api.getUser = jest.fn().mockResolvedValue({
+                    data: { firstName: 'Juan', email: 'juan@happyclean.com' },
+                });
+                mockPipedriveApi.api.findUsers = jest.fn().mockResolvedValueOnce({
+                    success: true,
+                    data: [{ id: 999, name: 'Juan Ladino', email: 'juan@happyclean.com', active_flag: true }],
+                });
+
+                const activity = {
+                    contactExternalId: '123',
+                    direction: 'outbound',
+                    duration: 300,
+                    summary: 'Discussed project proposal',
+                    timestamp: '2025-01-10T15:30:00Z',
+                    quoUserId: 'USjuan123',
+                };
+
+                await integration.logCallToActivity(activity);
+
+                expect(mockPipedriveApi.api.createActivity).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        owner_id: 999,
+                    }),
+                );
+            });
+
             it('should set duration to undefined for calls under 60 seconds', async () => {
                 const mockPerson = {
                     data: { id: 123, first_name: 'John', last_name: 'Doe' },
@@ -501,6 +568,103 @@ describe('PipedriveIntegration (Refactored)', () => {
                     participants: [{ person_id: 123, primary: true }],
                     duration: undefined,
                 });
+            });
+        });
+
+        describe('_resolvePipedriveOwnerId', () => {
+            it('should resolve Pipedrive user by email match', async () => {
+                mockPipedriveApi.api.findUsers = jest.fn()
+                    .mockResolvedValueOnce({
+                        success: true,
+                        data: [{ id: 555, name: 'Juan Ladino', email: 'juan@happyclean.com', active_flag: true }],
+                    });
+
+                const result = await integration._resolvePipedriveOwnerId({
+                    firstName: 'Juan',
+                    lastName: 'Ladino',
+                    email: 'juan@happyclean.com',
+                });
+
+                expect(result).toBe(555);
+                expect(mockPipedriveApi.api.findUsers).toHaveBeenCalledWith({
+                    term: 'juan@happyclean.com',
+                    search_by_email: 1,
+                });
+            });
+
+            it('should fall back to full name match when email has no results', async () => {
+                mockPipedriveApi.api.findUsers = jest.fn()
+                    .mockResolvedValueOnce({ success: true, data: [] })
+                    .mockResolvedValueOnce({
+                        success: true,
+                        data: [{ id: 777, name: 'Juan Ladino', email: 'jl@other.com', active_flag: true }],
+                    });
+
+                const result = await integration._resolvePipedriveOwnerId({
+                    firstName: 'Juan',
+                    lastName: 'Ladino',
+                    email: 'juan@happyclean.com',
+                });
+
+                expect(result).toBe(777);
+                expect(mockPipedriveApi.api.findUsers).toHaveBeenCalledTimes(2);
+                expect(mockPipedriveApi.api.findUsers).toHaveBeenNthCalledWith(2, {
+                    term: 'Juan Ladino',
+                });
+            });
+
+            it('should return null when no match found at all', async () => {
+                mockPipedriveApi.api.findUsers = jest.fn()
+                    .mockResolvedValue({ success: true, data: [] });
+
+                const result = await integration._resolvePipedriveOwnerId({
+                    firstName: 'Nobody',
+                    email: 'nobody@nowhere.com',
+                });
+
+                expect(result).toBeNull();
+            });
+
+            it('should skip inactive users and return null if no active match', async () => {
+                mockPipedriveApi.api.findUsers = jest.fn()
+                    .mockResolvedValueOnce({
+                        success: true,
+                        data: [{ id: 111, name: 'Juan Ladino', email: 'juan@happyclean.com', active_flag: false }],
+                    });
+
+                const result = await integration._resolvePipedriveOwnerId({
+                    firstName: 'Juan',
+                    email: 'juan@happyclean.com',
+                });
+
+                expect(result).toBeNull();
+            });
+
+            it('should return null and not throw when API errors', async () => {
+                mockPipedriveApi.api.findUsers = jest.fn()
+                    .mockRejectedValue(new Error('403 Forbidden'));
+
+                const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+
+                const result = await integration._resolvePipedriveOwnerId({
+                    firstName: 'Juan',
+                    email: 'juan@test.com',
+                });
+
+                expect(result).toBeNull();
+                consoleSpy.mockRestore();
+            });
+
+            it('should return null when quoUser has no email and no firstName', async () => {
+                const result = await integration._resolvePipedriveOwnerId({});
+
+                expect(result).toBeNull();
+            });
+
+            it('should return null for null input', async () => {
+                const result = await integration._resolvePipedriveOwnerId(null);
+
+                expect(result).toBeNull();
             });
         });
 

@@ -70,7 +70,7 @@ class QuoWebhookEventProcessor {
 
         // Use answeredBy (the user who answered) if available, otherwise fall back to userId (phone owner)
         const userIdForDisplay = call.answeredBy || call.userId;
-        const { inboxName, inboxNumber, userName } =
+        const { inboxName, inboxNumber, userName, quoUser } =
             await this.fetchCallMetadata(
                 quoApi,
                 call.phoneNumberId,
@@ -121,6 +121,7 @@ class QuoWebhookEventProcessor {
                         timestamp: call.createdAt,
                         duration: call.duration,
                         direction: call.direction,
+                        quoUser,
                         durationFormatted:
                             formatOptions.formatMethod === 'plainText'
                                 ? this._formatDurationForZoho(call.duration)
@@ -286,6 +287,7 @@ class QuoWebhookEventProcessor {
             content,
             timestamp: messageObject.createdAt,
             direction: messageObject.direction,
+            quoUser: userDetails?.data || null,
         });
 
         await mappingRepo.upsert(messageId, {
@@ -396,6 +398,7 @@ class QuoWebhookEventProcessor {
             inboxName: QuoCallContentBuilder.buildInboxName(phoneNumberDetails),
             inboxNumber: phoneNumberDetails.data?.number || '',
             userName: QuoCallContentBuilder.buildUserName(userDetails),
+            quoUser: userDetails?.data || null,
         };
     }
 

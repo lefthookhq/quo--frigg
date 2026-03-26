@@ -522,6 +522,58 @@ class PipedriveIntegration extends BaseCRMIntegration {
     }
 
     /**
+     * Resolve a Quo user to a Pipedrive user ID for activity ownership.
+     * Searches by email first, then falls back to firstName.
+     * Returns null if no match (Pipedrive defaults to account owner).
+     *
+     * @private
+     * @param {Object} quoUser - Quo user data { firstName, lastName, email }
+     * @returns {Promise<number|null>} Pipedrive user ID or null
+     */
+    async _resolvePipedriveOwnerId(quoUser) {
+        if (!quoUser?.email && !quoUser?.firstName) {
+            return null;
+        }
+
+        try {
+            if (quoUser.email) {
+                const emailResult = await this.pipedrive.api.findUsers({
+                    term: quoUser.email,
+                    search_by_email: 1,
+                });
+                const emailMatch = emailResult?.data?.find(
+                    (u) => u.active_flag,
+                );
+                if (emailMatch) {
+                    return emailMatch.id;
+                }
+            }
+
+            if (quoUser.firstName) {
+                const searchName = quoUser.lastName
+                    ? `${quoUser.firstName} ${quoUser.lastName}`
+                    : quoUser.firstName;
+                const nameResult = await this.pipedrive.api.findUsers({
+                    term: searchName,
+                });
+                const nameMatch = nameResult?.data?.find(
+                    (u) => u.active_flag,
+                );
+                if (nameMatch) {
+                    return nameMatch.id;
+                }
+            }
+
+            return null;
+        } catch (error) {
+            console.warn(
+                `[Pipedrive] Failed to resolve owner: ${error.message}`,
+            );
+            return null;
+        }
+    }
+
+    /**
      * Log SMS message to Pipedrive as a note
      * @param {Object} activity - SMS activity
      * @returns {Promise<void>}
@@ -538,9 +590,26 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 return;
             }
 
+            let userId = null;
+            if (activity.quoUserId) {
+                try {
+                    const quoUser = await this.quo.api.getUser(
+                        activity.quoUserId,
+                    );
+                    userId = await this._resolvePipedriveOwnerId(
+                        quoUser?.data,
+                    );
+                } catch (error) {
+                    console.warn(
+                        `[Pipedrive] Could not resolve owner: ${error.message}`,
+                    );
+                }
+            }
+
             const noteData = {
                 content: activity.content,
                 person_id: person.data.id,
+                ...(userId && { user_id: userId }),
             };
 
             await this.pipedrive.api.createNote(noteData);
@@ -567,6 +636,22 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 return;
             }
 
+            let ownerId = null;
+            if (activity.quoUserId) {
+                try {
+                    const quoUser = await this.quo.api.getUser(
+                        activity.quoUserId,
+                    );
+                    ownerId = await this._resolvePipedriveOwnerId(
+                        quoUser?.data,
+                    );
+                } catch (error) {
+                    console.warn(
+                        `[Pipedrive] Could not resolve owner: ${error.message}`,
+                    );
+                }
+            }
+
             const activityData = {
                 subject: `Call: ${activity.direction} (${activity.duration}s)`,
                 type: 'call',
@@ -574,6 +659,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 note: activity.summary || 'Phone call',
                 participants: [{ person_id: person.data.id, primary: true }],
                 duration: formatDurationForPipedrive(activity.duration),
+                ...(ownerId && { owner_id: ownerId }),
             };
 
             await this.pipedrive.api.createActivity(activityData);
@@ -1520,6 +1606,8 @@ class PipedriveIntegration extends BaseCRMIntegration {
                     }
                 },
                 createCallActivity: async (contactId, activity) => {
+                    const ownerId =
+                        await this._resolvePipedriveOwnerId(activity.quoUser);
                     const activityData = {
                         subject: activity.title || 'Call',
                         type: 'call',
@@ -1529,6 +1617,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                             { person_id: parseInt(contactId), primary: true },
                         ],
                         duration: formatDurationForPipedrive(activity.duration),
+                        ...(ownerId && { owner_id: ownerId }),
                     };
                     const activityResponse =
                         await this.pipedrive.api.createActivity(activityData);
@@ -1576,9 +1665,12 @@ class PipedriveIntegration extends BaseCRMIntegration {
                     }
                 },
                 createMessageActivity: async (contactId, activity) => {
+                    const userId =
+                        await this._resolvePipedriveOwnerId(activity.quoUser);
                     const noteData = {
                         content: `<p><strong>${activity.title}</strong></p><p>${activity.content}</p>`,
                         person_id: parseInt(contactId),
+                        ...(userId && { user_id: userId }),
                     };
                     const noteResponse =
                         await this.pipedrive.api.createNote(noteData);
@@ -1674,6 +1766,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
             '';
         const userName = QuoCallContentBuilder.buildUserName(userDetails);
         const formatOptions = QuoCallContentBuilder.getFormatOptions('html');
+        const pipedriveOwnerId = await this._resolvePipedriveOwnerId(
+            userDetails?.data,
+        );
 
         const deepLink = webhookData.data.deepLink || '#';
 
@@ -1725,6 +1820,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
                                         primary: true,
                                     },
                                 ],
+                                ...(pipedriveOwnerId && {
+                                    owner_id: pipedriveOwnerId,
+                                }),
                             };
                             const activityResponse =
                                 await this.pipedrive.api.createActivity(
@@ -1736,6 +1834,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
                             // Note: Updates an Activity (not a Note) for calls
                             const activityData = {
                                 note: title + content,
+                                ...(pipedriveOwnerId && {
+                                    owner_id: pipedriveOwnerId,
+                                }),
                             };
                             return await this.updateActivity(
                                 activityId,

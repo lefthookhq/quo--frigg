@@ -1022,6 +1022,7 @@ class BaseCRMIntegration extends IntegrationBase {
             content: sms.body,
             timestamp: sms.createdAt,
             contactExternalId: sms.contactId,
+            quoUserId: sms.userId,
         };
     }
 
@@ -1038,6 +1039,7 @@ class BaseCRMIntegration extends IntegrationBase {
             summary: call.aiSummary,
             timestamp: call.createdAt,
             contactExternalId: call.contactId,
+            quoUserId: call.answeredBy || call.userId,
         };
     }
 

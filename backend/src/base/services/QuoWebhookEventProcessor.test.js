@@ -547,5 +547,32 @@ describe('QuoWebhookEventProcessor', () => {
             expect(result.inboxNumber).toBe('+15551234567');
             expect(result.userName).toBe('Quo User');
         });
+
+        it('returns quoUser data from the Quo user response', async () => {
+            const mockQuoApi = createMockQuoApi();
+
+            const result = await QuoWebhookEventProcessor.fetchCallMetadata(
+                mockQuoApi,
+                'phone_123',
+                'user_123',
+            );
+
+            expect(result.quoUser).toEqual({
+                firstName: 'John',
+                lastName: 'Doe',
+            });
+        });
+
+        it('returns null quoUser when userId is null', async () => {
+            const mockQuoApi = createMockQuoApi();
+
+            const result = await QuoWebhookEventProcessor.fetchCallMetadata(
+                mockQuoApi,
+                'phone_123',
+                null,
+            );
+
+            expect(result.quoUser).toBeNull();
+        });
     });
 });
