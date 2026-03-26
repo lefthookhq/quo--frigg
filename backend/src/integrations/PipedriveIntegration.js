@@ -532,11 +532,13 @@ class PipedriveIntegration extends BaseCRMIntegration {
      */
     async _resolvePipedriveOwnerId(quoUser) {
         if (!quoUser?.email && !quoUser?.firstName) {
+            console.log('[Pipedrive] No email or firstName provided for user resolution, skipping');
             return null;
         }
 
         try {
             if (quoUser.email) {
+                console.log(`[Pipedrive] Searching for user by email: ${quoUser.email}`);
                 const emailResult = await this.pipedrive.api.findUsers({
                     term: quoUser.email,
                     search_by_email: 1,
@@ -545,14 +547,17 @@ class PipedriveIntegration extends BaseCRMIntegration {
                     (u) => u.active_flag,
                 );
                 if (emailMatch) {
+                    console.log(`[Pipedrive] User found by email: id=${emailMatch.id}, name=${emailMatch.name}`);
                     return emailMatch.id;
                 }
+                console.log(`[Pipedrive] No active user found by email: ${quoUser.email} (results: ${emailResult?.data?.length ?? 0})`);
             }
 
             if (quoUser.firstName) {
                 const searchName = quoUser.lastName
                     ? `${quoUser.firstName} ${quoUser.lastName}`
                     : quoUser.firstName;
+                console.log(`[Pipedrive] Searching for user by name: ${searchName}`);
                 const nameResult = await this.pipedrive.api.findUsers({
                     term: searchName,
                 });
@@ -560,10 +565,13 @@ class PipedriveIntegration extends BaseCRMIntegration {
                     (u) => u.active_flag,
                 );
                 if (nameMatch) {
+                    console.log(`[Pipedrive] User found by name: id=${nameMatch.id}, name=${nameMatch.name}`);
                     return nameMatch.id;
                 }
+                console.log(`[Pipedrive] No active user found by name: ${searchName} (results: ${nameResult?.data?.length ?? 0})`);
             }
 
+            console.log(`[Pipedrive] Could not resolve Pipedrive user for quoUser: email=${quoUser.email}, name=${quoUser.firstName} ${quoUser.lastName}`);
             return null;
         } catch (error) {
             console.warn(
