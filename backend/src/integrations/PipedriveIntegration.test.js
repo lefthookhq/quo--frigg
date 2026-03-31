@@ -36,6 +36,7 @@ describe('PipedriveIntegration (Refactored)', () => {
             api: {
                 listPersons: jest.fn(), // Used by fetchPersonPage
                 getPerson: jest.fn(),
+                searchPersons: jest.fn(),
                 getOrganization: jest.fn(),
                 createWebhook: jest.fn(),
                 deleteWebhook: jest.fn(),
@@ -1008,6 +1009,84 @@ describe('PipedriveIntegration (Refactored)', () => {
                     integration._syncPersonToQuo(person, 'updated'),
                 ).rejects.toThrow('Contact update failed');
             });
+        });
+    });
+
+    describe('_findPipedriveContactByPhone', () => {
+        it('should return null if no contact found (no throw, no retry)', async () => {
+            mockPipedriveApi.api.searchPersons.mockResolvedValue({
+                data: { items: [] },
+            });
+
+            const result = await integration._findPipedriveContactByPhone('+15551111111');
+            expect(result).toBeNull();
+        });
+
+        it('should return null if search returns no data', async () => {
+            mockPipedriveApi.api.searchPersons.mockResolvedValue({});
+
+            const result = await integration._findPipedriveContactByPhone('+15551111111');
+            expect(result).toBeNull();
+        });
+
+        it('should return person ID when contact is found', async () => {
+            mockPipedriveApi.api.searchPersons.mockResolvedValue({
+                data: {
+                    items: [{ item: { id: 12345 } }],
+                },
+            });
+
+            const result = await integration._findPipedriveContactByPhone('+15551111111');
+            expect(result).toBe('12345');
+        });
+    });
+
+    describe('_handleQuoCallSummaryEvent', () => {
+        it('should skip contact gracefully when not found in Pipedrive (no throw)', async () => {
+            // Setup: call exists, has external participant, but contact not found
+            mockQuoApi.api.getCall = jest.fn().mockResolvedValue({
+                data: {
+                    id: 'call-123',
+                    participants: [
+                        { phoneNumber: '+15551111111', type: 'external' },
+                        { phoneNumber: '+15559999999', type: 'internal' },
+                    ],
+                    phoneNumberId: 'phone-1',
+                    userId: 'user-1',
+                },
+            });
+            mockQuoApi.api.getPhoneNumber = jest.fn().mockResolvedValue({
+                data: { number: '+15559999999', formattedNumber: '(555) 999-9999' },
+            });
+            mockQuoApi.api.getUser = jest.fn().mockResolvedValue({
+                data: { firstName: 'Test', lastName: 'User' },
+            });
+            integration.config = {
+                phoneNumbersMetadata: [{ number: '+15559999999' }],
+            };
+            integration._resolvePipedriveOwnerId = jest.fn().mockResolvedValue(null);
+
+            // Contact not found — _findPipedriveContactByPhone returns null
+            integration._findPipedriveContactByPhone = jest.fn().mockResolvedValue(null);
+
+            const webhookData = {
+                data: {
+                    object: {
+                        callId: 'call-123',
+                        summary: [{ text: 'Summary point' }],
+                        nextSteps: [{ text: 'Next step' }],
+                        jobs: [],
+                    },
+                    deepLink: 'https://app.quo.com/call/123',
+                },
+            };
+
+            const result = await integration._handleQuoCallSummaryEvent(webhookData);
+
+            // Should return gracefully with logged: false, NOT throw
+            expect(result.received).toBe(true);
+            expect(result.logged).toBe(false);
+            expect(result.results[0].error).toBe('Contact not found');
         });
     });
 });

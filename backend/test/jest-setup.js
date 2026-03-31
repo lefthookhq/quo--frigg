@@ -67,6 +67,12 @@ jest.mock('@friggframework/core', () => ({
             this.events = {};
         }
     },
+    HaltError: class HaltError extends Error {
+        constructor(message) {
+            super(message);
+            this.isHaltError = true;
+        }
+    },
     Entity: class Entity {},
     UserModel: class UserModel {},
     IntegrationModel: class IntegrationModel {},

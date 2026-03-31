@@ -32,6 +32,7 @@ class QuoWebhookEventProcessor {
         crmAdapter,
         mappingRepo,
         onActivityCreated,
+        logPrefix = '[QuoEventProcessor]',
     }) {
         const callId = webhookData.data.object.id;
         const formatOptions = QuoCallContentBuilder.getFormatOptions(
@@ -39,11 +40,11 @@ class QuoWebhookEventProcessor {
         );
         const useEmoji = crmAdapter.useEmoji !== false;
 
-        console.log(`[QuoEventProcessor] Processing call.completed: ${callId}`);
+        console.log(`${logPrefix} Processing call.completed: ${callId}`);
 
-        const call = await this.fetchCallWithVoicemail(quoApi, callId);
+        const call = await this.fetchCallWithVoicemail(quoApi, callId, logPrefix);
         if (!call) {
-            console.warn(`[QuoEventProcessor] Call ${callId} not found`);
+            console.warn(`${logPrefix} Call ${callId} not found`);
             return { logged: false, error: 'Call not found', callId };
         }
 
@@ -54,7 +55,7 @@ class QuoWebhookEventProcessor {
 
         if (externalParticipants.length === 0) {
             console.warn(
-                `[QuoEventProcessor] No external participants found for call ${callId}`,
+                `${logPrefix} No external participants found for call ${callId}`,
             );
             return {
                 logged: false,
@@ -65,7 +66,7 @@ class QuoWebhookEventProcessor {
         }
 
         console.log(
-            `[QuoEventProcessor] Found ${externalParticipants.length} external participant(s)`,
+            `${logPrefix} Found ${externalParticipants.length} external participant(s)`,
         );
 
         // Use answeredBy (the user who answered) if available, otherwise fall back to userId (phone owner)
@@ -75,6 +76,7 @@ class QuoWebhookEventProcessor {
                 quoApi,
                 call.phoneNumberId,
                 userIdForDisplay,
+                logPrefix,
             );
 
         const deepLink = webhookData.data.deepLink || '#';
@@ -87,7 +89,7 @@ class QuoWebhookEventProcessor {
 
                 if (!contactId) {
                     console.log(
-                        `[QuoEventProcessor] No contact found for phone ${contactPhone}`,
+                        `${logPrefix} No contact found for phone ${contactPhone}`,
                     );
                     results.push({
                         contactPhone,
@@ -138,7 +140,7 @@ class QuoWebhookEventProcessor {
                     });
 
                     console.log(
-                        `[QuoEventProcessor] ✓ Logged call for ${contactPhone}, activity: ${activityId}`,
+                        `${logPrefix} ✓ Logged call for ${contactPhone}, activity: ${activityId}`,
                     );
 
                     if (onActivityCreated) {
@@ -159,7 +161,7 @@ class QuoWebhookEventProcessor {
                 });
             } catch (error) {
                 console.error(
-                    `[QuoEventProcessor] Error processing participant ${contactPhone}:`,
+                    `${logPrefix} Error processing participant ${contactPhone}:`,
                     error.message,
                 );
                 results.push({
@@ -198,6 +200,7 @@ class QuoWebhookEventProcessor {
         crmAdapter,
         mappingRepo,
         onActivityCreated,
+        logPrefix = '[QuoEventProcessor]',
     }) {
         const messageObject = webhookData.data.object;
         const messageId = messageObject.id;
@@ -208,7 +211,7 @@ class QuoWebhookEventProcessor {
         const useEmoji = crmAdapter.useEmoji !== false;
 
         console.log(
-            `[QuoEventProcessor] Processing message: ${messageId} (${eventType})`,
+            `${logPrefix} Processing message: ${messageId} (${eventType})`,
         );
 
         const existingMapping = await mappingRepo.get(messageId);
@@ -217,7 +220,7 @@ class QuoWebhookEventProcessor {
 
         if (existingNoteId) {
             console.log(
-                `[QuoEventProcessor] Message ${messageId} already logged (note: ${existingNoteId}), skipping`,
+                `${logPrefix} Message ${messageId} already logged (note: ${existingNoteId}), skipping`,
             );
             return {
                 logged: false,
@@ -234,13 +237,13 @@ class QuoWebhookEventProcessor {
                 : messageObject.from;
 
         console.log(
-            `[QuoEventProcessor] Message direction: ${messageObject.direction}, contact: ${contactPhone}`,
+            `${logPrefix} Message direction: ${messageObject.direction}, contact: ${contactPhone}`,
         );
 
         const contactId = await crmAdapter.findContactByPhone(contactPhone);
         if (!contactId) {
             console.log(
-                `[QuoEventProcessor] No contact found for phone ${contactPhone}`,
+                `${logPrefix} No contact found for phone ${contactPhone}`,
             );
             return {
                 logged: false,
@@ -298,7 +301,7 @@ class QuoWebhookEventProcessor {
         });
 
         console.log(
-            `[QuoEventProcessor] ✓ Message logged for contact ${contactId} (note: ${activityId})`,
+            `${logPrefix} ✓ Message logged for contact ${contactId} (note: ${activityId})`,
         );
 
         if (onActivityCreated) {
@@ -326,7 +329,7 @@ class QuoWebhookEventProcessor {
      * @param {string} callId - Call ID to fetch
      * @returns {Promise<Object|null>} Call object with voicemail merged, or null if not found
      */
-    static async fetchCallWithVoicemail(quoApi, callId) {
+    static async fetchCallWithVoicemail(quoApi, callId, logPrefix = '[QuoEventProcessor]') {
         const fullCallResponse = await quoApi.getCall(callId);
         if (!fullCallResponse?.data) {
             return null;
@@ -336,7 +339,7 @@ class QuoWebhookEventProcessor {
 
         if (call.status === 'no-answer') {
             console.log(
-                `[QuoEventProcessor] No-answer call ${callId}, waiting 10s for voicemail...`,
+                `${logPrefix} No-answer call ${callId}, waiting 10s for voicemail...`,
             );
 
             await new Promise((resolve) => setTimeout(resolve, 10000));
@@ -347,7 +350,7 @@ class QuoWebhookEventProcessor {
 
                 if (voicemail && voicemail.status === 'completed') {
                     console.log(
-                        `[QuoEventProcessor] Found voicemail for call ${callId}`,
+                        `${logPrefix} Found voicemail for call ${callId}`,
                     );
 
                     call.voicemail = {
@@ -358,12 +361,12 @@ class QuoWebhookEventProcessor {
                     };
                 } else {
                     console.log(
-                        `[QuoEventProcessor] No voicemail found for call ${callId}`,
+                        `${logPrefix} No voicemail found for call ${callId}`,
                     );
                 }
             } catch (error) {
                 console.warn(
-                    `[QuoEventProcessor] Could not fetch voicemail: ${error.message}`,
+                    `${logPrefix} Could not fetch voicemail: ${error.message}`,
                 );
             }
         }
@@ -380,7 +383,7 @@ class QuoWebhookEventProcessor {
      * @param {string} userId - User ID
      * @returns {Promise<{inboxName: string, inboxNumber: string, userName: string}>}
      */
-    static async fetchCallMetadata(quoApi, phoneNumberId, userId) {
+    static async fetchCallMetadata(quoApi, phoneNumberId, userId, logPrefix = '[QuoEventProcessor]') {
         const phoneNumberDetails = await quoApi.getPhoneNumber(phoneNumberId);
 
         let userDetails = null;
@@ -389,7 +392,7 @@ class QuoWebhookEventProcessor {
                 userDetails = await quoApi.getUser(userId);
             } catch (error) {
                 console.warn(
-                    `[QuoEventProcessor] Could not fetch user ${userId}: ${error.statusCode || error.message}`,
+                    `${logPrefix} Could not fetch user ${userId}: ${error.statusCode || error.message}`,
                 );
             }
         }

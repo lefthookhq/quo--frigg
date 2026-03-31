@@ -129,7 +129,7 @@ describe('AttioIntegration - Webhook Mapping Optimization', () => {
             ).rejects.toThrow('Phone number is required');
         });
 
-        it('should throw error if contact not found by phone', async () => {
+        it('should return null if contact not found by phone (no throw, no retry)', async () => {
             // Arrange
             const phoneNumber = '+19175551234';
 
@@ -141,10 +141,11 @@ describe('AttioIntegration - Webhook Mapping Optimization', () => {
                 data: [],
             });
 
-            // Act & Assert
-            await expect(
-                integration._findAttioContactFromQuoWebhook(phoneNumber),
-            ).rejects.toThrow('No Attio contact found');
+            // Act
+            const result = await integration._findAttioContactFromQuoWebhook(phoneNumber);
+
+            // Assert — returns null instead of throwing
+            expect(result).toBeNull();
         });
     });
 

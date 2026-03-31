@@ -1528,6 +1528,46 @@ describe('AttioIntegration (Refactored)', () => {
                     'attio-record-123',
                 );
             });
+
+            it('should skip contact gracefully when not found in Attio (no throw)', async () => {
+                const webhookData = {
+                    data: {
+                        object: {
+                            callId: 'call-456',
+                            summary: [{ text: 'Summary point' }],
+                            nextSteps: [{ text: 'Next step' }],
+                        },
+                    },
+                };
+
+                mockQuoApi.api.getCall.mockResolvedValue({
+                    data: {
+                        id: 'call-456',
+                        participants: ['+15551111111', '+15559999999'],
+                        phoneNumberId: 'phone-1',
+                        userId: 'user-1',
+                    },
+                });
+                mockQuoApi.api.getPhoneNumber = jest.fn().mockResolvedValue({
+                    data: { number: '+15559999999', name: 'Main' },
+                });
+                mockQuoApi.api.getUser = jest.fn().mockResolvedValue({
+                    data: { firstName: 'Test', lastName: 'User' },
+                });
+                integration.config = {
+                    phoneNumbersMetadata: [{ number: '+15559999999' }],
+                };
+
+                // Contact not found — returns null
+                integration._findAttioContactFromQuoWebhook.mockResolvedValue(null);
+
+                const result =
+                    await integration._handleQuoCallSummaryEvent(webhookData);
+
+                expect(result.received).toBe(true);
+                expect(result.logged).toBe(false);
+                expect(result.results[0].error).toBe('Contact not found');
+            });
         });
     });
 
@@ -1598,18 +1638,16 @@ describe('AttioIntegration (Refactored)', () => {
                 );
             });
 
-            it('should throw if no contact found', async () => {
+            it('should return null if no contact found (no throw, no retry)', async () => {
                 mockAttioApi.api.queryRecords.mockResolvedValue({ data: [] });
                 mockAttioApi.api.searchRecords.mockResolvedValue({ data: [] });
 
-                await expect(
-                    integration._findAttioContactByPhone('+15551111111'),
-                ).rejects.toThrow('No Attio contact found');
+                const result = await integration._findAttioContactByPhone('+15551111111');
+                expect(result).toBeNull();
             });
 
             it('should return contact found in Attio even if not synced (no mapping)', async () => {
-                // TDD: This test should fail with current implementation
-                // Current code requires a mapping, but new requirement is to accept any contact in Attio
+                // Contact exists in Attio but has no mapping (not synced) — should still be returned
                 mockAttioApi.api.queryRecords.mockResolvedValue({
                     data: [
                         {

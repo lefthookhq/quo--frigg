@@ -140,6 +140,10 @@ class PipedriveIntegration extends BaseCRMIntegration {
         QUO_CALL_SUMMARIES: [QuoWebhookEvents.CALL_SUMMARY_COMPLETED],
     };
 
+    get _logPrefix() {
+        return `[pipedrive:${this.id || 'unhydrated'}]`;
+    }
+
     constructor(params) {
         super(params);
 
@@ -1273,7 +1277,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
     async onWebhook({ data }) {
         const { source } = data;
 
-        console.log(`[Webhook] Processing ${source} webhook`);
+        console.log(`${this._logPrefix} Processing ${source} webhook`);
 
         if (source === 'quo') {
             return await this._handleQuoWebhook(data);
@@ -1293,11 +1297,13 @@ class PipedriveIntegration extends BaseCRMIntegration {
     async _handlePipedriveWebhook(data) {
         const { body, headers, integrationId } = data;
 
-        console.log(`[Pipedrive Webhook] Processing event:`, {
+        console.log(`${this._logPrefix} [Pipedrive Webhook] Processing event:`, {
+            integrationId: this.id,
             event: body.event,
             action: body.meta?.action,
             object: body.meta?.object,
             objectId: body.meta?.id,
+            companyId: body.meta?.company_id,
             timestamp: body.meta?.timestamp,
         });
 
@@ -1334,7 +1340,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
             }
 
             console.log(
-                `[Pipedrive Webhook] ✓ Successfully processed ${event}`,
+                `${this._logPrefix} [Pipedrive Webhook] ✓ Successfully processed ${event}`,
             );
 
             return {
@@ -1346,7 +1352,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 processedAt: new Date().toISOString(),
             };
         } catch (error) {
-            console.error('[Pipedrive Webhook] Processing error:', error);
+            console.error(`${this._logPrefix} [Pipedrive Webhook] Processing error:`, error);
 
             // Log error to integration messages
             await this.updateIntegrationMessages.execute(
@@ -1375,7 +1381,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
      * @returns {Promise<void>}
      */
     async _handlePersonWebhook({ action, data, previous, meta }) {
-        console.log(`[Pipedrive Webhook] Handling person ${action}:`, meta.id);
+        console.log(`${this._logPrefix} [Pipedrive Webhook] Handling person ${action}: ${meta.id}`);
 
         try {
             let person;
@@ -1497,7 +1503,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 contactId: String(person.id),
             });
 
-            console.log(`[Pipedrive] ✓ Person ${person.id} synced to Quo`);
+            console.log(`${this._logPrefix} ✓ Person ${person.id} synced to Quo`);
         } catch (error) {
             console.error(
                 `[Pipedrive] Failed to sync person ${person.id}:`,
@@ -1527,7 +1533,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
         const { body, headers } = data;
         const eventType = body.type; // "call.completed", "message.received", etc.
 
-        console.log(`[Quo Webhook] Processing event: ${eventType}`);
+        console.log(`${this._logPrefix} [Quo Webhook] Processing event: ${eventType}`);
 
         try {
             // TODO(quo-webhooks): Re-enable signature verification once Quo/OpenPhone
@@ -1544,7 +1550,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
             ) {
                 result = await this._handleQuoMessageEvent(body);
             } else {
-                console.warn(`[Quo Webhook] Unknown event type: ${eventType}`);
+                console.warn(`${this._logPrefix} [Quo Webhook] Unknown event type: ${eventType}`);
                 return { success: true, skipped: true, eventType };
             }
 
@@ -1555,7 +1561,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 result,
             };
         } catch (error) {
-            console.error('[Quo Webhook] Processing error:', error);
+            console.error(`${this._logPrefix} [Quo Webhook] Processing error:`, error);
 
             if (eventType.startsWith('message.')) {
                 await trackAnalyticsEvent(
@@ -1603,6 +1609,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
             webhookData,
             quoApi: this.quo.api,
             phoneNumbersMetadata: this.config?.phoneNumbersMetadata || [],
+            logPrefix: this._logPrefix,
             crmAdapter: {
                 formatMethod: 'html',
                 useEmoji: true,
@@ -1662,6 +1669,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
         const result = await QuoWebhookEventProcessor.processMessageEvent({
             webhookData,
             quoApi: this.quo.api,
+            logPrefix: this._logPrefix,
             crmAdapter: {
                 formatMethod: 'html',
                 useEmoji: true,
@@ -1790,8 +1798,17 @@ class PipedriveIntegration extends BaseCRMIntegration {
                     await this._findPipedriveContactByPhone(contactPhone);
             } catch (error) {
                 console.warn(
-                    `[Quo Webhook] Failed to find Pipedrive contact for ${contactPhone}: ${error.message}`,
+                    `${this._logPrefix} [Quo Webhook] Failed to find Pipedrive contact for ${contactPhone}: ${error.message}`,
                 );
+                results.push({
+                    contactPhone,
+                    logged: false,
+                    error: 'Contact lookup error',
+                });
+                continue;
+            }
+
+            if (!pipedrivePersonId) {
                 results.push({
                     contactPhone,
                     logged: false,
@@ -1944,17 +1961,17 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 !searchResult?.data?.items ||
                 searchResult.data.items.length === 0
             ) {
-                throw new Error(
-                    `No Pipedrive contact found with phone number ${phoneNumber} (normalized: ${normalizedPhone}). ` +
-                        `Contact must exist in Pipedrive to log activities.`,
+                console.warn(
+                    `${this._logPrefix} [Quo Webhook] No Pipedrive contact found with phone number ${phoneNumber} (normalized: ${normalizedPhone})`,
                 );
+                return null;
             }
 
             // With exact_match=true and fields='phone', take the first (most relevant) result
             const firstItem = searchResult.data.items[0];
             const personId = String(firstItem.item.id);
 
-            console.log(`[Quo Webhook] ✓ Found contact by phone: ${personId}`);
+            console.log(`${this._logPrefix} [Quo Webhook] ✓ Found contact by phone: ${personId}`);
             return personId;
         } catch (error) {
             console.error(

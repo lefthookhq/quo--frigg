@@ -1871,6 +1871,7 @@ class AttioIntegration extends BaseCRMIntegration {
             webhookData,
             quoApi: this.quo.api,
             phoneNumbersMetadata: this.config?.phoneNumbersMetadata || [],
+            logPrefix: `[attio:${this.id || 'unhydrated'}]`,
             crmAdapter: {
                 formatMethod: 'markdown',
                 useEmoji: true,
@@ -1920,6 +1921,7 @@ class AttioIntegration extends BaseCRMIntegration {
         const result = await QuoWebhookEventProcessor.processMessageEvent({
             webhookData,
             quoApi: this.quo.api,
+            logPrefix: `[attio:${this.id || 'unhydrated'}]`,
             crmAdapter: {
                 formatMethod: 'markdown',
                 useEmoji: true,
@@ -2359,10 +2361,10 @@ class AttioIntegration extends BaseCRMIntegration {
             }
 
             if (contacts.length === 0) {
-                throw new Error(
-                    `No Attio contact found with phone number ${phoneNumber} (normalized: ${normalizedPhone}). ` +
-                        `Contact must exist in Attio to log activities.`,
+                console.warn(
+                    `[Quo Webhook] No Attio contact found with phone number ${phoneNumber} (normalized: ${normalizedPhone})`,
                 );
+                return null;
             }
 
             // Prefer synced contacts (with mappings), but accept any contact in Attio
@@ -2485,30 +2487,27 @@ class AttioIntegration extends BaseCRMIntegration {
             `[Webhook Optimization] ✗ No mapping found, falling back to Attio API search`,
         );
 
-        try {
-            const attioRecordId =
-                await this._findContactByPhone(normalizedPhone);
+        const attioRecordId =
+            await this._findContactByPhone(normalizedPhone);
 
-            // STRATEGY 3: Store mapping by phone number for future fast lookups
-            console.log(
-                `[Webhook Optimization] Creating phone mapping for future lookups: ${normalizedPhone} → ${attioRecordId}`,
-            );
-            await this.upsertMapping(normalizedPhone, {
-                externalId: attioRecordId,
-                phoneNumber: normalizedPhone,
-                entityType: 'people',
-                lastSyncedAt: new Date().toISOString(),
-                syncMethod: 'webhook',
-                action: 'backfill',
-            });
-
-            return attioRecordId;
-        } catch (error) {
-            console.error(
-                `[Webhook Optimization] Phone search failed: ${error.message}`,
-            );
-            throw error;
+        if (!attioRecordId) {
+            return null;
         }
+
+        // STRATEGY 3: Store mapping by phone number for future fast lookups
+        console.log(
+            `[Webhook Optimization] Creating phone mapping for future lookups: ${normalizedPhone} → ${attioRecordId}`,
+        );
+        await this.upsertMapping(normalizedPhone, {
+            externalId: attioRecordId,
+            phoneNumber: normalizedPhone,
+            entityType: 'people',
+            lastSyncedAt: new Date().toISOString(),
+            syncMethod: 'webhook',
+            action: 'backfill',
+        });
+
+        return attioRecordId;
     }
 
     /**
