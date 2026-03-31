@@ -1590,7 +1590,9 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         );
 
         try {
-            const searchCriteria = `((Phone:equals:${normalizedPhone})or(Mobile:equals:${normalizedPhone}))`;
+            // Zoho CRM v8 does not support searching by Mobile field in criteria
+            // (returns INVALID_QUERY). Search by Phone field only.
+            const searchCriteria = `(Phone:equals:${normalizedPhone})`;
 
             const searchResults = await this.zoho.api.searchContacts({
                 criteria: searchCriteria,

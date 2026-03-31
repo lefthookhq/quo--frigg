@@ -327,7 +327,18 @@ class QuoWebhookEventProcessor {
      * @returns {Promise<Object|null>} Call object with voicemail merged, or null if not found
      */
     static async fetchCallWithVoicemail(quoApi, callId) {
-        const fullCallResponse = await quoApi.getCall(callId);
+        let fullCallResponse;
+        try {
+            fullCallResponse = await quoApi.getCall(callId);
+        } catch (error) {
+            if (error.statusCode === 400) {
+                console.warn(
+                    `[QuoEventProcessor] Skipping call ${callId}: ${error.message?.includes('Too Many Participants') ? 'too many participants' : `bad request (${error.statusCode})`}`,
+                );
+                return null;
+            }
+            throw error;
+        }
         if (!fullCallResponse?.data) {
             return null;
         }
