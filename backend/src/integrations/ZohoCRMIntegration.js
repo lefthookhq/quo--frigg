@@ -1580,14 +1580,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
      * @returns {Promise<string|null>} Zoho CRM record ID or null if not found
      */
     async _findZohoContactByPhone(phoneNumber) {
-        console.log(
-            `[Quo Webhook] Looking up Zoho CRM contact by phone: ${phoneNumber}`,
-        );
-
         const normalizedPhone = this._normalizePhoneNumber(phoneNumber);
-        console.log(
-            `[Quo Webhook] Normalized phone: ${phoneNumber} → ${normalizedPhone}`,
-        );
 
         try {
             const searchCriteria = `((Phone:equals:${normalizedPhone})or(Mobile:equals:${normalizedPhone}))`;
@@ -1596,21 +1589,42 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 criteria: searchCriteria,
             });
 
-            if (searchResults?.data && searchResults.data.length > 0) {
-                const contactId = searchResults.data[0].id;
-                console.log(
-                    `[Quo Webhook] ✓ Found Zoho CRM contact: ${contactId}`,
-                );
-                return contactId;
+            if (searchResults?.data?.length > 0) {
+                return searchResults.data[0].id;
             }
-
-            console.log(
-                `[Quo Webhook] No Zoho CRM contact found for phone: ${phoneNumber}`,
+            return null;
+        } catch (error) {
+            if (error.message?.includes('INVALID_QUERY')) {
+                console.warn(
+                    `[Quo Webhook] Criteria search not supported for Phone/Mobile fields, falling back to phone param search`,
+                );
+                return this._findZohoContactByPhoneParam(normalizedPhone);
+            }
+            throw new Error(
+                `Failed to search for Zoho CRM contact: ${error.message}`,
             );
+        }
+    }
+
+    /**
+     * Fallback search using Zoho's native `phone` query parameter.
+     * Used when criteria-based search fails because Phone/Mobile fields
+     * are not available for search in the customer's Zoho CRM instance.
+     * @private
+     */
+    async _findZohoContactByPhoneParam(normalizedPhone) {
+        try {
+            const searchResults = await this.zoho.api.searchContacts({
+                phone: normalizedPhone,
+            });
+
+            if (searchResults?.data?.length > 0) {
+                return searchResults.data[0].id;
+            }
             return null;
         } catch (error) {
             throw new Error(
-                `Failed to search for Zoho CRM contact: ${error.message}`,
+                `Failed to search for Zoho CRM contact (phone param fallback): ${error.message}`,
             );
         }
     }

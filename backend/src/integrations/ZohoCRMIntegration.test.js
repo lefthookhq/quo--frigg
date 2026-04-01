@@ -924,4 +924,103 @@ describe('ZohoCRMIntegration (Refactored)', () => {
             });
         });
     });
+
+    describe('_findZohoContactByPhone', () => {
+        beforeEach(() => {
+            integration.zoho = mockZohoCrm;
+            integration._normalizePhoneNumber = jest
+                .fn()
+                .mockReturnValue('+15550001111');
+        });
+
+        it('should return contact ID when criteria search succeeds', async () => {
+            mockZohoCrm.api.searchContacts.mockResolvedValue({
+                data: [{ id: 'zoho-contact-123' }],
+            });
+
+            const result =
+                await integration._findZohoContactByPhone('+15550001111');
+
+            expect(result).toBe('zoho-contact-123');
+            expect(mockZohoCrm.api.searchContacts).toHaveBeenCalledWith({
+                criteria:
+                    '((Phone:equals:+15550001111)or(Mobile:equals:+15550001111))',
+            });
+        });
+
+        it('should return null when no contacts found', async () => {
+            mockZohoCrm.api.searchContacts.mockResolvedValue({
+                data: [],
+            });
+
+            const result =
+                await integration._findZohoContactByPhone('+15550001111');
+
+            expect(result).toBeNull();
+        });
+
+        it('should fall back to phone param when INVALID_QUERY error occurs', async () => {
+            mockZohoCrm.api.searchContacts
+                .mockRejectedValueOnce(
+                    new Error(
+                        'INVALID_QUERY: the field is not available for search',
+                    ),
+                )
+                .mockResolvedValueOnce({
+                    data: [{ id: 'zoho-contact-456' }],
+                });
+
+            const result =
+                await integration._findZohoContactByPhone('+15550001111');
+
+            expect(result).toBe('zoho-contact-456');
+            expect(mockZohoCrm.api.searchContacts).toHaveBeenCalledTimes(2);
+            expect(mockZohoCrm.api.searchContacts).toHaveBeenNthCalledWith(1, {
+                criteria:
+                    '((Phone:equals:+15550001111)or(Mobile:equals:+15550001111))',
+            });
+            expect(mockZohoCrm.api.searchContacts).toHaveBeenNthCalledWith(2, {
+                phone: '+15550001111',
+            });
+        });
+
+        it('should return null when phone param fallback also finds nothing', async () => {
+            mockZohoCrm.api.searchContacts
+                .mockRejectedValueOnce(
+                    new Error(
+                        'INVALID_QUERY: the field is not available for search',
+                    ),
+                )
+                .mockResolvedValueOnce({ data: [] });
+
+            const result =
+                await integration._findZohoContactByPhone('+15550001111');
+
+            expect(result).toBeNull();
+        });
+
+        it('should throw for non-INVALID_QUERY errors', async () => {
+            mockZohoCrm.api.searchContacts.mockRejectedValue(
+                new Error('500 Internal Server Error'),
+            );
+
+            await expect(
+                integration._findZohoContactByPhone('+15550001111'),
+            ).rejects.toThrow('Failed to search for Zoho CRM contact');
+        });
+
+        it('should throw with fallback context when phone param search also fails', async () => {
+            mockZohoCrm.api.searchContacts
+                .mockRejectedValueOnce(
+                    new Error(
+                        'INVALID_QUERY: the field is not available for search',
+                    ),
+                )
+                .mockRejectedValueOnce(new Error('Network timeout'));
+
+            await expect(
+                integration._findZohoContactByPhone('+15550001111'),
+            ).rejects.toThrow('phone param fallback');
+        });
+    });
 });
