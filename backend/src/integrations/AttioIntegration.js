@@ -1739,12 +1739,7 @@ class AttioIntegration extends BaseCRMIntegration {
                         `[Attio Webhook] Error processing event ${eventType}:`,
                         eventError,
                     );
-                    results.push({
-                        success: false,
-                        event: eventType,
-                        error: eventError.message,
-                    });
-                    // Continue processing other events
+                    throw eventError;
                 }
             }
 
@@ -1758,13 +1753,17 @@ class AttioIntegration extends BaseCRMIntegration {
             console.error('[Attio Webhook] Processing error:', error);
 
             if (this.id) {
-                await this.updateIntegrationMessages.execute(
-                    this.id,
-                    'errors',
-                    'Attio Webhook Processing Error',
-                    `Failed to process Attio webhook: ${error.message}`,
-                    Date.now(),
-                );
+                try {
+                    await this.updateIntegrationMessages.execute(
+                        this.id,
+                        'errors',
+                        'Attio Webhook Processing Error',
+                        `Failed to process Attio webhook: ${error.message}`,
+                        Date.now(),
+                    );
+                } catch (msgError) {
+                    console.error('[Attio Webhook] Failed to record error message:', msgError);
+                }
             }
 
             throw error;

@@ -1571,6 +1571,83 @@ describe('AttioIntegration (Refactored)', () => {
         });
     });
 
+    describe('_handleAttioWebhook error propagation', () => {
+        beforeEach(() => {
+            integration.updateIntegrationMessages = {
+                execute: jest.fn().mockResolvedValue(undefined),
+            };
+        });
+
+        it('should re-throw errors instead of swallowing them (single event per webhook)', async () => {
+            const fetchError = new Error('Unauthorized');
+            fetchError.statusCode = 401;
+
+            // Mock _handleRecordUpdated to throw a 401 (expired token)
+            integration._handleRecordUpdated = jest.fn().mockRejectedValue(fetchError);
+            integration._verifyWebhookSignature = jest.fn().mockReturnValue(true);
+
+            const webhookData = {
+                body: {
+                    events: [{
+                        event_type: 'record.updated',
+                        id: { record_id: 'rec-123', object_id: 'obj-456' },
+                    }],
+                },
+                headers: { 'x-attio-signature': 'test-sig' },
+                integrationId: 'test-integration',
+            };
+
+            // Should throw, NOT swallow — proving the error reaches the framework
+            // statusCode must survive so isHaltError can classify it as permanent
+            await expect(
+                integration._handleAttioWebhook(webhookData),
+            ).rejects.toMatchObject({ message: 'Unauthorized', statusCode: 401 });
+        });
+
+        it('should re-throw 500 errors too (no reason to swallow with single event)', async () => {
+            const serverError = new Error('Internal Server Error');
+            serverError.statusCode = 500;
+
+            integration._handleRecordCreated = jest.fn().mockRejectedValue(serverError);
+            integration._verifyWebhookSignature = jest.fn().mockReturnValue(true);
+
+            const webhookData = {
+                body: {
+                    events: [{
+                        event_type: 'record.created',
+                        id: { record_id: 'rec-789' },
+                    }],
+                },
+                headers: { 'x-attio-signature': 'test-sig' },
+                integrationId: 'test-integration',
+            };
+
+            await expect(
+                integration._handleAttioWebhook(webhookData),
+            ).rejects.toThrow('Internal Server Error');
+        });
+
+        it('should return success for valid events', async () => {
+            integration._handleRecordUpdated = jest.fn().mockResolvedValue(undefined);
+            integration._verifyWebhookSignature = jest.fn().mockReturnValue(true);
+
+            const webhookData = {
+                body: {
+                    events: [{
+                        event_type: 'record.updated',
+                        id: { record_id: 'rec-123', object_id: 'obj-456' },
+                    }],
+                },
+                headers: { 'x-attio-signature': 'test-sig' },
+                integrationId: 'test-integration',
+            };
+
+            const result = await integration._handleAttioWebhook(webhookData);
+            expect(result.success).toBe(true);
+            expect(result.results[0].success).toBe(true);
+        });
+    });
+
     describe('Phone Number Utilities', () => {
         describe('_normalizePhoneNumber', () => {
             it('should remove formatting characters', () => {
