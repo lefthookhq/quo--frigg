@@ -1600,10 +1600,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 );
                 return this._findZohoContactByPhoneParam(normalizedPhone);
             }
-            console.error(
-                `[Quo Webhook] Failed to search Zoho contact by phone ${normalizedPhone}: ${error.message}`,
-            );
-            return null;
+            throw error;
         }
     }
 
@@ -1612,6 +1609,8 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
      * Used when criteria-based search fails because Phone/Mobile fields
      * are not available for search in the customer's Zoho CRM instance.
      * @private
+     * @param {string} normalizedPhone - Normalized phone number to search for
+     * @returns {Promise<string|null>} Zoho CRM record ID or null if not found
      */
     async _findZohoContactByPhoneParam(normalizedPhone) {
         try {
@@ -1624,10 +1623,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             }
             return null;
         } catch (error) {
-            console.error(
-                `[Quo Webhook] Phone param fallback failed for ${normalizedPhone}: ${error.message}`,
-            );
-            return null;
+            throw error;
         }
     }
 

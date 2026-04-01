@@ -999,44 +999,28 @@ describe('ZohoCRMIntegration (Refactored)', () => {
             expect(result).toBeNull();
         });
 
-        it('should return null and log error for non-INVALID_QUERY errors', async () => {
-            mockZohoCrm.api.searchContacts.mockRejectedValue(
-                new Error('500 Internal Server Error'),
-            );
-            const consoleSpy = jest
-                .spyOn(console, 'error')
-                .mockImplementation();
+        it('should re-throw transient errors to allow SQS retry', async () => {
+            const originalError = new Error('500 Internal Server Error');
+            mockZohoCrm.api.searchContacts.mockRejectedValue(originalError);
 
-            const result =
-                await integration._findZohoContactByPhone('+15550001111');
-
-            expect(result).toBeNull();
-            expect(consoleSpy).toHaveBeenCalledWith(
-                expect.stringContaining('Failed to search Zoho contact'),
-            );
-            consoleSpy.mockRestore();
+            await expect(
+                integration._findZohoContactByPhone('+15550001111'),
+            ).rejects.toBe(originalError);
         });
 
-        it('should return null when phone param fallback also fails', async () => {
+        it('should re-throw when phone param fallback also fails', async () => {
+            const fallbackError = new Error('Network timeout');
             mockZohoCrm.api.searchContacts
                 .mockRejectedValueOnce(
                     new Error(
                         'INVALID_QUERY: the field is not available for search',
                     ),
                 )
-                .mockRejectedValueOnce(new Error('Network timeout'));
-            const consoleSpy = jest
-                .spyOn(console, 'error')
-                .mockImplementation();
+                .mockRejectedValueOnce(fallbackError);
 
-            const result =
-                await integration._findZohoContactByPhone('+15550001111');
-
-            expect(result).toBeNull();
-            expect(consoleSpy).toHaveBeenCalledWith(
-                expect.stringContaining('Phone param fallback failed'),
-            );
-            consoleSpy.mockRestore();
+            await expect(
+                integration._findZohoContactByPhone('+15550001111'),
+            ).rejects.toBe(fallbackError);
         });
     });
 });
