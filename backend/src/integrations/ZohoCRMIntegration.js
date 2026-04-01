@@ -1600,9 +1600,10 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 );
                 return this._findZohoContactByPhoneParam(normalizedPhone);
             }
-            throw new Error(
-                `Failed to search for Zoho CRM contact: ${error.message}`,
+            console.error(
+                `[Quo Webhook] Failed to search Zoho contact by phone ${normalizedPhone}: ${error.message}`,
             );
+            return null;
         }
     }
 
@@ -1623,9 +1624,10 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             }
             return null;
         } catch (error) {
-            throw new Error(
-                `Failed to search for Zoho CRM contact (phone param fallback): ${error.message}`,
+            console.error(
+                `[Quo Webhook] Phone param fallback failed for ${normalizedPhone}: ${error.message}`,
             );
+            return null;
         }
     }
 

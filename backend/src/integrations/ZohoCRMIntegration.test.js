@@ -999,17 +999,25 @@ describe('ZohoCRMIntegration (Refactored)', () => {
             expect(result).toBeNull();
         });
 
-        it('should throw for non-INVALID_QUERY errors', async () => {
+        it('should return null and log error for non-INVALID_QUERY errors', async () => {
             mockZohoCrm.api.searchContacts.mockRejectedValue(
                 new Error('500 Internal Server Error'),
             );
+            const consoleSpy = jest
+                .spyOn(console, 'error')
+                .mockImplementation();
 
-            await expect(
-                integration._findZohoContactByPhone('+15550001111'),
-            ).rejects.toThrow('Failed to search for Zoho CRM contact');
+            const result =
+                await integration._findZohoContactByPhone('+15550001111');
+
+            expect(result).toBeNull();
+            expect(consoleSpy).toHaveBeenCalledWith(
+                expect.stringContaining('Failed to search Zoho contact'),
+            );
+            consoleSpy.mockRestore();
         });
 
-        it('should throw with fallback context when phone param search also fails', async () => {
+        it('should return null when phone param fallback also fails', async () => {
             mockZohoCrm.api.searchContacts
                 .mockRejectedValueOnce(
                     new Error(
@@ -1017,10 +1025,18 @@ describe('ZohoCRMIntegration (Refactored)', () => {
                     ),
                 )
                 .mockRejectedValueOnce(new Error('Network timeout'));
+            const consoleSpy = jest
+                .spyOn(console, 'error')
+                .mockImplementation();
 
-            await expect(
-                integration._findZohoContactByPhone('+15550001111'),
-            ).rejects.toThrow('phone param fallback');
+            const result =
+                await integration._findZohoContactByPhone('+15550001111');
+
+            expect(result).toBeNull();
+            expect(consoleSpy).toHaveBeenCalledWith(
+                expect.stringContaining('Phone param fallback failed'),
+            );
+            consoleSpy.mockRestore();
         });
     });
 });
