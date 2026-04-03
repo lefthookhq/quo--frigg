@@ -1093,9 +1093,39 @@ class BaseCRMIntegration extends IntegrationBase {
             result = response.data;
             action = 'updated';
         } else {
-            const response = await this.quo.api.createFriggContact(quoContact);
-            result = response.data;
-            action = 'created';
+            try {
+                const response =
+                    await this.quo.api.createFriggContact(quoContact);
+                result = response.data;
+                action = 'created';
+            } catch (error) {
+                if (error.statusCode !== 409) {
+                    throw error;
+                }
+
+                const retryContacts = await this.quo.api.listContacts({
+                    externalIds: [quoContact.externalId],
+                    maxResults: 1,
+                });
+
+                const retryContact =
+                    retryContacts?.data?.length > 0
+                        ? retryContacts.data[0]
+                        : null;
+
+                if (!retryContact) {
+                    throw new Error(
+                        `Failed to resolve contact after 409 conflict for externalId ${quoContact.externalId}`,
+                    );
+                }
+
+                const response = await this.quo.api.updateFriggContact(
+                    retryContact.id,
+                    quoContact,
+                );
+                result = response.data;
+                action = 'updated';
+            }
         }
 
         const quoContactId = result.id;
