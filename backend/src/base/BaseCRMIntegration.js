@@ -1093,9 +1093,25 @@ class BaseCRMIntegration extends IntegrationBase {
             result = response.data;
             action = 'updated';
         } else {
-            const response = await this.quo.api.createFriggContact(quoContact);
-            result = response.data;
-            action = 'created';
+            try {
+                const response =
+                    await this.quo.api.createFriggContact(quoContact);
+                result = response.data;
+                action = 'created';
+            } catch (error) {
+                if (error.statusCode === 409) {
+                    const recoveredContact =
+                        await this._recoverFrom409(quoContact);
+                    if (recoveredContact) {
+                        result = recoveredContact;
+                        action = 'updated';
+                    } else {
+                        throw error;
+                    }
+                } else {
+                    throw error;
+                }
+            }
         }
 
         const quoContactId = result.id;
@@ -1128,6 +1144,49 @@ class BaseCRMIntegration extends IntegrationBase {
             quoContactId,
             externalId: quoContact.externalId,
         };
+    }
+
+    /**
+     * Attempt to recover from a 409 Conflict when creating a contact.
+     *
+     * A 409 means a contact with the same phone number already exists in Quo
+     * but was not found by externalId. This looks up the existing contact
+     * by phone number and updates it with the new data (including externalId).
+     *
+     * @param {Object} quoContact - The contact data that failed to create
+     * @returns {Promise<Object|null>} The updated contact data, or null if recovery failed
+     * @private
+     */
+    async _recoverFrom409(quoContact) {
+        const phoneNumbers = (quoContact.defaultFields?.phoneNumbers || [])
+            .map((p) => p.value)
+            .filter(Boolean);
+
+        if (phoneNumbers.length === 0) {
+            return null;
+        }
+
+        const phoneLookup = await this.quo.api.listContacts({
+            phoneNumbers,
+            maxResults: 1,
+        });
+
+        const matchedContact =
+            phoneLookup?.data?.length > 0 ? phoneLookup.data[0] : null;
+
+        if (!matchedContact) {
+            return null;
+        }
+
+        console.log(
+            `[upsertContactToQuo] 409 recovery: found existing contact ${matchedContact.id} by phone, updating with externalId ${quoContact.externalId}`,
+        );
+
+        const response = await this.quo.api.updateFriggContact(
+            matchedContact.id,
+            quoContact,
+        );
+        return response.data;
     }
 
     /**

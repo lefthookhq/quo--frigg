@@ -1384,6 +1384,188 @@ describe('BaseCRMIntegration', () => {
                 integration.upsertContactToQuo(quoContact),
             ).rejects.toThrow('Update failed');
         });
+
+        describe('409 Conflict handling', () => {
+            it('should recover from 409 by looking up contact by phone and updating', async () => {
+                const quoContact = {
+                    externalId: 'crm-conflict',
+                    defaultFields: {
+                        firstName: 'Conflict',
+                        lastName: 'Test',
+                        phoneNumbers: [
+                            { name: 'mobile', value: '+15551234567' },
+                        ],
+                    },
+                };
+
+                const conflictError = new Error('Conflict');
+                conflictError.statusCode = 409;
+
+                integration.quo.api.listContacts
+                    .mockResolvedValueOnce({ data: [] }) // externalId lookup
+                    .mockResolvedValueOnce({
+                        data: [{ id: 'quo-existing-by-phone' }],
+                    }); // phone lookup
+                integration.quo.api.createFriggContact.mockRejectedValue(
+                    conflictError,
+                );
+                integration.quo.api.updateFriggContact.mockResolvedValue({
+                    data: {
+                        id: 'quo-existing-by-phone',
+                        ...quoContact,
+                        defaultFields: {
+                            ...quoContact.defaultFields,
+                            phoneNumbers: [
+                                { name: 'mobile', value: '+15551234567' },
+                            ],
+                        },
+                    },
+                });
+
+                const result =
+                    await integration.upsertContactToQuo(quoContact);
+
+                expect(integration.quo.api.listContacts).toHaveBeenCalledTimes(
+                    2,
+                );
+                expect(
+                    integration.quo.api.listContacts.mock.calls[1][0],
+                ).toEqual({
+                    phoneNumbers: ['+15551234567'],
+                    maxResults: 1,
+                });
+                expect(
+                    integration.quo.api.updateFriggContact,
+                ).toHaveBeenCalledWith('quo-existing-by-phone', quoContact);
+                expect(result).toEqual({
+                    action: 'updated',
+                    quoContactId: 'quo-existing-by-phone',
+                    externalId: 'crm-conflict',
+                });
+            });
+
+            it('should recover from 409 with multiple phone numbers', async () => {
+                const quoContact = {
+                    externalId: 'crm-multi-phone',
+                    defaultFields: {
+                        firstName: 'Multi',
+                        phoneNumbers: [
+                            { name: 'mobile', value: '+15551111111' },
+                            { name: 'work', value: '+15552222222' },
+                        ],
+                    },
+                };
+
+                const conflictError = new Error('Conflict');
+                conflictError.statusCode = 409;
+
+                integration.quo.api.listContacts
+                    .mockResolvedValueOnce({ data: [] }) // externalId lookup
+                    .mockResolvedValueOnce({
+                        data: [{ id: 'quo-found-by-phone' }],
+                    }); // phone lookup
+                integration.quo.api.createFriggContact.mockRejectedValue(
+                    conflictError,
+                );
+                integration.quo.api.updateFriggContact.mockResolvedValue({
+                    data: {
+                        id: 'quo-found-by-phone',
+                        ...quoContact,
+                        defaultFields: {
+                            ...quoContact.defaultFields,
+                        },
+                    },
+                });
+
+                await integration.upsertContactToQuo(quoContact);
+
+                expect(
+                    integration.quo.api.listContacts.mock.calls[1][0],
+                ).toEqual({
+                    phoneNumbers: ['+15551111111', '+15552222222'],
+                    maxResults: 1,
+                });
+            });
+
+            it('should re-throw 409 when no phone numbers available for recovery', async () => {
+                const quoContact = {
+                    externalId: 'crm-no-phone',
+                    defaultFields: {
+                        firstName: 'NoPhone',
+                    },
+                };
+
+                const conflictError = new Error('Conflict');
+                conflictError.statusCode = 409;
+
+                integration.quo.api.listContacts.mockResolvedValue({
+                    data: [],
+                });
+                integration.quo.api.createFriggContact.mockRejectedValue(
+                    conflictError,
+                );
+
+                await expect(
+                    integration.upsertContactToQuo(quoContact),
+                ).rejects.toThrow('Conflict');
+            });
+
+            it('should re-throw 409 when phone lookup finds no contact', async () => {
+                const quoContact = {
+                    externalId: 'crm-not-found',
+                    defaultFields: {
+                        firstName: 'NotFound',
+                        phoneNumbers: [
+                            { name: 'mobile', value: '+15559999999' },
+                        ],
+                    },
+                };
+
+                const conflictError = new Error('Conflict');
+                conflictError.statusCode = 409;
+
+                integration.quo.api.listContacts
+                    .mockResolvedValueOnce({ data: [] }) // externalId lookup
+                    .mockResolvedValueOnce({ data: [] }); // phone lookup
+                integration.quo.api.createFriggContact.mockRejectedValue(
+                    conflictError,
+                );
+
+                await expect(
+                    integration.upsertContactToQuo(quoContact),
+                ).rejects.toThrow('Conflict');
+            });
+
+            it('should re-throw non-409 create errors without recovery', async () => {
+                const quoContact = {
+                    externalId: 'crm-500',
+                    defaultFields: {
+                        firstName: 'ServerError',
+                        phoneNumbers: [
+                            { name: 'mobile', value: '+15550000000' },
+                        ],
+                    },
+                };
+
+                const serverError = new Error('Internal Server Error');
+                serverError.statusCode = 500;
+
+                integration.quo.api.listContacts.mockResolvedValue({
+                    data: [],
+                });
+                integration.quo.api.createFriggContact.mockRejectedValue(
+                    serverError,
+                );
+
+                await expect(
+                    integration.upsertContactToQuo(quoContact),
+                ).rejects.toThrow('Internal Server Error');
+
+                expect(integration.quo.api.listContacts).toHaveBeenCalledTimes(
+                    1,
+                );
+            });
+        });
     });
 
     describe('onUpdate - Configuration Updates', () => {
