@@ -223,6 +223,15 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 hasMore: hasMore,
             };
         } catch (error) {
+            if (
+                error?.message?.includes('Unexpected end of JSON input') ||
+                error?.message?.includes('invalid json response body')
+            ) {
+                console.warn(
+                    `[Zoho CRM] Empty response (likely 204 No Content) for ${objectType} at cursor ${cursor}, treating as empty page`,
+                );
+                return { data: [], cursor: null, hasMore: false };
+            }
             console.error(
                 `Error fetching ${objectType} at cursor ${cursor}:`,
                 error,
