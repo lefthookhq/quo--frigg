@@ -1367,6 +1367,123 @@ describe('BaseCRMIntegration', () => {
             ).rejects.toThrow('Create failed');
         });
 
+        it('should fall back to update when createFriggContact returns 409 Conflict', async () => {
+            const quoContact = {
+                externalId: 'crm-race-condition',
+                defaultFields: {
+                    firstName: 'RaceCondition',
+                    phoneNumbers: [{ name: 'mobile', value: '+15559999999' }],
+                },
+            };
+
+            const conflictError = new Error('Failed to create contact');
+            conflictError.status = 409;
+
+            integration.quo.api.listContacts
+                .mockResolvedValueOnce({ data: [] })
+                .mockResolvedValueOnce({
+                    data: [{ id: 'quo-raced-id', externalId: 'crm-race-condition' }],
+                });
+            integration.quo.api.createFriggContact.mockRejectedValue(conflictError);
+            integration.quo.api.updateFriggContact.mockResolvedValue({
+                data: {
+                    id: 'quo-raced-id',
+                    externalId: 'crm-race-condition',
+                    defaultFields: {
+                        phoneNumbers: [{ name: 'mobile', value: '+15559999999' }],
+                    },
+                },
+            });
+
+            const result = await integration.upsertContactToQuo(quoContact);
+
+            expect(integration.quo.api.createFriggContact).toHaveBeenCalledWith(quoContact);
+            expect(integration.quo.api.listContacts).toHaveBeenCalledTimes(2);
+            expect(integration.quo.api.updateFriggContact).toHaveBeenCalledWith(
+                'quo-raced-id',
+                quoContact,
+            );
+            expect(result).toEqual({
+                action: 'updated',
+                quoContactId: 'quo-raced-id',
+                externalId: 'crm-race-condition',
+            });
+        });
+
+        it('should throw original error when 409 retry fails to find contact', async () => {
+            const quoContact = {
+                externalId: 'crm-ghost',
+                defaultFields: { firstName: 'Ghost' },
+            };
+
+            const conflictError = new Error('Failed to create contact');
+            conflictError.status = 409;
+
+            integration.quo.api.listContacts
+                .mockResolvedValueOnce({ data: [] })
+                .mockResolvedValueOnce({ data: [] });
+            integration.quo.api.createFriggContact.mockRejectedValue(conflictError);
+
+            await expect(
+                integration.upsertContactToQuo(quoContact),
+            ).rejects.toThrow('Failed to create contact');
+        });
+
+        it('should handle 409 via statusCode (FetchError format)', async () => {
+            const quoContact = {
+                externalId: 'crm-fetcherror-409',
+                defaultFields: {
+                    firstName: 'FetchError',
+                    phoneNumbers: [{ name: 'mobile', value: '+15558888888' }],
+                },
+            };
+
+            const fetchError = new Error('409 Conflict');
+            fetchError.statusCode = 409;
+
+            integration.quo.api.listContacts
+                .mockResolvedValueOnce({ data: [] })
+                .mockResolvedValueOnce({
+                    data: [{ id: 'quo-fetched-id', externalId: 'crm-fetcherror-409' }],
+                });
+            integration.quo.api.createFriggContact.mockRejectedValue(fetchError);
+            integration.quo.api.updateFriggContact.mockResolvedValue({
+                data: {
+                    id: 'quo-fetched-id',
+                    externalId: 'crm-fetcherror-409',
+                    defaultFields: {
+                        phoneNumbers: [{ name: 'mobile', value: '+15558888888' }],
+                    },
+                },
+            });
+
+            const result = await integration.upsertContactToQuo(quoContact);
+
+            expect(result).toEqual({
+                action: 'updated',
+                quoContactId: 'quo-fetched-id',
+                externalId: 'crm-fetcherror-409',
+            });
+        });
+
+        it('should throw non-409 errors from createFriggContact without retrying', async () => {
+            const quoContact = {
+                externalId: 'crm-500',
+                defaultFields: { firstName: 'ServerError' },
+            };
+
+            const serverError = new Error('Internal Server Error');
+            serverError.status = 500;
+
+            integration.quo.api.listContacts.mockResolvedValue({ data: [] });
+            integration.quo.api.createFriggContact.mockRejectedValue(serverError);
+
+            await expect(
+                integration.upsertContactToQuo(quoContact),
+            ).rejects.toThrow('Internal Server Error');
+            expect(integration.quo.api.listContacts).toHaveBeenCalledTimes(1);
+        });
+
         it('should handle updateFriggContact API errors', async () => {
             const quoContact = {
                 externalId: 'crm-update-error',

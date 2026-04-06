@@ -1093,9 +1093,36 @@ class BaseCRMIntegration extends IntegrationBase {
             result = response.data;
             action = 'updated';
         } else {
-            const response = await this.quo.api.createFriggContact(quoContact);
-            result = response.data;
-            action = 'created';
+            try {
+                const response =
+                    await this.quo.api.createFriggContact(quoContact);
+                result = response.data;
+                action = 'created';
+            } catch (error) {
+                if (error.statusCode === 409 || error.status === 409) {
+                    const retryLookup = await this.quo.api.listContacts({
+                        externalIds: [quoContact.externalId],
+                        maxResults: 1,
+                    });
+                    const conflictContact =
+                        retryLookup?.data?.length > 0
+                            ? retryLookup.data[0]
+                            : null;
+
+                    if (!conflictContact) {
+                        throw error;
+                    }
+
+                    const response = await this.quo.api.updateFriggContact(
+                        conflictContact.id,
+                        quoContact,
+                    );
+                    result = response.data;
+                    action = 'updated';
+                } else {
+                    throw error;
+                }
+            }
         }
 
         const quoContactId = result.id;
