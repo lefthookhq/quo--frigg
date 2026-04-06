@@ -1384,6 +1384,78 @@ describe('BaseCRMIntegration', () => {
                 integration.upsertContactToQuo(quoContact),
             ).rejects.toThrow('Update failed');
         });
+
+        it('should retry as update when create returns 409 (concurrent race)', async () => {
+            const quoContact = {
+                externalId: 'crm-race',
+                defaultFields: {
+                    firstName: 'Race',
+                    lastName: 'Winner',
+                    phoneNumbers: [{ name: 'mobile', value: '+15559999999' }],
+                },
+            };
+
+            const conflictError = new Error('Conflict');
+            conflictError.statusCode = 409;
+
+            integration.quo.api.listContacts
+                .mockResolvedValueOnce({ data: [] })
+                .mockResolvedValueOnce({
+                    data: [{ id: 'quo-raced', externalId: 'crm-race' }],
+                });
+            integration.quo.api.createFriggContact.mockRejectedValue(
+                conflictError,
+            );
+            integration.quo.api.updateFriggContact.mockResolvedValue({
+                data: {
+                    id: 'quo-raced',
+                    externalId: 'crm-race',
+                    defaultFields: {
+                        phoneNumbers: [
+                            { name: 'mobile', value: '+15559999999' },
+                        ],
+                    },
+                },
+            });
+
+            const result = await integration.upsertContactToQuo(quoContact);
+
+            expect(integration.quo.api.createFriggContact).toHaveBeenCalledWith(
+                quoContact,
+            );
+            expect(integration.quo.api.listContacts).toHaveBeenCalledTimes(2);
+            expect(integration.quo.api.updateFriggContact).toHaveBeenCalledWith(
+                'quo-raced',
+                quoContact,
+            );
+            expect(result).toEqual({
+                action: 'updated',
+                quoContactId: 'quo-raced',
+                externalId: 'crm-race',
+            });
+        });
+
+        it('should re-throw non-409 create errors', async () => {
+            const quoContact = {
+                externalId: 'crm-500',
+                defaultFields: { firstName: 'ServerError' },
+            };
+
+            const serverError = new Error('Internal Server Error');
+            serverError.statusCode = 500;
+
+            integration.quo.api.listContacts.mockResolvedValue({ data: [] });
+            integration.quo.api.createFriggContact.mockRejectedValue(
+                serverError,
+            );
+
+            await expect(
+                integration.upsertContactToQuo(quoContact),
+            ).rejects.toThrow('Internal Server Error');
+            expect(
+                integration.quo.api.updateFriggContact,
+            ).not.toHaveBeenCalled();
+        });
     });
 
     describe('onUpdate - Configuration Updates', () => {
