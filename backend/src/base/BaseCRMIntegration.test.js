@@ -1457,6 +1457,79 @@ describe('BaseCRMIntegration', () => {
             ).not.toHaveBeenCalled();
         });
 
+        it('should log warning when 409 is caught and handled', async () => {
+            const consoleSpy = jest
+                .spyOn(console, 'warn')
+                .mockImplementation();
+
+            const quoContact = {
+                externalId: 'crm-race-logged',
+                defaultFields: {
+                    firstName: 'Race',
+                    phoneNumbers: [{ name: 'mobile', value: '+15551111111' }],
+                },
+            };
+
+            const conflictError = new Error('Conflict');
+            conflictError.statusCode = 409;
+
+            integration.quo.api.listContacts
+                .mockResolvedValueOnce({ data: [] })
+                .mockResolvedValueOnce({
+                    data: [
+                        { id: 'quo-found', externalId: 'crm-race-logged' },
+                    ],
+                });
+            integration.quo.api.createFriggContact.mockRejectedValue(
+                conflictError,
+            );
+            integration.quo.api.updateFriggContact.mockResolvedValue({
+                data: {
+                    id: 'quo-found',
+                    externalId: 'crm-race-logged',
+                    defaultFields: {
+                        phoneNumbers: [
+                            { name: 'mobile', value: '+15551111111' },
+                        ],
+                    },
+                },
+            });
+
+            await integration.upsertContactToQuo(quoContact);
+
+            expect(consoleSpy).toHaveBeenCalledWith(
+                expect.stringContaining('[upsertContactToQuo] 409 Conflict'),
+                expect.stringContaining('crm-race-logged'),
+            );
+            consoleSpy.mockRestore();
+        });
+
+        it('should throw descriptive error when 409 refetch by externalId finds nothing', async () => {
+            const quoContact = {
+                externalId: 'crm-phone-conflict',
+                defaultFields: {
+                    firstName: 'Phone',
+                    phoneNumbers: [{ name: 'mobile', value: '+15552222222' }],
+                },
+            };
+
+            const conflictError = new Error('Conflict');
+            conflictError.statusCode = 409;
+
+            integration.quo.api.listContacts
+                .mockResolvedValueOnce({ data: [] })
+                .mockResolvedValueOnce({ data: [] });
+            integration.quo.api.createFriggContact.mockRejectedValue(
+                conflictError,
+            );
+
+            await expect(
+                integration.upsertContactToQuo(quoContact),
+            ).rejects.toThrow(
+                '409 Conflict but contact not found on retry lookup for externalId=crm-phone-conflict',
+            );
+        });
+
         it('should handle concurrent upserts for the same contact without errors', async () => {
             const quoContact = {
                 externalId: 'crm-concurrent',

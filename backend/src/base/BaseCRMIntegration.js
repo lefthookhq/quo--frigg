@@ -1100,6 +1100,10 @@ class BaseCRMIntegration extends IntegrationBase {
                 action = 'created';
             } catch (error) {
                 if (error.statusCode === 409) {
+                    console.warn(
+                        '[upsertContactToQuo] 409 Conflict for externalId:',
+                        quoContact.externalId,
+                    );
                     const refetched = await this.quo.api.listContacts({
                         externalIds: [quoContact.externalId],
                         maxResults: 1,
@@ -1114,7 +1118,9 @@ class BaseCRMIntegration extends IntegrationBase {
                         result = response.data;
                         action = 'updated';
                     } else {
-                        throw error;
+                        throw new Error(
+                            `409 Conflict but contact not found on retry lookup for externalId=${quoContact.externalId}`,
+                        );
                     }
                 } else {
                     throw error;
