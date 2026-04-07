@@ -1669,6 +1669,43 @@ describe('BaseCRMIntegration', () => {
             consoleSpy.mockRestore();
         });
 
+        it('should return null when getMapping throws during phone fallback', async () => {
+            const consoleSpy = jest
+                .spyOn(console, 'warn')
+                .mockImplementation();
+
+            const quoContact = {
+                externalId: 'crm-db-error',
+                defaultFields: {
+                    firstName: 'DbError',
+                    phoneNumbers: [{ name: 'mobile', value: '+15556666666' }],
+                },
+            };
+
+            const conflictError = new Error('Conflict');
+            conflictError.statusCode = 409;
+
+            integration.quo.api.listContacts
+                .mockResolvedValueOnce({ data: [] })
+                .mockResolvedValueOnce({ data: [] });
+            integration.quo.api.createFriggContact.mockRejectedValue(
+                conflictError,
+            );
+            integration.getMapping = jest
+                .fn()
+                .mockRejectedValue(new Error('DB connection lost'));
+
+            const result =
+                await integration.upsertContactToQuo(quoContact);
+
+            expect(result).toBeNull();
+            expect(consoleSpy).toHaveBeenCalledWith(
+                expect.stringContaining('Phone mapping lookup failed'),
+                expect.stringContaining('DB connection lost'),
+            );
+            consoleSpy.mockRestore();
+        });
+
         it('should handle concurrent upserts for the same contact without errors', async () => {
             const quoContact = {
                 externalId: 'crm-concurrent',

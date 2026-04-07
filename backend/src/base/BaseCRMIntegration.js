@@ -1123,14 +1123,21 @@ class BaseCRMIntegration extends IntegrationBase {
                                 (p) => p.value,
                             ) || [];
                         let phoneMappedContact = null;
-                        for (const phone of phones) {
-                            const mapping = await this.getMapping(
-                                phone.value,
-                            );
-                            if (mapping?.quoContactId) {
-                                phoneMappedContact = mapping;
-                                break;
+                        try {
+                            for (const phone of phones) {
+                                const mapping = await this.getMapping(
+                                    phone.value,
+                                );
+                                if (mapping?.quoContactId) {
+                                    phoneMappedContact = mapping;
+                                    break;
+                                }
                             }
+                        } catch (mappingError) {
+                            console.warn(
+                                '[upsertContactToQuo] Phone mapping lookup failed:',
+                                mappingError.message,
+                            );
                         }
 
                         if (phoneMappedContact) {

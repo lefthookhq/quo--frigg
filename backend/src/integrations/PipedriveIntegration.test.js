@@ -952,6 +952,29 @@ describe('PipedriveIntegration (Refactored)', () => {
                 ).rejects.toThrow('Failed to create contact');
             });
 
+            it('should skip gracefully when upsertContactToQuo returns null', async () => {
+                const person = {
+                    id: 111,
+                    first_name: 'Ghost',
+                    last_name: 'Contact',
+                    phones: [{ value: '+15550000000', primary: true }],
+                };
+
+                integration.transformPersonToQuo.mockResolvedValue({
+                    externalId: '111',
+                    defaultFields: { firstName: 'Ghost' },
+                });
+                integration.upsertContactToQuo = jest
+                    .fn()
+                    .mockResolvedValue(null);
+
+                await integration._syncPersonToQuo(person, 'added');
+
+                expect(
+                    integration.upsertContactToQuo,
+                ).toHaveBeenCalled();
+            });
+
             it('should use upsertContactToQuo for updated action', async () => {
                 const person = {
                     id: 789,
