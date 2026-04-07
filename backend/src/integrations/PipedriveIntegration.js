@@ -1493,7 +1493,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
 
             if (!result) {
                 console.log(
-                    `[Pipedrive] Skipped person ${person.id} — 409 conflict unresolvable`,
+                    `[Pipedrive] Skipped person ${person.id} — upsert returned no result`,
                 );
                 return;
             }

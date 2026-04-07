@@ -1629,8 +1629,9 @@ describe('BaseCRMIntegration', () => {
 
             expect(result).toBeNull();
             expect(consoleSpy).toHaveBeenCalledWith(
-                expect.stringContaining('409 Conflict unresolvable'),
-                expect.stringContaining('crm-unresolvable'),
+                expect.stringContaining(
+                    '409 Conflict unresolvable for externalId=crm-unresolvable',
+                ),
             );
             consoleSpy.mockRestore();
         });
@@ -1663,8 +1664,9 @@ describe('BaseCRMIntegration', () => {
 
             expect(result).toBeNull();
             expect(consoleSpy).toHaveBeenCalledWith(
-                expect.stringContaining('409 Conflict unresolvable'),
-                expect.stringContaining('crm-no-phone'),
+                expect.stringContaining(
+                    '409 Conflict unresolvable for externalId=crm-no-phone',
+                ),
             );
             consoleSpy.mockRestore();
         });

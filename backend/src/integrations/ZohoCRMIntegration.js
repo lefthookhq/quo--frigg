@@ -2258,7 +2258,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
 
             if (!result) {
                 console.log(
-                    `[Zoho CRM] Skipped ${objectType} ${recordId} — 409 conflict unresolvable`,
+                    `[Zoho CRM] Skipped ${objectType} ${recordId} — upsert returned no result`,
                 );
                 return;
             }

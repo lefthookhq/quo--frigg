@@ -1754,7 +1754,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
 
             if (!result) {
                 console.log(
-                    `[AxisCare] Skipped person ${person.id} — 409 conflict unresolvable`,
+                    `[AxisCare] Skipped person ${person.id} — upsert returned no result`,
                 );
                 return;
             }

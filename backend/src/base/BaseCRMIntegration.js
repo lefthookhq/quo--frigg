@@ -1048,20 +1048,96 @@ class BaseCRMIntegration extends IntegrationBase {
     // ============================================================================
 
     /**
+     * Attempt to recover from a 409 Conflict when creating a contact in Quo.
+     *
+     * The Quo API returns an opaque 409 without specifying which field caused
+     * the conflict (externalId, phone number, email, etc.). This method uses
+     * a best-effort strategy to find the conflicting contact and update it:
+     *
+     * 1. Re-fetch by externalId — handles race conditions where another worker
+     *    created the same contact between our lookup and create calls.
+     * 2. Search internal phone mappings — if the externalId lookup finds nothing,
+     *    iterate the contact's phone numbers and check our mapping table for a
+     *    known quoContactId.
+     * 3. Give up — if neither strategy finds the contact, return null. The caller
+     *    is responsible for handling this gracefully (skip without throwing).
+     *
+     * @param {Object} quoContact - Contact data that failed to create
+     * @param {Error} originalError - The original 409 FetchError
+     * @returns {Promise<{data: Object, action: 'updated'}|null>} Updated result or null if unresolvable
+     */
+    async _recoverFrom409Conflict(quoContact, originalError) {
+        console.warn(
+            '[upsertContactToQuo] 409 Conflict for externalId:',
+            quoContact.externalId,
+        );
+
+        const refetched = await this.quo.api.listContacts({
+            externalIds: [quoContact.externalId],
+            maxResults: 1,
+        });
+        const raced = refetched?.data?.[0];
+        if (raced) {
+            const response = await this.quo.api.updateFriggContact(
+                raced.id,
+                quoContact,
+            );
+            return { data: response.data, action: 'updated' };
+        }
+
+        const phones =
+            quoContact.defaultFields?.phoneNumbers?.filter(
+                (p) => p.value,
+            ) || [];
+        let phoneMappedContact = null;
+        try {
+            for (const phone of phones) {
+                const mapping = await this.getMapping(phone.value);
+                if (mapping?.quoContactId) {
+                    phoneMappedContact = mapping;
+                    break;
+                }
+            }
+        } catch (mappingError) {
+            console.warn(
+                '[upsertContactToQuo] Phone mapping lookup failed:',
+                mappingError.message,
+            );
+        }
+
+        if (phoneMappedContact) {
+            const response = await this.quo.api.updateFriggContact(
+                phoneMappedContact.quoContactId,
+                quoContact,
+            );
+            return { data: response.data, action: 'updated' };
+        }
+
+        const phoneValues = phones.map((p) => p.value).join(', ');
+        console.warn(
+            `[upsertContactToQuo] 409 Conflict unresolvable for externalId=${quoContact.externalId}. ` +
+                `Tried: re-fetch by externalId (not found), phone mapping lookup for [${phoneValues || 'no phones'}] (not found). ` +
+                `The Quo API returned an opaque 409 — the conflicting field is unknown.`,
+        );
+        return null;
+    }
+
+    /**
      * Upsert a single contact to Quo using Frigg-authenticated endpoints
      *
      * This method implements the lookup-then-create/update pattern:
      * 1. Look up contact by externalId using listContacts
      * 2. If found, update using updateFriggContact
      * 3. If not found, create using createFriggContact
-     * 4. Store mapping by phone number
+     * 4. On 409 Conflict, attempt recovery via _recoverFrom409Conflict
+     * 5. Store mapping by phone number
      *
      * Uses /frigg/contacts endpoints which require x-frigg-api-key header.
      *
      * @param {Object} quoContact - Contact data in Quo format
      * @param {string} quoContact.externalId - External CRM ID (required)
      * @param {Object} quoContact.defaultFields - Contact fields
-     * @returns {Promise<{action: 'created'|'updated', quoContactId: string, externalId: string}>}
+     * @returns {Promise<{action: 'created'|'updated', quoContactId: string, externalId: string}|null>} null when 409 conflict is unresolvable
      */
     async upsertContactToQuo(quoContact) {
         if (!this.quo?.api) {
@@ -1100,62 +1176,16 @@ class BaseCRMIntegration extends IntegrationBase {
                 action = 'created';
             } catch (error) {
                 if (error.statusCode === 409) {
-                    console.warn(
-                        '[upsertContactToQuo] 409 Conflict for externalId:',
-                        quoContact.externalId,
-                    );
-                    const refetched = await this.quo.api.listContacts({
-                        externalIds: [quoContact.externalId],
-                        maxResults: 1,
-                    });
-                    const raced = refetched?.data?.[0];
-                    if (raced) {
-                        const response =
-                            await this.quo.api.updateFriggContact(
-                                raced.id,
-                                quoContact,
-                            );
-                        result = response.data;
-                        action = 'updated';
-                    } else {
-                        const phones =
-                            quoContact.defaultFields?.phoneNumbers?.filter(
-                                (p) => p.value,
-                            ) || [];
-                        let phoneMappedContact = null;
-                        try {
-                            for (const phone of phones) {
-                                const mapping = await this.getMapping(
-                                    phone.value,
-                                );
-                                if (mapping?.quoContactId) {
-                                    phoneMappedContact = mapping;
-                                    break;
-                                }
-                            }
-                        } catch (mappingError) {
-                            console.warn(
-                                '[upsertContactToQuo] Phone mapping lookup failed:',
-                                mappingError.message,
-                            );
-                        }
-
-                        if (phoneMappedContact) {
-                            const response =
-                                await this.quo.api.updateFriggContact(
-                                    phoneMappedContact.quoContactId,
-                                    quoContact,
-                                );
-                            result = response.data;
-                            action = 'updated';
-                        } else {
-                            console.warn(
-                                '[upsertContactToQuo] 409 Conflict unresolvable for externalId:',
-                                quoContact.externalId,
-                            );
-                            return null;
-                        }
+                    const recovery =
+                        await this._recoverFrom409Conflict(
+                            quoContact,
+                            error,
+                        );
+                    if (!recovery) {
+                        return null;
                     }
+                    result = recovery.data;
+                    action = recovery.action;
                 } else {
                     throw error;
                 }

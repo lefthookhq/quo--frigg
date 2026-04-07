@@ -2567,7 +2567,7 @@ class AttioIntegration extends BaseCRMIntegration {
 
             if (!result) {
                 console.log(
-                    `[Attio] Skipped person ${attioRecord.id?.record_id || attioRecord.id} — 409 conflict unresolvable`,
+                    `[Attio] Skipped person ${attioRecord.id?.record_id || attioRecord.id} — upsert returned no result`,
                 );
                 return;
             }
