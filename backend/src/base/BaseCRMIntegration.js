@@ -1118,10 +1118,36 @@ class BaseCRMIntegration extends IntegrationBase {
                         result = response.data;
                         action = 'updated';
                     } else {
-                        throw new Error(
-                            `409 Conflict but contact not found on retry lookup for externalId=${quoContact.externalId}`,
-                            { cause: error },
-                        );
+                        const phones =
+                            quoContact.defaultFields?.phoneNumbers?.filter(
+                                (p) => p.value,
+                            ) || [];
+                        let phoneMappedContact = null;
+                        for (const phone of phones) {
+                            const mapping = await this.getMapping(
+                                phone.value,
+                            );
+                            if (mapping?.quoContactId) {
+                                phoneMappedContact = mapping;
+                                break;
+                            }
+                        }
+
+                        if (phoneMappedContact) {
+                            const response =
+                                await this.quo.api.updateFriggContact(
+                                    phoneMappedContact.quoContactId,
+                                    quoContact,
+                                );
+                            result = response.data;
+                            action = 'updated';
+                        } else {
+                            console.warn(
+                                '[upsertContactToQuo] 409 Conflict unresolvable for externalId:',
+                                quoContact.externalId,
+                            );
+                            return null;
+                        }
                     }
                 } else {
                     throw error;

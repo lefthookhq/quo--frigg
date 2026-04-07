@@ -2256,6 +2256,13 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
 
             const result = await this.upsertContactToQuo(quoContact);
 
+            if (!result) {
+                console.log(
+                    `[Zoho CRM] Skipped ${objectType} ${recordId} — 409 conflict unresolvable`,
+                );
+                return;
+            }
+
             console.log(
                 `[Zoho CRM] ✓ Contact ${result.action} in Quo (externalId: ${quoContact.externalId}, quoContactId: ${result.quoContactId})`,
             );

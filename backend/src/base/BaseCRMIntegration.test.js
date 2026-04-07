@@ -1504,7 +1504,7 @@ describe('BaseCRMIntegration', () => {
             consoleSpy.mockRestore();
         });
 
-        it('should throw descriptive error when 409 refetch by externalId finds nothing', async () => {
+        it('should fallback to phone lookup when 409 refetch by externalId finds nothing', async () => {
             const quoContact = {
                 externalId: 'crm-phone-conflict',
                 defaultFields: {
@@ -1522,12 +1522,151 @@ describe('BaseCRMIntegration', () => {
             integration.quo.api.createFriggContact.mockRejectedValue(
                 conflictError,
             );
+            integration.getMapping = jest.fn().mockResolvedValue({
+                quoContactId: 'quo-phone-match',
+            });
+            integration.quo.api.updateFriggContact.mockResolvedValue({
+                data: {
+                    id: 'quo-phone-match',
+                    externalId: 'crm-phone-conflict',
+                    defaultFields: {
+                        phoneNumbers: [
+                            { name: 'mobile', value: '+15552222222' },
+                        ],
+                    },
+                },
+            });
 
-            await expect(
-                integration.upsertContactToQuo(quoContact),
-            ).rejects.toThrow(
-                '409 Conflict but contact not found on retry lookup for externalId=crm-phone-conflict',
+            const result =
+                await integration.upsertContactToQuo(quoContact);
+
+            expect(integration.getMapping).toHaveBeenCalledWith(
+                '+15552222222',
             );
+            expect(
+                integration.quo.api.updateFriggContact,
+            ).toHaveBeenCalledWith('quo-phone-match', quoContact);
+            expect(result).toEqual({
+                action: 'updated',
+                quoContactId: 'quo-phone-match',
+                externalId: 'crm-phone-conflict',
+            });
+        });
+
+        it('should try multiple phone numbers in fallback lookup', async () => {
+            const quoContact = {
+                externalId: 'crm-multi-phone',
+                defaultFields: {
+                    firstName: 'Multi',
+                    phoneNumbers: [
+                        { name: 'work', value: '+15553333333' },
+                        { name: 'mobile', value: '+15554444444' },
+                    ],
+                },
+            };
+
+            const conflictError = new Error('Conflict');
+            conflictError.statusCode = 409;
+
+            integration.quo.api.listContacts
+                .mockResolvedValueOnce({ data: [] })
+                .mockResolvedValueOnce({ data: [] });
+            integration.quo.api.createFriggContact.mockRejectedValue(
+                conflictError,
+            );
+            integration.getMapping = jest
+                .fn()
+                .mockResolvedValueOnce(null)
+                .mockResolvedValueOnce({
+                    quoContactId: 'quo-second-phone',
+                });
+            integration.quo.api.updateFriggContact.mockResolvedValue({
+                data: {
+                    id: 'quo-second-phone',
+                    externalId: 'crm-multi-phone',
+                    defaultFields: {
+                        phoneNumbers: [
+                            { name: 'work', value: '+15553333333' },
+                            { name: 'mobile', value: '+15554444444' },
+                        ],
+                    },
+                },
+            });
+
+            const result =
+                await integration.upsertContactToQuo(quoContact);
+
+            expect(integration.getMapping).toHaveBeenCalledTimes(2);
+            expect(result.quoContactId).toBe('quo-second-phone');
+        });
+
+        it('should return null when 409 and no match by externalId or phone', async () => {
+            const consoleSpy = jest
+                .spyOn(console, 'warn')
+                .mockImplementation();
+
+            const quoContact = {
+                externalId: 'crm-unresolvable',
+                defaultFields: {
+                    firstName: 'Ghost',
+                    phoneNumbers: [{ name: 'mobile', value: '+15555555555' }],
+                },
+            };
+
+            const conflictError = new Error('Conflict');
+            conflictError.statusCode = 409;
+
+            integration.quo.api.listContacts
+                .mockResolvedValueOnce({ data: [] })
+                .mockResolvedValueOnce({ data: [] });
+            integration.quo.api.createFriggContact.mockRejectedValue(
+                conflictError,
+            );
+            integration.getMapping = jest.fn().mockResolvedValue(null);
+
+            const result =
+                await integration.upsertContactToQuo(quoContact);
+
+            expect(result).toBeNull();
+            expect(consoleSpy).toHaveBeenCalledWith(
+                expect.stringContaining('409 Conflict unresolvable'),
+                expect.stringContaining('crm-unresolvable'),
+            );
+            consoleSpy.mockRestore();
+        });
+
+        it('should return null when 409 and contact has no phone numbers', async () => {
+            const consoleSpy = jest
+                .spyOn(console, 'warn')
+                .mockImplementation();
+
+            const quoContact = {
+                externalId: 'crm-no-phone',
+                defaultFields: {
+                    firstName: 'NoPhone',
+                    phoneNumbers: [],
+                },
+            };
+
+            const conflictError = new Error('Conflict');
+            conflictError.statusCode = 409;
+
+            integration.quo.api.listContacts
+                .mockResolvedValueOnce({ data: [] })
+                .mockResolvedValueOnce({ data: [] });
+            integration.quo.api.createFriggContact.mockRejectedValue(
+                conflictError,
+            );
+
+            const result =
+                await integration.upsertContactToQuo(quoContact);
+
+            expect(result).toBeNull();
+            expect(consoleSpy).toHaveBeenCalledWith(
+                expect.stringContaining('409 Conflict unresolvable'),
+                expect.stringContaining('crm-no-phone'),
+            );
+            consoleSpy.mockRestore();
         });
 
         it('should handle concurrent upserts for the same contact without errors', async () => {

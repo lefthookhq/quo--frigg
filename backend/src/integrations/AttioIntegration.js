@@ -2565,6 +2565,13 @@ class AttioIntegration extends BaseCRMIntegration {
 
             const result = await this.upsertContactToQuo(quoContact);
 
+            if (!result) {
+                console.log(
+                    `[Attio] Skipped person ${attioRecord.id?.record_id || attioRecord.id} — 409 conflict unresolvable`,
+                );
+                return;
+            }
+
             console.log(
                 `[Attio] ✓ Contact ${result.action} in Quo (externalId: ${quoContact.externalId}, quoContactId: ${result.quoContactId})`,
             );

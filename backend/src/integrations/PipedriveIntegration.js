@@ -1491,6 +1491,13 @@ class PipedriveIntegration extends BaseCRMIntegration {
 
             const result = await this.upsertContactToQuo(quoContact);
 
+            if (!result) {
+                console.log(
+                    `[Pipedrive] Skipped person ${person.id} — 409 conflict unresolvable`,
+                );
+                return;
+            }
+
             console.log(
                 `[Pipedrive] ✓ Contact ${result.action} in Quo (externalId: ${quoContact.externalId}, quoContactId: ${result.quoContactId})`,
             );
