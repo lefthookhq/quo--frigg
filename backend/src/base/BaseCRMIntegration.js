@@ -1120,6 +1120,7 @@ class BaseCRMIntegration extends IntegrationBase {
                     } else {
                         throw new Error(
                             `409 Conflict but contact not found on retry lookup for externalId=${quoContact.externalId}`,
+                            { cause: error },
                         );
                     }
                 } else {
