@@ -2162,42 +2162,59 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
     async _fetchZohoObject(objectType, recordId) {
         let person;
 
-        if (objectType === 'Contact') {
-            const response = await this.zoho.api.getContact(recordId);
+        try {
+            if (objectType === 'Contact') {
+                const response = await this.zoho.api.getContact(recordId);
 
-            if (!response.data) {
-                throw new Error(`No data returned for Contact ${recordId}`);
-            }
-
-            if (Array.isArray(response.data)) {
-                if (response.data.length === 0) {
+                if (!response.data) {
                     throw new Error(
-                        `Contact ${recordId} not found (empty array)`,
+                        `No data returned for Contact ${recordId}`,
                     );
                 }
-                person = response.data[0];
-            } else {
-                person = response.data;
-            }
-        } else if (objectType === 'Account') {
-            const response = await this.zoho.api.getAccount(recordId);
 
-            if (!response.data) {
-                throw new Error(`No data returned for Account ${recordId}`);
-            }
+                if (Array.isArray(response.data)) {
+                    if (response.data.length === 0) {
+                        throw new Error(
+                            `Contact ${recordId} not found (empty array)`,
+                        );
+                    }
+                    person = response.data[0];
+                } else {
+                    person = response.data;
+                }
+            } else if (objectType === 'Account') {
+                const response = await this.zoho.api.getAccount(recordId);
 
-            if (Array.isArray(response.data)) {
-                if (response.data.length === 0) {
+                if (!response.data) {
                     throw new Error(
-                        `Account ${recordId} not found (empty array)`,
+                        `No data returned for Account ${recordId}`,
                     );
                 }
-                person = response.data[0];
+
+                if (Array.isArray(response.data)) {
+                    if (response.data.length === 0) {
+                        throw new Error(
+                            `Account ${recordId} not found (empty array)`,
+                        );
+                    }
+                    person = response.data[0];
+                } else {
+                    person = response.data;
+                }
             } else {
-                person = response.data;
+                throw new Error(`Unknown object type: ${objectType}`);
             }
-        } else {
-            throw new Error(`Unknown object type: ${objectType}`);
+        } catch (error) {
+            if (
+                error?.message?.includes('Unexpected end of JSON input') ||
+                error?.message?.includes('invalid json response body')
+            ) {
+                console.warn(
+                    `[Zoho CRM] Empty response for ${objectType} ${recordId} (likely transient Zoho API issue), skipping sync`,
+                );
+                return null;
+            }
+            throw error;
         }
 
         if (!person) {
@@ -2252,6 +2269,12 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             }
 
             const person = await this._fetchZohoObject(objectType, recordId);
+            if (!person) {
+                console.log(
+                    `[Zoho CRM] Skipped ${objectType} ${recordId} — could not fetch from Zoho`,
+                );
+                return;
+            }
             const quoContact = await this.transformPersonToQuo(person);
 
             const result = await this.upsertContactToQuo(quoContact);

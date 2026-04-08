@@ -330,7 +330,19 @@ class QuoWebhookEventProcessor {
      * @returns {Promise<Object|null>} Call object with voicemail merged, or null if not found
      */
     static async fetchCallWithVoicemail(quoApi, callId, logPrefix = '[QuoEventProcessor]') {
-        const fullCallResponse = await quoApi.getCall(callId);
+        let fullCallResponse;
+        try {
+            fullCallResponse = await quoApi.getCall(callId);
+        } catch (error) {
+            const statusCode = error.statusCode || error.response?.status;
+            if (statusCode === 400) {
+                console.warn(
+                    `${logPrefix} Cannot fetch call ${callId}: ${error.message?.split('\n')[0] || 'Bad Request'}`,
+                );
+                return null;
+            }
+            throw error;
+        }
         if (!fullCallResponse?.data) {
             return null;
         }
