@@ -999,6 +999,38 @@ describe('ZohoCRMIntegration (Refactored)', () => {
             expect(result).toBeNull();
         });
 
+        it('should fall back to phone param when criteria search returns 400 Bad Request', async () => {
+            const fetchError = new Error(
+                '400 Bad Request on Contacts/search',
+            );
+            fetchError.statusCode = 400;
+
+            mockZohoCrm.api.searchContacts
+                .mockRejectedValueOnce(fetchError)
+                .mockResolvedValueOnce({
+                    data: [{ id: 'zoho-contact-789' }],
+                });
+
+            const consoleSpy = jest
+                .spyOn(console, 'warn')
+                .mockImplementation();
+
+            const result =
+                await integration._findZohoContactByPhone('+15550001111');
+
+            expect(result).toBe('zoho-contact-789');
+            expect(mockZohoCrm.api.searchContacts).toHaveBeenCalledTimes(2);
+            expect(mockZohoCrm.api.searchContacts).toHaveBeenNthCalledWith(
+                2,
+                { phone: '+15550001111' },
+            );
+            expect(consoleSpy).toHaveBeenCalledWith(
+                expect.stringContaining('falling back to phone param search'),
+            );
+
+            consoleSpy.mockRestore();
+        });
+
         it('should re-throw transient errors to allow SQS retry', async () => {
             const originalError = new Error('500 Internal Server Error');
             mockZohoCrm.api.searchContacts.mockRejectedValue(originalError);
