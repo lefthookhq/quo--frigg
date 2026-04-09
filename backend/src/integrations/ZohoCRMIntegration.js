@@ -1603,9 +1603,12 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             }
             return null;
         } catch (error) {
-            if (error.message?.includes('INVALID_QUERY')) {
+            if (
+                error.message?.includes('INVALID_QUERY') ||
+                error.statusCode === 400
+            ) {
                 console.warn(
-                    `[Quo Webhook] Criteria search not supported for Phone/Mobile fields, falling back to phone param search`,
+                    `[Quo Webhook] Criteria search failed (${error.statusCode || 'INVALID_QUERY'}), falling back to phone param search`,
                 );
                 return this._findZohoContactByPhoneParam(normalizedPhone);
             }
