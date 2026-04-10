@@ -1625,9 +1625,19 @@ class PipedriveIntegration extends BaseCRMIntegration {
      */
     getSettings = async ({ req, res }) => {
         try {
+            const integrationId = req.query.integrationId;
+            if (!integrationId) {
+                return res.status(400).json({ error: 'integrationId query param is required' });
+            }
+
+            const result = await this.commands.loadIntegrationContextById(integrationId);
+            if (result.error) {
+                return res.status(result.error).json({ error: result.reason });
+            }
+
+            const config = result.context.record.config || {};
             const settings = {
-                callActivityDestination:
-                    this.config?.callActivityDestination || 'contact',
+                callActivityDestination: config.callActivityDestination || 'contact',
             };
             res.json({ settings });
         } catch (error) {
@@ -1645,8 +1655,12 @@ class PipedriveIntegration extends BaseCRMIntegration {
      */
     updateSettings = async ({ req, res }) => {
         try {
+            const integrationId = req.query.integrationId;
+            if (!integrationId) {
+                return res.status(400).json({ error: 'integrationId query param is required' });
+            }
+
             const updates = req.body;
-            const updatedConfig = { ...this.config };
 
             const VALID_DESTINATIONS = ['contact', 'deal'];
             if (updates.callActivityDestination !== undefined) {
@@ -1655,15 +1669,25 @@ class PipedriveIntegration extends BaseCRMIntegration {
                         error: `Invalid callActivityDestination. Must be one of: ${VALID_DESTINATIONS.join(', ')}`,
                     });
                 }
-                updatedConfig.callActivityDestination =
-                    updates.callActivityDestination;
+            }
+
+            const result = await this.commands.loadIntegrationContextById(integrationId);
+            if (result.error) {
+                return res.status(result.error).json({ error: result.reason });
+            }
+
+            const currentConfig = result.context.record.config || {};
+            const updatedConfig = { ...currentConfig };
+
+            if (updates.callActivityDestination !== undefined) {
+                updatedConfig.callActivityDestination = updates.callActivityDestination;
                 console.log(
                     `[Pipedrive Settings] callActivityDestination set to: ${updates.callActivityDestination}`,
                 );
             }
 
             await this.commands.updateIntegrationConfig({
-                integrationId: this.id,
+                integrationId,
                 config: updatedConfig,
             });
 

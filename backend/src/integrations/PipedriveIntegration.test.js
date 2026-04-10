@@ -88,6 +88,9 @@ describe('PipedriveIntegration (Refactored)', () => {
         // Mock base class dependencies
         integration.commands = {
             updateIntegrationConfig: jest.fn().mockResolvedValue({}),
+            loadIntegrationContextById: jest.fn().mockResolvedValue({
+                context: { record: { config: {} } },
+            }),
         };
         integration.updateIntegrationMessages = {
             execute: jest.fn().mockResolvedValue({}),
@@ -1115,10 +1118,13 @@ describe('PipedriveIntegration (Refactored)', () => {
 
     describe('getSettings', () => {
         it('should return default callActivityDestination of contact when config is empty', async () => {
+            const req = { query: { integrationId: '44' } };
             const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
-            integration.config = {};
+            integration.commands.loadIntegrationContextById.mockResolvedValue({
+                context: { record: { config: {} } },
+            });
 
-            await integration.getSettings({ req: {}, res });
+            await integration.getSettings({ req, res });
 
             expect(res.json).toHaveBeenCalledWith({
                 settings: { callActivityDestination: 'contact' },
@@ -1126,26 +1132,38 @@ describe('PipedriveIntegration (Refactored)', () => {
         });
 
         it('should return stored callActivityDestination from config', async () => {
+            const req = { query: { integrationId: '44' } };
             const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
-            integration.config = { callActivityDestination: 'deal' };
+            integration.commands.loadIntegrationContextById.mockResolvedValue({
+                context: { record: { config: { callActivityDestination: 'deal' } } },
+            });
 
-            await integration.getSettings({ req: {}, res });
+            await integration.getSettings({ req, res });
 
             expect(res.json).toHaveBeenCalledWith({
                 settings: { callActivityDestination: 'deal' },
             });
         });
+
+        it('should return 400 when integrationId is missing', async () => {
+            const req = { query: {} };
+            const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
+
+            await integration.getSettings({ req, res });
+
+            expect(res.status).toHaveBeenCalledWith(400);
+        });
     });
 
     describe('updateSettings', () => {
         it('should update callActivityDestination to deal', async () => {
-            const req = { body: { callActivityDestination: 'deal' } };
+            const req = { query: { integrationId: '44' }, body: { callActivityDestination: 'deal' } };
             const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
 
             await integration.updateSettings({ req, res });
 
             expect(integration.commands.updateIntegrationConfig).toHaveBeenCalledWith({
-                integrationId: 'test-integration-id',
+                integrationId: '44',
                 config: expect.objectContaining({ callActivityDestination: 'deal' }),
             });
             expect(res.json).toHaveBeenCalledWith({
@@ -1155,9 +1173,11 @@ describe('PipedriveIntegration (Refactored)', () => {
         });
 
         it('should update callActivityDestination back to contact', async () => {
-            const req = { body: { callActivityDestination: 'contact' } };
+            const req = { query: { integrationId: '44' }, body: { callActivityDestination: 'contact' } };
             const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
-            integration.config = { callActivityDestination: 'deal' };
+            integration.commands.loadIntegrationContextById.mockResolvedValue({
+                context: { record: { config: { callActivityDestination: 'deal' } } },
+            });
 
             await integration.updateSettings({ req, res });
 
@@ -1168,7 +1188,7 @@ describe('PipedriveIntegration (Refactored)', () => {
         });
 
         it('should reject an invalid callActivityDestination', async () => {
-            const req = { body: { callActivityDestination: 'lead' } };
+            const req = { query: { integrationId: '44' }, body: { callActivityDestination: 'lead' } };
             const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
 
             await integration.updateSettings({ req, res });
@@ -1178,6 +1198,15 @@ describe('PipedriveIntegration (Refactored)', () => {
                 error: expect.stringContaining('Invalid callActivityDestination'),
             });
             expect(integration.commands.updateIntegrationConfig).not.toHaveBeenCalled();
+        });
+
+        it('should return 400 when integrationId is missing', async () => {
+            const req = { query: {}, body: { callActivityDestination: 'deal' } };
+            const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
+
+            await integration.updateSettings({ req, res });
+
+            expect(res.status).toHaveBeenCalledWith(400);
         });
     });
 
