@@ -424,12 +424,25 @@ describe('PipedriveIntegration (Refactored)', () => {
                     data: { id: 456 },
                 });
                 mockQuoApi.api.getUser = jest.fn().mockResolvedValue({
-                    data: { firstName: 'Juan', lastName: 'Ladino', email: 'juan@happyclean.com' },
+                    data: {
+                        firstName: 'Juan',
+                        lastName: 'Ladino',
+                        email: 'juan@happyclean.com',
+                    },
                 });
-                mockPipedriveApi.api.findUsers = jest.fn().mockResolvedValueOnce({
-                    success: true,
-                    data: [{ id: 888, name: 'Juan Ladino', email: 'juan@happyclean.com', active_flag: true }],
-                });
+                mockPipedriveApi.api.findUsers = jest
+                    .fn()
+                    .mockResolvedValueOnce({
+                        success: true,
+                        data: [
+                            {
+                                id: 888,
+                                name: 'Juan Ladino',
+                                email: 'juan@happyclean.com',
+                                active_flag: true,
+                            },
+                        ],
+                    });
 
                 const activity = {
                     contactExternalId: '123',
@@ -520,10 +533,19 @@ describe('PipedriveIntegration (Refactored)', () => {
                 mockQuoApi.api.getUser = jest.fn().mockResolvedValue({
                     data: { firstName: 'Juan', email: 'juan@happyclean.com' },
                 });
-                mockPipedriveApi.api.findUsers = jest.fn().mockResolvedValueOnce({
-                    success: true,
-                    data: [{ id: 999, name: 'Juan Ladino', email: 'juan@happyclean.com', active_flag: true }],
-                });
+                mockPipedriveApi.api.findUsers = jest
+                    .fn()
+                    .mockResolvedValueOnce({
+                        success: true,
+                        data: [
+                            {
+                                id: 999,
+                                name: 'Juan Ladino',
+                                email: 'juan@happyclean.com',
+                                active_flag: true,
+                            },
+                        ],
+                    });
 
                 const activity = {
                     contactExternalId: '123',
@@ -536,7 +558,9 @@ describe('PipedriveIntegration (Refactored)', () => {
 
                 await integration.logCallToActivity(activity);
 
-                expect(mockPipedriveApi.api.createActivity).toHaveBeenCalledWith(
+                expect(
+                    mockPipedriveApi.api.createActivity,
+                ).toHaveBeenCalledWith(
                     expect.objectContaining({
                         owner_id: 999,
                     }),
@@ -577,10 +601,18 @@ describe('PipedriveIntegration (Refactored)', () => {
 
         describe('_resolvePipedriveOwnerId', () => {
             it('should resolve Pipedrive user by email match', async () => {
-                mockPipedriveApi.api.findUsers = jest.fn()
+                mockPipedriveApi.api.findUsers = jest
+                    .fn()
                     .mockResolvedValueOnce({
                         success: true,
-                        data: [{ id: 555, name: 'Juan Ladino', email: 'juan@happyclean.com', active_flag: true }],
+                        data: [
+                            {
+                                id: 555,
+                                name: 'Juan Ladino',
+                                email: 'juan@happyclean.com',
+                                active_flag: true,
+                            },
+                        ],
                     });
 
                 const result = await integration._resolvePipedriveOwnerId({
@@ -597,11 +629,19 @@ describe('PipedriveIntegration (Refactored)', () => {
             });
 
             it('should fall back to full name match when email has no results', async () => {
-                mockPipedriveApi.api.findUsers = jest.fn()
+                mockPipedriveApi.api.findUsers = jest
+                    .fn()
                     .mockResolvedValueOnce({ success: true, data: [] })
                     .mockResolvedValueOnce({
                         success: true,
-                        data: [{ id: 777, name: 'Juan Ladino', email: 'jl@other.com', active_flag: true }],
+                        data: [
+                            {
+                                id: 777,
+                                name: 'Juan Ladino',
+                                email: 'jl@other.com',
+                                active_flag: true,
+                            },
+                        ],
                     });
 
                 const result = await integration._resolvePipedriveOwnerId({
@@ -612,13 +652,17 @@ describe('PipedriveIntegration (Refactored)', () => {
 
                 expect(result).toBe(777);
                 expect(mockPipedriveApi.api.findUsers).toHaveBeenCalledTimes(2);
-                expect(mockPipedriveApi.api.findUsers).toHaveBeenNthCalledWith(2, {
-                    term: 'Juan Ladino',
-                });
+                expect(mockPipedriveApi.api.findUsers).toHaveBeenNthCalledWith(
+                    2,
+                    {
+                        term: 'Juan Ladino',
+                    },
+                );
             });
 
             it('should return null when no match found at all', async () => {
-                mockPipedriveApi.api.findUsers = jest.fn()
+                mockPipedriveApi.api.findUsers = jest
+                    .fn()
                     .mockResolvedValue({ success: true, data: [] });
 
                 const result = await integration._resolvePipedriveOwnerId({
@@ -630,10 +674,18 @@ describe('PipedriveIntegration (Refactored)', () => {
             });
 
             it('should skip inactive users and return null if no active match', async () => {
-                mockPipedriveApi.api.findUsers = jest.fn()
+                mockPipedriveApi.api.findUsers = jest
+                    .fn()
                     .mockResolvedValueOnce({
                         success: true,
-                        data: [{ id: 111, name: 'Juan Ladino', email: 'juan@happyclean.com', active_flag: false }],
+                        data: [
+                            {
+                                id: 111,
+                                name: 'Juan Ladino',
+                                email: 'juan@happyclean.com',
+                                active_flag: false,
+                            },
+                        ],
                     });
 
                 const result = await integration._resolvePipedriveOwnerId({
@@ -645,10 +697,13 @@ describe('PipedriveIntegration (Refactored)', () => {
             });
 
             it('should return null and not throw when API errors', async () => {
-                mockPipedriveApi.api.findUsers = jest.fn()
+                mockPipedriveApi.api.findUsers = jest
+                    .fn()
                     .mockRejectedValue(new Error('403 Forbidden'));
 
-                const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+                const consoleSpy = jest
+                    .spyOn(console, 'warn')
+                    .mockImplementation();
 
                 const result = await integration._resolvePipedriveOwnerId({
                     firstName: 'Juan',
@@ -973,9 +1028,7 @@ describe('PipedriveIntegration (Refactored)', () => {
 
                 await integration._syncPersonToQuo(person, 'added');
 
-                expect(
-                    integration.upsertContactToQuo,
-                ).toHaveBeenCalled();
+                expect(integration.upsertContactToQuo).toHaveBeenCalled();
             });
 
             it('should use upsertContactToQuo for updated action', async () => {
@@ -1044,14 +1097,16 @@ describe('PipedriveIntegration (Refactored)', () => {
                 data: { items: [] },
             });
 
-            const result = await integration._findPipedriveContactByPhone('+15551111111');
+            const result =
+                await integration._findPipedriveContactByPhone('+15551111111');
             expect(result).toBeNull();
         });
 
         it('should return null if search returns no data', async () => {
             mockPipedriveApi.api.searchPersons.mockResolvedValue({});
 
-            const result = await integration._findPipedriveContactByPhone('+15551111111');
+            const result =
+                await integration._findPipedriveContactByPhone('+15551111111');
             expect(result).toBeNull();
         });
 
@@ -1062,7 +1117,8 @@ describe('PipedriveIntegration (Refactored)', () => {
                 },
             });
 
-            const result = await integration._findPipedriveContactByPhone('+15551111111');
+            const result =
+                await integration._findPipedriveContactByPhone('+15551111111');
             expect(result).toBe('12345');
         });
     });
@@ -1082,7 +1138,10 @@ describe('PipedriveIntegration (Refactored)', () => {
                 },
             });
             mockQuoApi.api.getPhoneNumber = jest.fn().mockResolvedValue({
-                data: { number: '+15559999999', formattedNumber: '(555) 999-9999' },
+                data: {
+                    number: '+15559999999',
+                    formattedNumber: '(555) 999-9999',
+                },
             });
             mockQuoApi.api.getUser = jest.fn().mockResolvedValue({
                 data: { firstName: 'Test', lastName: 'User' },
@@ -1090,10 +1149,14 @@ describe('PipedriveIntegration (Refactored)', () => {
             integration.config = {
                 phoneNumbersMetadata: [{ number: '+15559999999' }],
             };
-            integration._resolvePipedriveOwnerId = jest.fn().mockResolvedValue(null);
+            integration._resolvePipedriveOwnerId = jest
+                .fn()
+                .mockResolvedValue(null);
 
             // Contact not found — _findPipedriveContactByPhone returns null
-            integration._findPipedriveContactByPhone = jest.fn().mockResolvedValue(null);
+            integration._findPipedriveContactByPhone = jest
+                .fn()
+                .mockResolvedValue(null);
 
             const webhookData = {
                 data: {
@@ -1107,7 +1170,8 @@ describe('PipedriveIntegration (Refactored)', () => {
                 },
             };
 
-            const result = await integration._handleQuoCallSummaryEvent(webhookData);
+            const result =
+                await integration._handleQuoCallSummaryEvent(webhookData);
 
             // Should return gracefully with logged: false, NOT throw
             expect(result.received).toBe(true);
@@ -1135,7 +1199,9 @@ describe('PipedriveIntegration (Refactored)', () => {
             const req = { query: { integrationId: '44' } };
             const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
             integration.commands.loadIntegrationContextById.mockResolvedValue({
-                context: { record: { config: { callActivityDestination: 'deal' } } },
+                context: {
+                    record: { config: { callActivityDestination: 'deal' } },
+                },
             });
 
             await integration.getSettings({ req, res });
@@ -1157,14 +1223,21 @@ describe('PipedriveIntegration (Refactored)', () => {
 
     describe('updateSettings', () => {
         it('should update callActivityDestination to deal', async () => {
-            const req = { query: { integrationId: '44' }, body: { callActivityDestination: 'deal' } };
+            const req = {
+                query: { integrationId: '44' },
+                body: { callActivityDestination: 'deal' },
+            };
             const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
 
             await integration.updateSettings({ req, res });
 
-            expect(integration.commands.updateIntegrationConfig).toHaveBeenCalledWith({
+            expect(
+                integration.commands.updateIntegrationConfig,
+            ).toHaveBeenCalledWith({
                 integrationId: '44',
-                config: expect.objectContaining({ callActivityDestination: 'deal' }),
+                config: expect.objectContaining({
+                    callActivityDestination: 'deal',
+                }),
             });
             expect(res.json).toHaveBeenCalledWith({
                 success: true,
@@ -1173,10 +1246,15 @@ describe('PipedriveIntegration (Refactored)', () => {
         });
 
         it('should update callActivityDestination back to contact', async () => {
-            const req = { query: { integrationId: '44' }, body: { callActivityDestination: 'contact' } };
+            const req = {
+                query: { integrationId: '44' },
+                body: { callActivityDestination: 'contact' },
+            };
             const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
             integration.commands.loadIntegrationContextById.mockResolvedValue({
-                context: { record: { config: { callActivityDestination: 'deal' } } },
+                context: {
+                    record: { config: { callActivityDestination: 'deal' } },
+                },
             });
 
             await integration.updateSettings({ req, res });
@@ -1188,20 +1266,30 @@ describe('PipedriveIntegration (Refactored)', () => {
         });
 
         it('should reject an invalid callActivityDestination', async () => {
-            const req = { query: { integrationId: '44' }, body: { callActivityDestination: 'lead' } };
+            const req = {
+                query: { integrationId: '44' },
+                body: { callActivityDestination: 'lead' },
+            };
             const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
 
             await integration.updateSettings({ req, res });
 
             expect(res.status).toHaveBeenCalledWith(400);
             expect(res.json).toHaveBeenCalledWith({
-                error: expect.stringContaining('Invalid callActivityDestination'),
+                error: expect.stringContaining(
+                    'Invalid callActivityDestination',
+                ),
             });
-            expect(integration.commands.updateIntegrationConfig).not.toHaveBeenCalled();
+            expect(
+                integration.commands.updateIntegrationConfig,
+            ).not.toHaveBeenCalled();
         });
 
         it('should return 400 when integrationId is missing', async () => {
-            const req = { query: {}, body: { callActivityDestination: 'deal' } };
+            const req = {
+                query: {},
+                body: { callActivityDestination: 'deal' },
+            };
             const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
 
             await integration.updateSettings({ req, res });

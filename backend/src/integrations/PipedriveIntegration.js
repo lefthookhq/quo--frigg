@@ -552,13 +552,17 @@ class PipedriveIntegration extends BaseCRMIntegration {
      */
     async _resolvePipedriveOwnerId(quoUser) {
         if (!quoUser?.email && !quoUser?.firstName) {
-            console.log('[Pipedrive] No email or firstName provided for user resolution, skipping');
+            console.log(
+                '[Pipedrive] No email or firstName provided for user resolution, skipping',
+            );
             return null;
         }
 
         try {
             if (quoUser.email) {
-                console.log(`[Pipedrive] Searching for user by email: ${quoUser.email}`);
+                console.log(
+                    `[Pipedrive] Searching for user by email: ${quoUser.email}`,
+                );
                 const emailResult = await this.pipedrive.api.findUsers({
                     term: quoUser.email,
                     search_by_email: 1,
@@ -567,31 +571,41 @@ class PipedriveIntegration extends BaseCRMIntegration {
                     (u) => u.active_flag,
                 );
                 if (emailMatch) {
-                    console.log(`[Pipedrive] User found by email: id=${emailMatch.id}, name=${emailMatch.name}`);
+                    console.log(
+                        `[Pipedrive] User found by email: id=${emailMatch.id}, name=${emailMatch.name}`,
+                    );
                     return emailMatch.id;
                 }
-                console.log(`[Pipedrive] No active user found by email: ${quoUser.email} (results: ${emailResult?.data?.length ?? 0})`);
+                console.log(
+                    `[Pipedrive] No active user found by email: ${quoUser.email} (results: ${emailResult?.data?.length ?? 0})`,
+                );
             }
 
             if (quoUser.firstName) {
                 const searchName = quoUser.lastName
                     ? `${quoUser.firstName} ${quoUser.lastName}`
                     : quoUser.firstName;
-                console.log(`[Pipedrive] Searching for user by name: ${searchName}`);
+                console.log(
+                    `[Pipedrive] Searching for user by name: ${searchName}`,
+                );
                 const nameResult = await this.pipedrive.api.findUsers({
                     term: searchName,
                 });
-                const nameMatch = nameResult?.data?.find(
-                    (u) => u.active_flag,
-                );
+                const nameMatch = nameResult?.data?.find((u) => u.active_flag);
                 if (nameMatch) {
-                    console.log(`[Pipedrive] User found by name: id=${nameMatch.id}, name=${nameMatch.name}`);
+                    console.log(
+                        `[Pipedrive] User found by name: id=${nameMatch.id}, name=${nameMatch.name}`,
+                    );
                     return nameMatch.id;
                 }
-                console.log(`[Pipedrive] No active user found by name: ${searchName} (results: ${nameResult?.data?.length ?? 0})`);
+                console.log(
+                    `[Pipedrive] No active user found by name: ${searchName} (results: ${nameResult?.data?.length ?? 0})`,
+                );
             }
 
-            console.log(`[Pipedrive] Could not resolve Pipedrive user for quoUser: email=${quoUser.email}, name=${quoUser.firstName} ${quoUser.lastName}`);
+            console.log(
+                `[Pipedrive] Could not resolve Pipedrive user for quoUser: email=${quoUser.email}, name=${quoUser.firstName} ${quoUser.lastName}`,
+            );
             return null;
         } catch (error) {
             console.warn(
@@ -624,9 +638,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                     const quoUser = await this.quo.api.getUser(
                         activity.quoUserId,
                     );
-                    userId = await this._resolvePipedriveOwnerId(
-                        quoUser?.data,
-                    );
+                    userId = await this._resolvePipedriveOwnerId(quoUser?.data);
                 } catch (error) {
                     console.warn(
                         `[Pipedrive] Could not resolve owner: ${error.message}`,
@@ -1313,15 +1325,18 @@ class PipedriveIntegration extends BaseCRMIntegration {
     async _handlePipedriveWebhook(data) {
         const { body, headers, integrationId } = data;
 
-        console.log(`${this._logPrefix} [Pipedrive Webhook] Processing event:`, {
-            integrationId: this.id,
-            event: body.event,
-            action: body.meta?.action,
-            object: body.meta?.object,
-            objectId: body.meta?.id,
-            companyId: body.meta?.company_id,
-            timestamp: body.meta?.timestamp,
-        });
+        console.log(
+            `${this._logPrefix} [Pipedrive Webhook] Processing event:`,
+            {
+                integrationId: this.id,
+                event: body.event,
+                action: body.meta?.action,
+                object: body.meta?.object,
+                objectId: body.meta?.id,
+                companyId: body.meta?.company_id,
+                timestamp: body.meta?.timestamp,
+            },
+        );
 
         try {
             const { meta, current, previous, event } = body;
@@ -1368,7 +1383,10 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 processedAt: new Date().toISOString(),
             };
         } catch (error) {
-            console.error(`${this._logPrefix} [Pipedrive Webhook] Processing error:`, error);
+            console.error(
+                `${this._logPrefix} [Pipedrive Webhook] Processing error:`,
+                error,
+            );
 
             // Log error to integration messages
             await this.updateIntegrationMessages.execute(
@@ -1397,7 +1415,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
      * @returns {Promise<void>}
      */
     async _handlePersonWebhook({ action, data, previous, meta }) {
-        console.log(`${this._logPrefix} [Pipedrive Webhook] Handling person ${action}: ${meta.id}`);
+        console.log(
+            `${this._logPrefix} [Pipedrive Webhook] Handling person ${action}: ${meta.id}`,
+        );
 
         try {
             let person;
@@ -1526,7 +1546,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 contactId: String(person.id),
             });
 
-            console.log(`${this._logPrefix} ✓ Person ${person.id} synced to Quo`);
+            console.log(
+                `${this._logPrefix} ✓ Person ${person.id} synced to Quo`,
+            );
         } catch (error) {
             console.error(
                 `[Pipedrive] Failed to sync person ${person.id}:`,
@@ -1556,7 +1578,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
         const { body, headers } = data;
         const eventType = body.type; // "call.completed", "message.received", etc.
 
-        console.log(`${this._logPrefix} [Quo Webhook] Processing event: ${eventType}`);
+        console.log(
+            `${this._logPrefix} [Quo Webhook] Processing event: ${eventType}`,
+        );
 
         try {
             // TODO(quo-webhooks): Re-enable signature verification once Quo/OpenPhone
@@ -1573,7 +1597,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
             ) {
                 result = await this._handleQuoMessageEvent(body);
             } else {
-                console.warn(`${this._logPrefix} [Quo Webhook] Unknown event type: ${eventType}`);
+                console.warn(
+                    `${this._logPrefix} [Quo Webhook] Unknown event type: ${eventType}`,
+                );
                 return { success: true, skipped: true, eventType };
             }
 
@@ -1584,7 +1610,10 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 result,
             };
         } catch (error) {
-            console.error(`${this._logPrefix} [Quo Webhook] Processing error:`, error);
+            console.error(
+                `${this._logPrefix} [Quo Webhook] Processing error:`,
+                error,
+            );
 
             if (eventType.startsWith('message.')) {
                 await trackAnalyticsEvent(
@@ -1627,17 +1656,21 @@ class PipedriveIntegration extends BaseCRMIntegration {
         try {
             const integrationId = req.query.integrationId;
             if (!integrationId) {
-                return res.status(400).json({ error: 'integrationId query param is required' });
+                return res
+                    .status(400)
+                    .json({ error: 'integrationId query param is required' });
             }
 
-            const result = await this.commands.loadIntegrationContextById(integrationId);
+            const result =
+                await this.commands.loadIntegrationContextById(integrationId);
             if (result.error) {
                 return res.status(result.error).json({ error: result.reason });
             }
 
             const config = result.context.record.config || {};
             const settings = {
-                callActivityDestination: config.callActivityDestination || 'contact',
+                callActivityDestination:
+                    config.callActivityDestination || 'contact',
             };
             res.json({ settings });
         } catch (error) {
@@ -1657,21 +1690,28 @@ class PipedriveIntegration extends BaseCRMIntegration {
         try {
             const integrationId = req.query.integrationId;
             if (!integrationId) {
-                return res.status(400).json({ error: 'integrationId query param is required' });
+                return res
+                    .status(400)
+                    .json({ error: 'integrationId query param is required' });
             }
 
             const updates = req.body;
 
             const VALID_DESTINATIONS = ['contact', 'deal'];
             if (updates.callActivityDestination !== undefined) {
-                if (!VALID_DESTINATIONS.includes(updates.callActivityDestination)) {
+                if (
+                    !VALID_DESTINATIONS.includes(
+                        updates.callActivityDestination,
+                    )
+                ) {
                     return res.status(400).json({
                         error: `Invalid callActivityDestination. Must be one of: ${VALID_DESTINATIONS.join(', ')}`,
                     });
                 }
             }
 
-            const result = await this.commands.loadIntegrationContextById(integrationId);
+            const result =
+                await this.commands.loadIntegrationContextById(integrationId);
             if (result.error) {
                 return res.status(result.error).json({ error: result.reason });
             }
@@ -1680,7 +1720,8 @@ class PipedriveIntegration extends BaseCRMIntegration {
             const updatedConfig = { ...currentConfig };
 
             if (updates.callActivityDestination !== undefined) {
-                updatedConfig.callActivityDestination = updates.callActivityDestination;
+                updatedConfig.callActivityDestination =
+                    updates.callActivityDestination;
                 console.log(
                     `[Pipedrive Settings] callActivityDestination set to: ${updates.callActivityDestination}`,
                 );
@@ -1766,8 +1807,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
                     }
                 },
                 createCallActivity: async (contactId, activity) => {
-                    const ownerId =
-                        await this._resolvePipedriveOwnerId(activity.quoUser);
+                    const ownerId = await this._resolvePipedriveOwnerId(
+                        activity.quoUser,
+                    );
                     const personId = parseInt(contactId);
                     const destination =
                         this.config?.callActivityDestination || 'contact';
@@ -1787,9 +1829,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                         type: 'call',
                         done: 1,
                         note: `<p><strong>${activity.title}</strong></p><p>${activity.content}</p>`,
-                        participants: [
-                            { person_id: personId, primary: true },
-                        ],
+                        participants: [{ person_id: personId, primary: true }],
                         duration: formatDurationForPipedrive(activity.duration),
                         ...(dealId && { deal_id: dealId }),
                         ...(ownerId && { owner_id: ownerId }),
@@ -1841,8 +1881,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
                     }
                 },
                 createMessageActivity: async (contactId, activity) => {
-                    const userId =
-                        await this._resolvePipedriveOwnerId(activity.quoUser);
+                    const userId = await this._resolvePipedriveOwnerId(
+                        activity.quoUser,
+                    );
                     const noteData = {
                         content: `<p><strong>${activity.title}</strong></p><p>${activity.content}</p>`,
                         person_id: parseInt(contactId),
@@ -2131,7 +2172,9 @@ class PipedriveIntegration extends BaseCRMIntegration {
             const firstItem = searchResult.data.items[0];
             const personId = String(firstItem.item.id);
 
-            console.log(`${this._logPrefix} [Quo Webhook] ✓ Found contact by phone: ${personId}`);
+            console.log(
+                `${this._logPrefix} [Quo Webhook] ✓ Found contact by phone: ${personId}`,
+            );
             return personId;
         } catch (error) {
             console.error(
