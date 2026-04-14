@@ -32,38 +32,39 @@ jobs:
         working-directory: ./backend
 
     steps:
-      - name: Determine ref to deploy
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Determine and validate ref to deploy
         id: ref
         env:
           INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
           if [ -n "$INPUT_VERSION" ]; then
+            if [ -z "$(git tag -l "$INPUT_VERSION")" ]; then
+              echo "❌ ERROR: '$INPUT_VERSION' is not a valid tag"
+              echo "Available version tags:"
+              git tag -l 'v*' | sort -V | tail -20
+              exit 1
+            fi
             echo "ref=$INPUT_VERSION" >> $GITHUB_OUTPUT
             echo "label=$INPUT_VERSION" >> $GITHUB_OUTPUT
+            echo "✓ Deploying tag: $INPUT_VERSION"
           else
             echo "ref=main" >> $GITHUB_OUTPUT
             echo "label=latest main" >> $GITHUB_OUTPUT
           fi
         working-directory: .
 
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ steps.ref.outputs.ref }}
-          fetch-depth: 0
-
-      - name: Validate version tag exists
+      - name: Checkout version tag
         if: ${{ github.event.inputs.version != '' }}
         env:
-          INPUT_VERSION: ${{ github.event.inputs.version }}
-        run: |
-          if [ -z "$(git tag -l "$INPUT_VERSION")" ]; then
-            echo "❌ ERROR: '$INPUT_VERSION' is not a valid tag"
-            echo "Available version tags:"
-            git tag -l 'v*' | sort -V | tail -20
-            exit 1
-          fi
-          echo "✓ Deploying tag: $INPUT_VERSION"
+          DEPLOY_REF: ${{ steps.ref.outputs.ref }}
+        run: git checkout "$DEPLOY_REF"
         working-directory: .
 
       - name: Setup Node.js with Cache
@@ -85,18 +86,18 @@ jobs:
 
       - name: Set dynamic environment variables
         id: dynamic_env
+        env:
+          ENV_VARS: ${{ steps.app_config.outputs.environment_vars }}
+          SECRETS_JSON: ${{ toJSON(secrets) }}
         run: |
-          ENV_VARS="${{ steps.app_config.outputs.environment_vars }}"
           echo "Environment variables from appDefinition: $ENV_VARS"
-
-          echo '${{ toJSON(secrets) }}' > secrets.json
 
           IFS=',' read -ra VARS <<< "$ENV_VARS"
 
           for var in "${VARS[@]}"; do
             var=$(echo "$var" | xargs)
 
-            secret_value=$(jq -r --arg key "$var" '.[$key] // empty' secrets.json)
+            secret_value=$(echo "$SECRETS_JSON" | jq -r --arg key "$var" '.[$key] // empty')
 
             if [ ! -z "$secret_value" ]; then
               echo "${var}=${secret_value}" >> $GITHUB_ENV
@@ -110,8 +111,6 @@ jobs:
             fi
           done
 
-          rm -f secrets.json
-
       - name: Deploy with Frigg (Direct Environment Variables)
         if: ${{ steps.app_config.outputs.deployment_type != 'ssm' }}
         run: |
@@ -123,10 +122,6 @@ jobs:
         run: |
           echo "Deploying ${{ steps.ref.outputs.label }} to prod with SSM..."
           npx frigg deploy --stage=prod --verbose --use-ssm
-
-      - name: Install jq for JSON parsing
-        if: ${{ github.event.inputs.skip_migrations != 'true' }}
-        run: sudo apt-get update && sudo apt-get install -y jq
 
       - name: Run Database Migrations (via Lambda)
         if: ${{ github.event.inputs.skip_migrations != 'true' }}

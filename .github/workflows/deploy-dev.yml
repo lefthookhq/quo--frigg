@@ -50,18 +50,18 @@ jobs:
 
       - name: Set dynamic environment variables
         id: dynamic_env
+        env:
+          ENV_VARS: ${{ steps.app_config.outputs.environment_vars }}
+          SECRETS_JSON: ${{ toJSON(secrets) }}
         run: |
-          ENV_VARS="${{ steps.app_config.outputs.environment_vars }}"
           echo "Environment variables from appDefinition: $ENV_VARS"
-
-          echo '${{ toJSON(secrets) }}' > secrets.json
 
           IFS=',' read -ra VARS <<< "$ENV_VARS"
 
           for var in "${VARS[@]}"; do
             var=$(echo "$var" | xargs)
 
-            secret_value=$(jq -r --arg key "$var" '.[$key] // empty' secrets.json)
+            secret_value=$(echo "$SECRETS_JSON" | jq -r --arg key "$var" '.[$key] // empty')
 
             if [ ! -z "$secret_value" ]; then
               echo "${var}=${secret_value}" >> $GITHUB_ENV
@@ -75,8 +75,6 @@ jobs:
             fi
           done
 
-          rm -f secrets.json
-
       - name: Deploy with Frigg (Direct Environment Variables)
         if: ${{ steps.app_config.outputs.deployment_type != 'ssm' }}
         run: |
@@ -88,9 +86,6 @@ jobs:
         run: |
           echo "Deploying to dev with SSM Parameter Store..."
           npx frigg deploy --stage=dev --verbose --use-ssm
-
-      - name: Install jq for JSON parsing
-        run: sudo apt-get update && sudo apt-get install -y jq
 
       - name: Run Database Migrations (via Lambda)
         env:

@@ -31,11 +31,12 @@ jobs:
         working-directory: ./backend
 
     steps:
-      - name: Checkout code at version tag
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.version }}
+          ref: main
           fetch-depth: 0
+          fetch-tags: true
 
       - name: Validate version tag
         env:
@@ -48,6 +49,12 @@ jobs:
             exit 1
           fi
           echo "✓ Rolling back to: $INPUT_VERSION"
+        working-directory: .
+
+      - name: Checkout version tag
+        env:
+          VERSION_TAG: ${{ github.event.inputs.version }}
+        run: git checkout "$VERSION_TAG"
         working-directory: .
 
       - name: Setup Node.js with Cache
@@ -69,18 +76,18 @@ jobs:
 
       - name: Set dynamic environment variables
         id: dynamic_env
+        env:
+          ENV_VARS: ${{ steps.app_config.outputs.environment_vars }}
+          SECRETS_JSON: ${{ toJSON(secrets) }}
         run: |
-          ENV_VARS="${{ steps.app_config.outputs.environment_vars }}"
           echo "Environment variables from appDefinition: $ENV_VARS"
-
-          echo '${{ toJSON(secrets) }}' > secrets.json
 
           IFS=',' read -ra VARS <<< "$ENV_VARS"
 
           for var in "${VARS[@]}"; do
             var=$(echo "$var" | xargs)
 
-            secret_value=$(jq -r --arg key "$var" '.[$key] // empty' secrets.json)
+            secret_value=$(echo "$SECRETS_JSON" | jq -r --arg key "$var" '.[$key] // empty')
 
             if [ ! -z "$secret_value" ]; then
               echo "${var}=${secret_value}" >> $GITHUB_ENV
@@ -94,23 +101,21 @@ jobs:
             fi
           done
 
-          rm -f secrets.json
-
       - name: Deploy with Frigg (Direct Environment Variables)
         if: ${{ steps.app_config.outputs.deployment_type != 'ssm' }}
+        env:
+          VERSION_TAG: ${{ github.event.inputs.version }}
         run: |
-          echo "Rolling back prod to ${{ github.event.inputs.version }}..."
+          echo "Rolling back prod to $VERSION_TAG..."
           npx frigg deploy --stage=prod --verbose
 
       - name: Deploy with Frigg (SSM Parameter Store)
         if: ${{ steps.app_config.outputs.deployment_type == 'ssm' }}
+        env:
+          VERSION_TAG: ${{ github.event.inputs.version }}
         run: |
-          echo "Rolling back prod to ${{ github.event.inputs.version }} with SSM..."
+          echo "Rolling back prod to $VERSION_TAG with SSM..."
           npx frigg deploy --stage=prod --verbose --use-ssm
-
-      - name: Install jq for JSON parsing
-        if: ${{ github.event.inputs.run_migrations == 'true' }}
-        run: sudo apt-get update && sudo apt-get install -y jq
 
       - name: Run Database Migrations (via Lambda)
         if: ${{ github.event.inputs.run_migrations == 'true' }}
@@ -184,11 +189,13 @@ jobs:
           exit 1
 
       - name: Rollback Summary
+        env:
+          VERSION_TAG: ${{ github.event.inputs.version }}
         run: |
           echo "## Prod Rollback Summary" >> $GITHUB_STEP_SUMMARY
           echo "- **Action**: Rollback" >> $GITHUB_STEP_SUMMARY
           echo "- **Stage**: prod" >> $GITHUB_STEP_SUMMARY
-          echo "- **Rolled back to**: ${{ github.event.inputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Rolled back to**: $VERSION_TAG" >> $GITHUB_STEP_SUMMARY
           echo "- **Region**: ${{ secrets.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Migrations**: ${{ github.event.inputs.run_migrations == 'true' && 'Executed' || 'Skipped' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Triggered by**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
