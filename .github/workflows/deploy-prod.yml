@@ -1,53 +1,66 @@
-name: Deploy
+name: Deploy Prod
 
 on:
-  workflow_run:
-    workflows: ["Code Quality and Tests"]
-    types: [completed]
-    branches: [main]
   workflow_dispatch:
     inputs:
-      stage:
-        description: 'Deployment stage'
-        required: true
-        default: 'staging'
-        type: choice
-        options:
-          - staging
-          - production
+      version:
+        description: 'Version tag to deploy (e.g. v0.2.0). Leave empty to deploy latest main.'
+        required: false
+        default: ''
+        type: string
+      skip_migrations:
+        description: 'Skip database migrations'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
-  group: deploy-production
+  group: deploy-prod
   cancel-in-progress: false
 
 jobs:
   deploy:
-    name: Deploy to AWS
+    name: Deploy to Prod
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     defaults:
       run:
         working-directory: ./backend
 
     steps:
+      - name: Determine ref to deploy
+        id: ref
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "ref=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+            echo "label=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "ref=main" >> $GITHUB_OUTPUT
+            echo "label=latest main" >> $GITHUB_OUTPUT
+          fi
+        working-directory: .
+
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ steps.ref.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Validate version tag exists
+        if: ${{ github.event.inputs.version != '' }}
+        run: |
+          if ! git rev-parse "${{ github.event.inputs.version }}" >/dev/null 2>&1; then
+            echo "❌ ERROR: Tag '${{ github.event.inputs.version }}' does not exist"
+            echo "Available tags:"
+            git tag -l | tail -20
+            exit 1
+          fi
+          echo "✓ Deploying tag: ${{ github.event.inputs.version }}"
+        working-directory: .
 
       - name: Setup Node.js with Cache
         uses: ./.github/actions/setup-node-with-cache
         with:
           working-directory: ./backend
-
-      - name: Determine deployment stage
-        id: stage
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "stage=${{ github.event.inputs.stage }}" >> $GITHUB_OUTPUT
-          else
-            echo "stage=production" >> $GITHUB_OUTPUT
-          fi
 
       - name: Parse app configuration
         id: app_config
@@ -93,26 +106,28 @@ jobs:
       - name: Deploy with Frigg (Direct Environment Variables)
         if: ${{ steps.app_config.outputs.deployment_type != 'ssm' }}
         run: |
-          echo "Deploying with dynamically loaded environment variables..."
-          npx frigg deploy --stage ${{ steps.stage.outputs.stage }} --verbose
+          echo "Deploying ${{ steps.ref.outputs.label }} to prod..."
+          npx frigg deploy --stage=prod --verbose
 
       - name: Deploy with Frigg (SSM Parameter Store)
         if: ${{ steps.app_config.outputs.deployment_type == 'ssm' }}
         run: |
-          echo "Deploying with SSM Parameter Store..."
-          npx frigg deploy --stage ${{ steps.stage.outputs.stage }} --verbose --use-ssm
+          echo "Deploying ${{ steps.ref.outputs.label }} to prod with SSM..."
+          npx frigg deploy --stage=prod --verbose --use-ssm
 
       - name: Install jq for JSON parsing
+        if: ${{ github.event.inputs.skip_migrations != 'true' }}
         run: sudo apt-get update && sudo apt-get install -y jq
 
       - name: Run Database Migrations (via Lambda)
+        if: ${{ github.event.inputs.skip_migrations != 'true' }}
         env:
           BASE_URL: ${{ secrets.BASE_URL }}
           ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
         run: |
           echo "Triggering database migrations via deployed Lambda..."
 
-          # Trim whitespace from secrets (remove leading/trailing spaces and newlines)
+          # Trim whitespace from secrets
           BASE_URL=$(echo "$BASE_URL" | xargs)
           ADMIN_API_KEY=$(echo "$ADMIN_API_KEY" | xargs)
 
@@ -129,14 +144,14 @@ jobs:
 
           echo "✓ BASE_URL configured (${#BASE_URL} chars)"
           echo "✓ ADMIN_API_KEY configured (${#ADMIN_API_KEY} chars)"
-          echo "✓ Deployment stage: ${{ steps.stage.outputs.stage }}"
+          echo "✓ Deployment stage: prod"
 
           # Trigger migration
           set +e
           RESPONSE=$(curl -s -X POST "${BASE_URL}/db-migrate" \
             -H "Content-Type: application/json" \
             -H "x-frigg-admin-api-key: ${ADMIN_API_KEY}" \
-            -d '{"dbType": "postgresql", "stage": "${{ steps.stage.outputs.stage }}"}' 2>&1)
+            -d '{"dbType": "postgresql", "stage": "prod"}' 2>&1)
           CURL_EXIT_CODE=$?
           set -e
 
@@ -154,7 +169,6 @@ jobs:
           if [ -z "$PROCESS_ID" ]; then
             echo "⚠️ Could not get process ID. Migration may have failed to start."
             echo "Response: $RESPONSE"
-            # Don't fail the build - migrations might already be up to date
             exit 0
           fi
 
@@ -184,13 +198,14 @@ jobs:
 
       - name: Deployment Summary
         run: |
-          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- **Stage**: ${{ steps.stage.outputs.stage }}" >> $GITHUB_STEP_SUMMARY
+          echo "## Prod Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Stage**: prod" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${{ steps.ref.outputs.label }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Region**: ${{ secrets.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Deployment Type**: ${{ steps.app_config.outputs.deployment_type == 'ssm' && 'SSM Parameter Store' || 'Direct Environment Variables' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Database**: PostgreSQL (Aurora Serverless v2)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Migrations**: ${{ github.event.inputs.skip_migrations == 'true' && 'Skipped' || 'Executed' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **KMS Encryption**: ${{ steps.app_config.outputs.has_kms == 'true' && 'Enabled' || 'Disabled' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **VPC**: ${{ steps.app_config.outputs.has_vpc == 'true' && 'Enabled' || 'Disabled' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit**: ${{ github.event.workflow_run.head_sha || github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Branch**: ${{ github.event.workflow_run.head_branch || github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Trigger**: ${{ github.event_name == 'workflow_dispatch' && 'Manual' || 'CI Passed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Triggered by**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
