@@ -1013,12 +1013,8 @@ describe('BaseCRMIntegration', () => {
                 },
             });
 
-            expect(
-                mockQueueManager.queueCompleteSync,
-            ).not.toHaveBeenCalled();
-            expect(
-                mockQueueManager.queueFetchPersonPage,
-            ).toHaveBeenCalledWith(
+            expect(mockQueueManager.queueCompleteSync).not.toHaveBeenCalled();
+            expect(mockQueueManager.queueFetchPersonPage).toHaveBeenCalledWith(
                 expect.objectContaining({
                     processId: 'test-proc',
                     personObjectType: 'Caregiver',
@@ -1458,9 +1454,7 @@ describe('BaseCRMIntegration', () => {
         });
 
         it('should log warning when 409 is caught and handled', async () => {
-            const consoleSpy = jest
-                .spyOn(console, 'warn')
-                .mockImplementation();
+            const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
 
             const quoContact = {
                 externalId: 'crm-race-logged',
@@ -1476,9 +1470,7 @@ describe('BaseCRMIntegration', () => {
             integration.quo.api.listContacts
                 .mockResolvedValueOnce({ data: [] })
                 .mockResolvedValueOnce({
-                    data: [
-                        { id: 'quo-found', externalId: 'crm-race-logged' },
-                    ],
+                    data: [{ id: 'quo-found', externalId: 'crm-race-logged' }],
                 });
             integration.quo.api.createFriggContact.mockRejectedValue(
                 conflictError,
@@ -1537,15 +1529,13 @@ describe('BaseCRMIntegration', () => {
                 },
             });
 
-            const result =
-                await integration.upsertContactToQuo(quoContact);
+            const result = await integration.upsertContactToQuo(quoContact);
 
-            expect(integration.getMapping).toHaveBeenCalledWith(
-                '+15552222222',
+            expect(integration.getMapping).toHaveBeenCalledWith('+15552222222');
+            expect(integration.quo.api.updateFriggContact).toHaveBeenCalledWith(
+                'quo-phone-match',
+                quoContact,
             );
-            expect(
-                integration.quo.api.updateFriggContact,
-            ).toHaveBeenCalledWith('quo-phone-match', quoContact);
             expect(result).toEqual({
                 action: 'updated',
                 quoContactId: 'quo-phone-match',
@@ -1593,17 +1583,14 @@ describe('BaseCRMIntegration', () => {
                 },
             });
 
-            const result =
-                await integration.upsertContactToQuo(quoContact);
+            const result = await integration.upsertContactToQuo(quoContact);
 
             expect(integration.getMapping).toHaveBeenCalledTimes(2);
             expect(result.quoContactId).toBe('quo-second-phone');
         });
 
         it('should return null when 409 and no match by externalId or phone', async () => {
-            const consoleSpy = jest
-                .spyOn(console, 'warn')
-                .mockImplementation();
+            const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
 
             const quoContact = {
                 externalId: 'crm-unresolvable',
@@ -1624,8 +1611,7 @@ describe('BaseCRMIntegration', () => {
             );
             integration.getMapping = jest.fn().mockResolvedValue(null);
 
-            const result =
-                await integration.upsertContactToQuo(quoContact);
+            const result = await integration.upsertContactToQuo(quoContact);
 
             expect(result).toBeNull();
             expect(consoleSpy).toHaveBeenCalledWith(
@@ -1637,9 +1623,7 @@ describe('BaseCRMIntegration', () => {
         });
 
         it('should return null when 409 and contact has no phone numbers', async () => {
-            const consoleSpy = jest
-                .spyOn(console, 'warn')
-                .mockImplementation();
+            const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
 
             const quoContact = {
                 externalId: 'crm-no-phone',
@@ -1659,8 +1643,7 @@ describe('BaseCRMIntegration', () => {
                 conflictError,
             );
 
-            const result =
-                await integration.upsertContactToQuo(quoContact);
+            const result = await integration.upsertContactToQuo(quoContact);
 
             expect(result).toBeNull();
             expect(consoleSpy).toHaveBeenCalledWith(
@@ -1672,9 +1655,7 @@ describe('BaseCRMIntegration', () => {
         });
 
         it('should return null when getMapping throws during phone fallback', async () => {
-            const consoleSpy = jest
-                .spyOn(console, 'warn')
-                .mockImplementation();
+            const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
 
             const quoContact = {
                 externalId: 'crm-db-error',
@@ -1697,8 +1678,7 @@ describe('BaseCRMIntegration', () => {
                 .fn()
                 .mockRejectedValue(new Error('DB connection lost'));
 
-            const result =
-                await integration.upsertContactToQuo(quoContact);
+            const result = await integration.upsertContactToQuo(quoContact);
 
             expect(result).toBeNull();
             expect(consoleSpy).toHaveBeenCalledWith(

@@ -1591,49 +1591,14 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
     async _findZohoContactByPhone(phoneNumber) {
         const normalizedPhone = this._normalizePhoneNumber(phoneNumber);
 
-        try {
-            const searchCriteria = `((Phone:equals:${normalizedPhone})or(Mobile:equals:${normalizedPhone}))`;
+        const searchResults = await this.zoho.api.searchContacts({
+            phone: normalizedPhone,
+        });
 
-            const searchResults = await this.zoho.api.searchContacts({
-                criteria: searchCriteria,
-            });
-
-            if (searchResults?.data?.length > 0) {
-                return searchResults.data[0].id;
-            }
-            return null;
-        } catch (error) {
-            if (error.message?.includes('INVALID_QUERY')) {
-                console.warn(
-                    `[Quo Webhook] Criteria search not supported for Phone/Mobile fields, falling back to phone param search`,
-                );
-                return this._findZohoContactByPhoneParam(normalizedPhone);
-            }
-            throw error;
+        if (searchResults?.data?.length > 0) {
+            return searchResults.data[0].id;
         }
-    }
-
-    /**
-     * Fallback search using Zoho's native `phone` query parameter.
-     * Used when criteria-based search fails because Phone/Mobile fields
-     * are not available for search in the customer's Zoho CRM instance.
-     * @private
-     * @param {string} normalizedPhone - Normalized phone number to search for
-     * @returns {Promise<string|null>} Zoho CRM record ID or null if not found
-     */
-    async _findZohoContactByPhoneParam(normalizedPhone) {
-        try {
-            const searchResults = await this.zoho.api.searchContacts({
-                phone: normalizedPhone,
-            });
-
-            if (searchResults?.data?.length > 0) {
-                return searchResults.data[0].id;
-            }
-            return null;
-        } catch (error) {
-            throw error;
-        }
+        return null;
     }
 
     /**
@@ -2167,9 +2132,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 const response = await this.zoho.api.getContact(recordId);
 
                 if (!response.data) {
-                    throw new Error(
-                        `No data returned for Contact ${recordId}`,
-                    );
+                    throw new Error(`No data returned for Contact ${recordId}`);
                 }
 
                 if (Array.isArray(response.data)) {
@@ -2186,9 +2149,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 const response = await this.zoho.api.getAccount(recordId);
 
                 if (!response.data) {
-                    throw new Error(
-                        `No data returned for Account ${recordId}`,
-                    );
+                    throw new Error(`No data returned for Account ${recordId}`);
                 }
 
                 if (Array.isArray(response.data)) {

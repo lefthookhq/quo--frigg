@@ -1,0 +1,4 @@
+# Clio module has its own node_modules (~8000 files) installed via postinstall.
+# Clio is not currently active (commented out in index.js), but even when enabled,
+# esbuild bundles the required code — the raw node_modules don't need to be packaged.
+src/api-modules/clio/node_modules

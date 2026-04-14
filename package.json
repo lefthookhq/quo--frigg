@@ -3,12 +3,20 @@
   "version": "0.1.0",
   "private": true,
   "devDependencies": {
+    "@changesets/changelog-github": "^0.5.1",
+    "@changesets/cli": "^2.29.4",
     "concurrently": "^8.2.2"
   },
   "scripts": {
     "start": "cd backend && npm run frigg:start",
     "docker:start": "cd backend && npm run docker:start",
-    "test": "npm test -workspaces"
+    "test": "npm test -workspaces",
+    "changeset": "changeset",
+    "changeset:version": "changeset version",
+    "changeset:status": "changeset status"
+  },
+  "overrides": {
+    "@types/node": "20.17.32"
   },
   "dependencies": {
   }

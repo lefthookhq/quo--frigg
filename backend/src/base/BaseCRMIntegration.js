@@ -1086,9 +1086,8 @@ class BaseCRMIntegration extends IntegrationBase {
         }
 
         const phones =
-            quoContact.defaultFields?.phoneNumbers?.filter(
-                (p) => p.value,
-            ) || [];
+            quoContact.defaultFields?.phoneNumbers?.filter((p) => p.value) ||
+            [];
         let phoneMappedContact = null;
         try {
             for (const phone of phones) {
@@ -1176,11 +1175,10 @@ class BaseCRMIntegration extends IntegrationBase {
                 action = 'created';
             } catch (error) {
                 if (error.statusCode === 409) {
-                    const recovery =
-                        await this._recoverFrom409Conflict(
-                            quoContact,
-                            error,
-                        );
+                    const recovery = await this._recoverFrom409Conflict(
+                        quoContact,
+                        error,
+                    );
                     if (!recovery) {
                         return null;
                     }

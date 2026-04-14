@@ -51,7 +51,6 @@ postgres-tunnel.sh
 backend/.claude/
 .claude/
 /backend/.claude-flow
-backend/.frigg-infrastructure-cache.json
 backend/.env.local.local
 backend/.env.development
 backend/.env.production

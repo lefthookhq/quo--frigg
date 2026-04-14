@@ -1,0 +1,215 @@
+name: Deploy Prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag to deploy (e.g. v0.2.0). Leave empty to deploy latest main.'
+        required: false
+        default: ''
+        type: string
+      skip_migrations:
+        description: 'Skip database migrations'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to Prod
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ./backend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Determine and validate ref to deploy
+        id: ref
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          if [ -n "$INPUT_VERSION" ]; then
+            if [ -z "$(git tag -l "$INPUT_VERSION")" ]; then
+              echo "❌ ERROR: '$INPUT_VERSION' is not a valid tag"
+              echo "Available version tags:"
+              git tag -l 'v*' | sort -V | tail -20
+              exit 1
+            fi
+            echo "ref=$INPUT_VERSION" >> $GITHUB_OUTPUT
+            echo "label=$INPUT_VERSION" >> $GITHUB_OUTPUT
+            echo "✓ Deploying tag: $INPUT_VERSION"
+          else
+            echo "ref=main" >> $GITHUB_OUTPUT
+            echo "label=latest main" >> $GITHUB_OUTPUT
+          fi
+        working-directory: .
+
+      - name: Checkout version tag
+        if: ${{ github.event.inputs.version != '' }}
+        env:
+          DEPLOY_REF: ${{ steps.ref.outputs.ref }}
+        run: git checkout "$DEPLOY_REF"
+        working-directory: .
+
+      - name: Setup Node.js with Cache
+        uses: ./.github/actions/setup-node-with-cache
+        with:
+          working-directory: ./backend
+
+      - name: Parse app configuration
+        id: app_config
+        run: |
+          node ../.github/scripts/parse-app-config.js
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Set dynamic environment variables
+        id: dynamic_env
+        env:
+          ENV_VARS: ${{ steps.app_config.outputs.environment_vars }}
+          SECRETS_JSON: ${{ toJSON(secrets) }}
+        run: |
+          echo "Environment variables from appDefinition: $ENV_VARS"
+
+          IFS=',' read -ra VARS <<< "$ENV_VARS"
+
+          for var in "${VARS[@]}"; do
+            var=$(echo "$var" | xargs)
+
+            secret_value=$(echo "$SECRETS_JSON" | jq -r --arg key "$var" '.[$key] // empty')
+
+            if [ ! -z "$secret_value" ]; then
+              echo "${var}=${secret_value}" >> $GITHUB_ENV
+              echo "✓ Set $var"
+            else
+              echo "⚠ Warning: $var not found in secrets"
+              if [ "$var" = "NODE_ENV" ]; then
+                echo "NODE_ENV=production" >> $GITHUB_ENV
+                echo "  Using default: NODE_ENV=production"
+              fi
+            fi
+          done
+
+      - name: Deploy with Frigg (Direct Environment Variables)
+        if: ${{ steps.app_config.outputs.deployment_type != 'ssm' }}
+        run: |
+          echo "Deploying ${{ steps.ref.outputs.label }} to prod..."
+          npx frigg deploy --stage=prod --verbose
+
+      - name: Deploy with Frigg (SSM Parameter Store)
+        if: ${{ steps.app_config.outputs.deployment_type == 'ssm' }}
+        run: |
+          echo "Deploying ${{ steps.ref.outputs.label }} to prod with SSM..."
+          npx frigg deploy --stage=prod --verbose --use-ssm
+
+      - name: Run Database Migrations (via Lambda)
+        if: ${{ github.event.inputs.skip_migrations != 'true' }}
+        env:
+          BASE_URL: ${{ secrets.BASE_URL }}
+          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
+        run: |
+          echo "Triggering database migrations via deployed Lambda..."
+
+          # Trim whitespace from secrets
+          BASE_URL=$(echo "$BASE_URL" | xargs)
+          ADMIN_API_KEY=$(echo "$ADMIN_API_KEY" | xargs)
+
+          # Validate required secrets
+          if [ -z "$BASE_URL" ]; then
+            echo "❌ ERROR: BASE_URL secret is empty or not set"
+            exit 1
+          fi
+
+          if [ -z "$ADMIN_API_KEY" ]; then
+            echo "❌ ERROR: ADMIN_API_KEY secret is empty or not set"
+            exit 1
+          fi
+
+          echo "✓ BASE_URL configured (${#BASE_URL} chars)"
+          echo "✓ ADMIN_API_KEY configured (${#ADMIN_API_KEY} chars)"
+          echo "✓ Deployment stage: prod"
+
+          # Trigger migration
+          set +e
+          RESPONSE=$(curl -s -X POST "${BASE_URL}/db-migrate" \
+            -H "Content-Type: application/json" \
+            -H "x-frigg-admin-api-key: ${ADMIN_API_KEY}" \
+            -d '{"dbType": "postgresql", "stage": "prod"}' 2>&1)
+          CURL_EXIT_CODE=$?
+          set -e
+
+          if [ $CURL_EXIT_CODE -ne 0 ]; then
+            echo "❌ ERROR: curl command failed with exit code $CURL_EXIT_CODE"
+            echo "Response: $RESPONSE"
+            exit 1
+          fi
+
+          echo "Migration trigger response: $RESPONSE"
+
+          # Extract process ID
+          PROCESS_ID=$(echo $RESPONSE | jq -r '.processId // empty')
+
+          if [ -z "$PROCESS_ID" ]; then
+            echo "⚠️ Could not get process ID. Migration may have failed to start."
+            echo "Response: $RESPONSE"
+            exit 0
+          fi
+
+          echo "Migration started with process ID: $PROCESS_ID"
+
+          # Poll for completion (max 5 minutes)
+          for i in {1..30}; do
+            sleep 10
+            STATUS=$(curl -s "${BASE_URL}/db-migrate/${PROCESS_ID}" \
+              -H "x-frigg-admin-api-key: ${ADMIN_API_KEY}")
+
+            STATE=$(echo $STATUS | jq -r '.state // empty')
+            echo "Migration status: $STATE"
+
+            if [ "$STATE" = "COMPLETED" ]; then
+              echo "✅ Database migrations completed successfully"
+              exit 0
+            elif [ "$STATE" = "FAILED" ]; then
+              echo "❌ Database migrations failed"
+              echo $STATUS | jq .
+              exit 1
+            fi
+          done
+
+          echo "❌ Migration timed out - check status manually"
+          exit 1
+
+      - name: Deployment Summary
+        run: |
+          echo "## Prod Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Stage**: prod" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${{ steps.ref.outputs.label }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Region**: ${{ secrets.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployment Type**: ${{ steps.app_config.outputs.deployment_type == 'ssm' && 'SSM Parameter Store' || 'Direct Environment Variables' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Database**: PostgreSQL (Aurora Serverless v2)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Migrations**: ${{ github.event.inputs.skip_migrations == 'true' && 'Skipped' || 'Executed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **KMS Encryption**: ${{ steps.app_config.outputs.has_kms == 'true' && 'Enabled' || 'Disabled' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **VPC**: ${{ steps.app_config.outputs.has_vpc == 'true' && 'Enabled' || 'Disabled' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Triggered by**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY

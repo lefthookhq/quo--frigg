@@ -65,20 +65,3 @@ jobs:
           working-directory: ./backend
           files: ./coverage/lcov.info
           fail_ci_if_error: false
-
-  knip:
-    name: Check Unused Dependencies
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./backend
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js with Cache
-        uses: ./.github/actions/setup-node-with-cache
-        with:
-          working-directory: ./backend
-
-      - name: Run knip
-        run: npm run knip

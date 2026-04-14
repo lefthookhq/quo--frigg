@@ -74,14 +74,45 @@ npm run knip
 ```
 
 ### Deployment
-```bash
-# Deploy to AWS (uses Frigg CLI)
-npm run frigg:deploy
 
-# Or manually with specific profile/stage
+#### Local (manual)
+```bash
 cd backend
-AWS_PROFILE=your-profile npx serverless deploy --config infrastructure.js --stage prod --verbose
+AWS_PROFILE=quo-deploy npx frigg deploy --stage=dev
+AWS_PROFILE=quo-deploy npx frigg deploy --stage=prod
 ```
+
+#### CI/CD Pipeline (GitHub Actions)
+
+The project uses a Changesets-based CD pipeline with separate dev and prod workflows.
+
+**Auto-deploy to dev**: Every merge to `main` triggers CI (lint, format, tests). When CI passes, `deploy-dev.yml` automatically deploys to the `dev` stage. No manual action needed.
+
+**Manual deploy to prod**: Go to **Actions > Deploy Prod > Run workflow**. You can either:
+- Leave the version field empty to deploy latest `main`
+- Enter a version tag (e.g. `v0.2.0`) to deploy a specific release
+
+**Rollback prod**: Go to **Actions > Rollback Prod > Run workflow** and enter the version tag to rollback to (e.g. `v0.1.0`).
+
+**Creating releases with Changesets**:
+1. On your feature branch, run `npx changeset` and select patch/minor/major + summary
+2. Commit the generated `.changeset/*.md` file with your PR
+3. After merge, the Changesets action creates a "Version Packages" PR
+4. Merge that PR to bump the version, update `CHANGELOG.md`, and create a git tag + GitHub Release
+5. Deploy that version tag to prod via the manual workflow
+
+**Environment secrets**: Configured via GitHub Environments (`dev` and `production` in repo Settings > Environments). Each environment has its own secrets (AWS credentials, API keys, etc.). Use `scripts/setup-gh-env-secrets.sh` to bulk-set secrets from a `.env` file:
+```bash
+./scripts/setup-gh-env-secrets.sh production backend/.env.production
+./scripts/setup-gh-env-secrets.sh dev backend/.env.dev
+```
+
+**Workflow files**:
+- `.github/workflows/ci.yml` — Lint, format check, tests (on push/PR to main)
+- `.github/workflows/deploy-dev.yml` — Auto-deploy to dev after CI passes
+- `.github/workflows/deploy-prod.yml` — Manual deploy to prod
+- `.github/workflows/rollback.yml` — Manual rollback of prod
+- `.github/workflows/release.yml` — Changesets version management
 
 ## Architecture Overview
 

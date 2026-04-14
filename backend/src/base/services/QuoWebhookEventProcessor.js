@@ -42,7 +42,11 @@ class QuoWebhookEventProcessor {
 
         console.log(`${logPrefix} Processing call.completed: ${callId}`);
 
-        const call = await this.fetchCallWithVoicemail(quoApi, callId, logPrefix);
+        const call = await this.fetchCallWithVoicemail(
+            quoApi,
+            callId,
+            logPrefix,
+        );
         if (!call) {
             console.warn(`${logPrefix} Call ${callId} not found`);
             return { logged: false, error: 'Call not found', callId };
@@ -329,7 +333,11 @@ class QuoWebhookEventProcessor {
      * @param {string} callId - Call ID to fetch
      * @returns {Promise<Object|null>} Call object with voicemail merged, or null if not found
      */
-    static async fetchCallWithVoicemail(quoApi, callId, logPrefix = '[QuoEventProcessor]') {
+    static async fetchCallWithVoicemail(
+        quoApi,
+        callId,
+        logPrefix = '[QuoEventProcessor]',
+    ) {
         let fullCallResponse;
         try {
             fullCallResponse = await quoApi.getCall(callId);
@@ -395,7 +403,12 @@ class QuoWebhookEventProcessor {
      * @param {string} userId - User ID
      * @returns {Promise<{inboxName: string, inboxNumber: string, userName: string}>}
      */
-    static async fetchCallMetadata(quoApi, phoneNumberId, userId, logPrefix = '[QuoEventProcessor]') {
+    static async fetchCallMetadata(
+        quoApi,
+        phoneNumberId,
+        userId,
+        logPrefix = '[QuoEventProcessor]',
+    ) {
         const phoneNumberDetails = await quoApi.getPhoneNumber(phoneNumberId);
 
         let userDetails = null;

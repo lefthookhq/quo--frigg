@@ -1,4 +1,4 @@
-name: Deploy
+name: Deploy Dev
 
 on:
   workflow_run:
@@ -6,24 +6,20 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
-    inputs:
-      stage:
-        description: 'Deployment stage'
-        required: true
-        default: 'staging'
-        type: choice
-        options:
-          - staging
-          - production
 
 concurrency:
-  group: deploy-production
+  group: deploy-dev
   cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   deploy:
-    name: Deploy to AWS
+    name: Deploy to Dev
     runs-on: ubuntu-latest
+    environment: dev
+    timeout-minutes: 30
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     defaults:
       run:
@@ -40,15 +36,6 @@ jobs:
         with:
           working-directory: ./backend
 
-      - name: Determine deployment stage
-        id: stage
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "stage=${{ github.event.inputs.stage }}" >> $GITHUB_OUTPUT
-          else
-            echo "stage=production" >> $GITHUB_OUTPUT
-          fi
-
       - name: Parse app configuration
         id: app_config
         run: |
@@ -63,18 +50,18 @@ jobs:
 
       - name: Set dynamic environment variables
         id: dynamic_env
+        env:
+          ENV_VARS: ${{ steps.app_config.outputs.environment_vars }}
+          SECRETS_JSON: ${{ toJSON(secrets) }}
         run: |
-          ENV_VARS="${{ steps.app_config.outputs.environment_vars }}"
           echo "Environment variables from appDefinition: $ENV_VARS"
-
-          echo '${{ toJSON(secrets) }}' > secrets.json
 
           IFS=',' read -ra VARS <<< "$ENV_VARS"
 
           for var in "${VARS[@]}"; do
             var=$(echo "$var" | xargs)
 
-            secret_value=$(jq -r --arg key "$var" '.[$key] // empty' secrets.json)
+            secret_value=$(echo "$SECRETS_JSON" | jq -r --arg key "$var" '.[$key] // empty')
 
             if [ ! -z "$secret_value" ]; then
               echo "${var}=${secret_value}" >> $GITHUB_ENV
@@ -82,28 +69,23 @@ jobs:
             else
               echo "⚠ Warning: $var not found in secrets"
               if [ "$var" = "NODE_ENV" ]; then
-                echo "NODE_ENV=production" >> $GITHUB_ENV
-                echo "  Using default: NODE_ENV=production"
+                echo "NODE_ENV=development" >> $GITHUB_ENV
+                echo "  Using default: NODE_ENV=development"
               fi
             fi
           done
 
-          rm -f secrets.json
-
       - name: Deploy with Frigg (Direct Environment Variables)
         if: ${{ steps.app_config.outputs.deployment_type != 'ssm' }}
         run: |
-          echo "Deploying with dynamically loaded environment variables..."
-          npx frigg deploy --stage ${{ steps.stage.outputs.stage }} --verbose
+          echo "Deploying to dev with dynamically loaded environment variables..."
+          npx frigg deploy --stage=dev --verbose
 
       - name: Deploy with Frigg (SSM Parameter Store)
         if: ${{ steps.app_config.outputs.deployment_type == 'ssm' }}
         run: |
-          echo "Deploying with SSM Parameter Store..."
-          npx frigg deploy --stage ${{ steps.stage.outputs.stage }} --verbose --use-ssm
-
-      - name: Install jq for JSON parsing
-        run: sudo apt-get update && sudo apt-get install -y jq
+          echo "Deploying to dev with SSM Parameter Store..."
+          npx frigg deploy --stage=dev --verbose --use-ssm
 
       - name: Run Database Migrations (via Lambda)
         env:
@@ -112,31 +94,31 @@ jobs:
         run: |
           echo "Triggering database migrations via deployed Lambda..."
 
-          # Trim whitespace from secrets (remove leading/trailing spaces and newlines)
+          # Trim whitespace from secrets
           BASE_URL=$(echo "$BASE_URL" | xargs)
           ADMIN_API_KEY=$(echo "$ADMIN_API_KEY" | xargs)
 
           # Validate required secrets
           if [ -z "$BASE_URL" ]; then
-            echo "❌ ERROR: BASE_URL secret is empty or not set"
-            exit 1
+            echo "⚠️ BASE_URL not configured for dev — skipping migrations"
+            exit 0
           fi
 
           if [ -z "$ADMIN_API_KEY" ]; then
-            echo "❌ ERROR: ADMIN_API_KEY secret is empty or not set"
-            exit 1
+            echo "⚠️ ADMIN_API_KEY not configured for dev — skipping migrations"
+            exit 0
           fi
 
           echo "✓ BASE_URL configured (${#BASE_URL} chars)"
           echo "✓ ADMIN_API_KEY configured (${#ADMIN_API_KEY} chars)"
-          echo "✓ Deployment stage: ${{ steps.stage.outputs.stage }}"
+          echo "✓ Deployment stage: dev"
 
           # Trigger migration
           set +e
           RESPONSE=$(curl -s -X POST "${BASE_URL}/db-migrate" \
             -H "Content-Type: application/json" \
             -H "x-frigg-admin-api-key: ${ADMIN_API_KEY}" \
-            -d '{"dbType": "postgresql", "stage": "${{ steps.stage.outputs.stage }}"}' 2>&1)
+            -d '{"dbType": "postgresql", "stage": "dev"}' 2>&1)
           CURL_EXIT_CODE=$?
           set -e
 
@@ -154,7 +136,6 @@ jobs:
           if [ -z "$PROCESS_ID" ]; then
             echo "⚠️ Could not get process ID. Migration may have failed to start."
             echo "Response: $RESPONSE"
-            # Don't fail the build - migrations might already be up to date
             exit 0
           fi
 
@@ -184,8 +165,8 @@ jobs:
 
       - name: Deployment Summary
         run: |
-          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- **Stage**: ${{ steps.stage.outputs.stage }}" >> $GITHUB_STEP_SUMMARY
+          echo "## Dev Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Stage**: dev" >> $GITHUB_STEP_SUMMARY
           echo "- **Region**: ${{ secrets.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Deployment Type**: ${{ steps.app_config.outputs.deployment_type == 'ssm' && 'SSM Parameter Store' || 'Direct Environment Variables' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Database**: PostgreSQL (Aurora Serverless v2)" >> $GITHUB_STEP_SUMMARY
@@ -193,4 +174,4 @@ jobs:
           echo "- **VPC**: ${{ steps.app_config.outputs.has_vpc == 'true' && 'Enabled' || 'Disabled' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit**: ${{ github.event.workflow_run.head_sha || github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Branch**: ${{ github.event.workflow_run.head_branch || github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Trigger**: ${{ github.event_name == 'workflow_dispatch' && 'Manual' || 'CI Passed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trigger**: ${{ github.event_name == 'workflow_dispatch' && 'Manual' || 'CI Passed (auto-deploy)' }}" >> $GITHUB_STEP_SUMMARY
