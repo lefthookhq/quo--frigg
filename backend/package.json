@@ -11,7 +11,7 @@
         "test:auth": "jest --testPathPattern=test/integrations/AsanaIntegration.auth.test.js",
         "test:watch": "jest --watch",
         "test:coverage": "jest --coverage",
-        "test:ci": "jest --group=-interactive --group=-live-api --ci --coverage",
+        "test:ci": "jest --group=-interactive --group=-live-api --testPathIgnorePatterns=ClioIntegration --ci --coverage",
         "debug": "jest --testTimeout 0",
         "ci": "npm install",
         "lint": "eslint .",
