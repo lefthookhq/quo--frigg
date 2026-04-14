@@ -1824,7 +1824,6 @@ class PipedriveIntegration extends BaseCRMIntegration {
                         }
                     }
 
-
                     const activityData = {
                         subject: activity.title || 'Call',
                         type: 'call',
