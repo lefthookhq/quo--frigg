@@ -40,8 +40,8 @@ jobs:
         env:
           INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
-          if ! git rev-parse "$INPUT_VERSION" >/dev/null 2>&1; then
-            echo "❌ ERROR: Tag '$INPUT_VERSION' does not exist"
+          if [ -z "$(git tag -l "$INPUT_VERSION")" ]; then
+            echo "❌ ERROR: '$INPUT_VERSION' is not a valid tag"
             echo "Available version tags:"
             git tag -l 'v*' | sort -V | tail -20
             exit 1
