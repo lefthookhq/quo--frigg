@@ -34,8 +34,8 @@ jobs:
 
       - name: Validate version tag
         run: |
-          if ! git describe --tags --exact-match HEAD 2>/dev/null; then
-            echo "❌ ERROR: '${{ github.event.inputs.version }}' is not a valid tag"
+          if ! git rev-parse "${{ github.event.inputs.version }}" >/dev/null 2>&1; then
+            echo "❌ ERROR: Tag '${{ github.event.inputs.version }}' does not exist"
             echo "Available version tags:"
             git tag -l 'v*' | sort -V | tail -20
             exit 1

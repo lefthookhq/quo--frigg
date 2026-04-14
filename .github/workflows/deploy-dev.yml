@@ -5,6 +5,7 @@ on:
     workflows: ["Code Quality and Tests"]
     types: [completed]
     branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: deploy-dev
@@ -14,7 +15,7 @@ jobs:
   deploy:
     name: Deploy to Dev
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     defaults:
       run:
         working-directory: ./backend
@@ -23,7 +24,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Setup Node.js with Cache
         uses: ./.github/actions/setup-node-with-cache
@@ -88,13 +89,14 @@ jobs:
 
       - name: Run Database Migrations (via Lambda)
         env:
-          BASE_URL: ${{ secrets.DEV_BASE_URL || secrets.BASE_URL }}
+          DEV_BASE_URL: ${{ secrets.DEV_BASE_URL }}
+          PROD_BASE_URL: ${{ secrets.BASE_URL }}
           ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
         run: |
           echo "Triggering database migrations via deployed Lambda..."
 
-          # Trim whitespace from secrets
-          BASE_URL=$(echo "$BASE_URL" | xargs)
+          # Use dev-specific URL if available, fall back to shared BASE_URL
+          BASE_URL=$(echo "${DEV_BASE_URL:-$PROD_BASE_URL}" | xargs)
           ADMIN_API_KEY=$(echo "$ADMIN_API_KEY" | xargs)
 
           # Validate required secrets
@@ -171,6 +173,6 @@ jobs:
           echo "- **Database**: PostgreSQL (Aurora Serverless v2)" >> $GITHUB_STEP_SUMMARY
           echo "- **KMS Encryption**: ${{ steps.app_config.outputs.has_kms == 'true' && 'Enabled' || 'Disabled' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **VPC**: ${{ steps.app_config.outputs.has_vpc == 'true' && 'Enabled' || 'Disabled' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit**: ${{ github.event.workflow_run.head_sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Branch**: ${{ github.event.workflow_run.head_branch }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Trigger**: CI Passed (auto-deploy)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.event.workflow_run.head_sha || github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch**: ${{ github.event.workflow_run.head_branch || github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trigger**: ${{ github.event_name == 'workflow_dispatch' && 'Manual' || 'CI Passed (auto-deploy)' }}" >> $GITHUB_STEP_SUMMARY
