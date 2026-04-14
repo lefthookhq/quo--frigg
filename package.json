@@ -15,6 +15,9 @@
     "changeset:version": "changeset version",
     "changeset:status": "changeset status"
   },
+  "overrides": {
+    "@types/node": "20.17.32"
+  },
   "dependencies": {
   }
 }
