@@ -78,12 +78,14 @@ jobs:
       - name: Deploy with Frigg (Direct Environment Variables)
         if: ${{ steps.app_config.outputs.deployment_type != 'ssm' }}
         run: |
+          ulimit -n 65536
           echo "Deploying to dev with dynamically loaded environment variables..."
           npx frigg deploy --stage=dev --verbose
 
       - name: Deploy with Frigg (SSM Parameter Store)
         if: ${{ steps.app_config.outputs.deployment_type == 'ssm' }}
         run: |
+          ulimit -n 65536
           echo "Deploying to dev with SSM Parameter Store..."
           npx frigg deploy --stage=dev --verbose --use-ssm
 
