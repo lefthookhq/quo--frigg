@@ -96,7 +96,7 @@ echo ""
 
 # Create the environment if it doesn't exist
 echo "Creating environment '$ENVIRONMENT' (if it doesn't exist)..."
-gh api "repos/$REPO/environments/$ENVIRONMENT" -X PUT --silent 2>/dev/null || true
+gh api "repos/$REPO/environments/$ENVIRONMENT" -X PUT > /dev/null 2>&1 || true
 echo ""
 
 SET_COUNT=0
@@ -105,7 +105,7 @@ MISSING=()
 
 for secret_name in "${REQUIRED_SECRETS[@]}"; do
   # Extract value from .env file (handles KEY=VALUE, ignores comments and empty lines)
-  value=$(grep -E "^${secret_name}=" "$ENV_FILE" 2>/dev/null | head -1 | cut -d'=' -f2-)
+  value=$(grep -E "^${secret_name}=" "$ENV_FILE" 2>/dev/null | head -1 | cut -d'=' -f2- || true)
 
   if [ -n "$value" ]; then
     echo "$value" | gh secret set "$secret_name" --repo "$REPO" --env "$ENVIRONMENT"
