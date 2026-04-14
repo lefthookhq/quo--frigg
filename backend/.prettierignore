@@ -2,3 +2,4 @@ coverage/
 .nyc_output/
 .serverless/
 dist/
+.frigg-infrastructure-cache.json
