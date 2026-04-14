@@ -88,6 +88,9 @@ describe('PipedriveIntegration (Refactored)', () => {
         // Mock base class dependencies
         integration.commands = {
             updateIntegrationConfig: jest.fn().mockResolvedValue({}),
+            loadIntegrationContextById: jest.fn().mockResolvedValue({
+                context: { record: { config: {} } },
+            }),
         };
         integration.updateIntegrationMessages = {
             execute: jest.fn().mockResolvedValue({}),
@@ -1174,6 +1177,163 @@ describe('PipedriveIntegration (Refactored)', () => {
             expect(result.received).toBe(true);
             expect(result.logged).toBe(false);
             expect(result.results[0].error).toBe('Contact not found');
+        });
+    });
+
+    describe('getSettings', () => {
+        it('should return default callActivityDestination of contact when config is empty', async () => {
+            const req = { query: { integrationId: '44' } };
+            const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
+            integration.commands.loadIntegrationContextById.mockResolvedValue({
+                context: { record: { config: {} } },
+            });
+
+            await integration.getSettings({ req, res });
+
+            expect(res.json).toHaveBeenCalledWith({
+                settings: { callActivityDestination: 'contact' },
+            });
+        });
+
+        it('should return stored callActivityDestination from config', async () => {
+            const req = { query: { integrationId: '44' } };
+            const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
+            integration.commands.loadIntegrationContextById.mockResolvedValue({
+                context: {
+                    record: { config: { callActivityDestination: 'deal' } },
+                },
+            });
+
+            await integration.getSettings({ req, res });
+
+            expect(res.json).toHaveBeenCalledWith({
+                settings: { callActivityDestination: 'deal' },
+            });
+        });
+
+        it('should return 400 when integrationId is missing', async () => {
+            const req = { query: {} };
+            const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
+
+            await integration.getSettings({ req, res });
+
+            expect(res.status).toHaveBeenCalledWith(400);
+        });
+    });
+
+    describe('updateSettings', () => {
+        it('should update callActivityDestination to deal', async () => {
+            const req = {
+                query: { integrationId: '44' },
+                body: { callActivityDestination: 'deal' },
+            };
+            const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
+
+            await integration.updateSettings({ req, res });
+
+            expect(
+                integration.commands.updateIntegrationConfig,
+            ).toHaveBeenCalledWith({
+                integrationId: '44',
+                config: expect.objectContaining({
+                    callActivityDestination: 'deal',
+                }),
+            });
+            expect(res.json).toHaveBeenCalledWith({
+                success: true,
+                settings: { callActivityDestination: 'deal' },
+            });
+        });
+
+        it('should update callActivityDestination back to contact', async () => {
+            const req = {
+                query: { integrationId: '44' },
+                body: { callActivityDestination: 'contact' },
+            };
+            const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
+            integration.commands.loadIntegrationContextById.mockResolvedValue({
+                context: {
+                    record: { config: { callActivityDestination: 'deal' } },
+                },
+            });
+
+            await integration.updateSettings({ req, res });
+
+            expect(res.json).toHaveBeenCalledWith({
+                success: true,
+                settings: { callActivityDestination: 'contact' },
+            });
+        });
+
+        it('should reject an invalid callActivityDestination', async () => {
+            const req = {
+                query: { integrationId: '44' },
+                body: { callActivityDestination: 'lead' },
+            };
+            const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
+
+            await integration.updateSettings({ req, res });
+
+            expect(res.status).toHaveBeenCalledWith(400);
+            expect(res.json).toHaveBeenCalledWith({
+                error: expect.stringContaining(
+                    'Invalid callActivityDestination',
+                ),
+            });
+            expect(
+                integration.commands.updateIntegrationConfig,
+            ).not.toHaveBeenCalled();
+        });
+
+        it('should return 400 when integrationId is missing', async () => {
+            const req = {
+                query: {},
+                body: { callActivityDestination: 'deal' },
+            };
+            const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
+
+            await integration.updateSettings({ req, res });
+
+            expect(res.status).toHaveBeenCalledWith(400);
+        });
+    });
+
+    describe('_findMostRecentOpenDeal', () => {
+        it('should return the most recent open deal ID', async () => {
+            mockPipedriveApi.api.listDeals = jest.fn().mockResolvedValue({
+                data: [{ id: 42 }, { id: 7 }],
+            });
+
+            const result = await integration._findMostRecentOpenDeal(123);
+
+            expect(mockPipedriveApi.api.listDeals).toHaveBeenCalledWith({
+                person_id: 123,
+                status: 'open',
+                sort_by: 'update_time',
+                sort_direction: 'desc',
+                limit: 1,
+            });
+            expect(result).toBe(42);
+        });
+
+        it('should return null when no open deals exist', async () => {
+            mockPipedriveApi.api.listDeals = jest.fn().mockResolvedValue({
+                data: [],
+            });
+
+            const result = await integration._findMostRecentOpenDeal(123);
+
+            expect(result).toBeNull();
+        });
+
+        it('should return null and not throw when API call fails', async () => {
+            mockPipedriveApi.api.listDeals = jest
+                .fn()
+                .mockRejectedValue(new Error('API error'));
+
+            const result = await integration._findMostRecentOpenDeal(123);
+
+            expect(result).toBeNull();
         });
     });
 });

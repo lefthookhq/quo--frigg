@@ -89,6 +89,16 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 method: 'DELETE',
                 event: 'PIPEDRIVE_APP_UNINSTALL',
             },
+            {
+                path: '/pipedrive/settings',
+                method: 'GET',
+                event: 'GET_PIPEDRIVE_SETTINGS',
+            },
+            {
+                path: '/pipedrive/settings',
+                method: 'PUT',
+                event: 'UPDATE_PIPEDRIVE_SETTINGS',
+            },
         ],
     };
 
@@ -190,6 +200,12 @@ class PipedriveIntegration extends BaseCRMIntegration {
             },
             PIPEDRIVE_APP_UNINSTALL: {
                 handler: this.handleAppUninstall.bind(this),
+            },
+            GET_PIPEDRIVE_SETTINGS: {
+                handler: this.getSettings,
+            },
+            UPDATE_PIPEDRIVE_SETTINGS: {
+                handler: this.updateSettings,
             },
         };
     }
@@ -1633,6 +1649,140 @@ class PipedriveIntegration extends BaseCRMIntegration {
     }
 
     /**
+     * Get integration settings
+     * Returns current call activity destination preference
+     */
+    getSettings = async ({ req, res }) => {
+        try {
+            const integrationId = req.query.integrationId;
+            if (!integrationId) {
+                return res
+                    .status(400)
+                    .json({ error: 'integrationId query param is required' });
+            }
+
+            const result =
+                await this.commands.loadIntegrationContextById(integrationId);
+            if (result.error) {
+                return res.status(result.error).json({ error: result.reason });
+            }
+
+            const config = result.context.record.config || {};
+            const settings = {
+                callActivityDestination:
+                    config.callActivityDestination || 'contact',
+            };
+            res.json({ settings });
+        } catch (error) {
+            console.error(
+                '[Pipedrive Settings] getSettings error:',
+                error.message,
+            );
+            res.status(500).json({ error: error.message });
+        }
+    };
+
+    /**
+     * Update integration settings
+     * Allows changing where call activities are logged (contact or deal)
+     */
+    updateSettings = async ({ req, res }) => {
+        try {
+            const integrationId = req.query.integrationId;
+            if (!integrationId) {
+                return res
+                    .status(400)
+                    .json({ error: 'integrationId query param is required' });
+            }
+
+            const updates = req.body;
+
+            const VALID_DESTINATIONS = ['contact', 'deal'];
+            if (updates.callActivityDestination !== undefined) {
+                if (
+                    !VALID_DESTINATIONS.includes(
+                        updates.callActivityDestination,
+                    )
+                ) {
+                    return res.status(400).json({
+                        error: `Invalid callActivityDestination. Must be one of: ${VALID_DESTINATIONS.join(', ')}`,
+                    });
+                }
+            }
+
+            const result =
+                await this.commands.loadIntegrationContextById(integrationId);
+            if (result.error) {
+                return res.status(result.error).json({ error: result.reason });
+            }
+
+            const currentConfig = result.context.record.config || {};
+            const updatedConfig = { ...currentConfig };
+
+            if (updates.callActivityDestination !== undefined) {
+                updatedConfig.callActivityDestination =
+                    updates.callActivityDestination;
+                console.log(
+                    `[Pipedrive Settings] callActivityDestination set to: ${updates.callActivityDestination}`,
+                );
+            }
+
+            await this.commands.updateIntegrationConfig({
+                integrationId,
+                config: updatedConfig,
+            });
+
+            this.config = updatedConfig;
+
+            console.log('[Pipedrive Settings] ✓ Settings updated successfully');
+
+            res.json({
+                success: true,
+                settings: {
+                    callActivityDestination:
+                        updatedConfig.callActivityDestination || 'contact',
+                },
+            });
+        } catch (error) {
+            console.error(
+                '[Pipedrive Settings] updateSettings error:',
+                error.message,
+            );
+            res.status(500).json({ error: error.message });
+        }
+    };
+
+    /**
+     * Find the most recently updated open deal for a given person
+     * Returns the deal ID, or null if no open deal exists
+     *
+     * @private
+     * @param {number} personId - Pipedrive person ID
+     * @returns {Promise<number|null>} Deal ID or null
+     */
+    async _findMostRecentOpenDeal(personId) {
+        try {
+            const response = await this.pipedrive.api.listDeals({
+                person_id: personId,
+                status: 'open',
+                sort_by: 'update_time',
+                sort_direction: 'desc',
+                limit: 1,
+            });
+            const deals = response?.data;
+            if (!Array.isArray(deals) || deals.length === 0) {
+                return null;
+            }
+            return deals[0].id;
+        } catch (error) {
+            console.error(
+                `${this._logPrefix} Failed to fetch open deals for person ${personId}: ${error.message}`,
+            );
+            return null;
+        }
+    }
+
+    /**
      * Handle Quo call.completed webhook event
      * Uses QuoWebhookEventProcessor for orchestration
      *
@@ -1660,15 +1810,28 @@ class PipedriveIntegration extends BaseCRMIntegration {
                     const ownerId = await this._resolvePipedriveOwnerId(
                         activity.quoUser,
                     );
+                    const personId = parseInt(contactId);
+                    const destination =
+                        this.config?.callActivityDestination || 'contact';
+
+                    let dealId = null;
+                    if (destination === 'deal') {
+                        dealId = await this._findMostRecentOpenDeal(personId);
+                        if (!dealId) {
+                            console.log(
+                                `${this._logPrefix} No open deal found for person ${personId}, falling back to contact`,
+                            );
+                        }
+                    }
+
                     const activityData = {
                         subject: activity.title || 'Call',
                         type: 'call',
                         done: 1,
                         note: `<p><strong>${activity.title}</strong></p><p>${activity.content}</p>`,
-                        participants: [
-                            { person_id: parseInt(contactId), primary: true },
-                        ],
+                        participants: [{ person_id: personId, primary: true }],
                         duration: formatDurationForPipedrive(activity.duration),
+                        ...(dealId && { deal_id: dealId }),
                         ...(ownerId && { owner_id: ownerId }),
                     };
                     const activityResponse =
