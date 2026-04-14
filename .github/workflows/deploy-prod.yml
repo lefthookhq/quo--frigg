@@ -18,10 +18,14 @@ concurrency:
   group: deploy-prod
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
     name: Deploy to Prod
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: ./backend
@@ -29,10 +33,12 @@ jobs:
     steps:
       - name: Determine ref to deploy
         id: ref
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            echo "ref=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-            echo "label=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          if [ -n "$INPUT_VERSION" ]; then
+            echo "ref=$INPUT_VERSION" >> $GITHUB_OUTPUT
+            echo "label=$INPUT_VERSION" >> $GITHUB_OUTPUT
           else
             echo "ref=main" >> $GITHUB_OUTPUT
             echo "label=latest main" >> $GITHUB_OUTPUT
@@ -47,14 +53,16 @@ jobs:
 
       - name: Validate version tag exists
         if: ${{ github.event.inputs.version != '' }}
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
-          if ! git rev-parse "${{ github.event.inputs.version }}" >/dev/null 2>&1; then
-            echo "❌ ERROR: Tag '${{ github.event.inputs.version }}' does not exist"
+          if ! git rev-parse "$INPUT_VERSION" >/dev/null 2>&1; then
+            echo "❌ ERROR: Tag '$INPUT_VERSION' does not exist"
             echo "Available tags:"
             git tag -l | tail -20
             exit 1
           fi
-          echo "✓ Deploying tag: ${{ github.event.inputs.version }}"
+          echo "✓ Deploying tag: $INPUT_VERSION"
         working-directory: .
 
       - name: Setup Node.js with Cache
@@ -193,8 +201,8 @@ jobs:
             fi
           done
 
-          echo "⚠️ Migration timed out - check status manually"
-          exit 0
+          echo "❌ Migration timed out - check status manually"
+          exit 1
 
       - name: Deployment Summary
         run: |

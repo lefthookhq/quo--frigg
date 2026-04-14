@@ -17,10 +17,14 @@ concurrency:
   group: deploy-prod
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   rollback:
     name: Rollback Prod to ${{ github.event.inputs.version }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: ./backend
@@ -33,14 +37,16 @@ jobs:
           fetch-depth: 0
 
       - name: Validate version tag
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
-          if ! git rev-parse "${{ github.event.inputs.version }}" >/dev/null 2>&1; then
-            echo "❌ ERROR: Tag '${{ github.event.inputs.version }}' does not exist"
+          if ! git rev-parse "$INPUT_VERSION" >/dev/null 2>&1; then
+            echo "❌ ERROR: Tag '$INPUT_VERSION' does not exist"
             echo "Available version tags:"
             git tag -l 'v*' | sort -V | tail -20
             exit 1
           fi
-          echo "✓ Rolling back to: ${{ github.event.inputs.version }}"
+          echo "✓ Rolling back to: $INPUT_VERSION"
         working-directory: .
 
       - name: Setup Node.js with Cache
@@ -173,8 +179,8 @@ jobs:
             fi
           done
 
-          echo "⚠️ Migration timed out - check status manually"
-          exit 0
+          echo "❌ Migration timed out - check status manually"
+          exit 1
 
       - name: Rollback Summary
         run: |
