@@ -2132,9 +2132,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 const response = await this.zoho.api.getContact(recordId);
 
                 if (!response.data) {
-                    throw new Error(
-                        `No data returned for Contact ${recordId}`,
-                    );
+                    throw new Error(`No data returned for Contact ${recordId}`);
                 }
 
                 if (Array.isArray(response.data)) {
@@ -2151,9 +2149,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 const response = await this.zoho.api.getAccount(recordId);
 
                 if (!response.data) {
-                    throw new Error(
-                        `No data returned for Account ${recordId}`,
-                    );
+                    throw new Error(`No data returned for Account ${recordId}`);
                 }
 
                 if (Array.isArray(response.data)) {

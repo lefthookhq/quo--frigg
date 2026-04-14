@@ -1762,7 +1762,10 @@ class AttioIntegration extends BaseCRMIntegration {
                         Date.now(),
                     );
                 } catch (msgError) {
-                    console.error('[Attio Webhook] Failed to record error message:', msgError);
+                    console.error(
+                        '[Attio Webhook] Failed to record error message:',
+                        msgError,
+                    );
                 }
             }
 
@@ -2486,8 +2489,7 @@ class AttioIntegration extends BaseCRMIntegration {
             `[Webhook Optimization] ✗ No mapping found, falling back to Attio API search`,
         );
 
-        const attioRecordId =
-            await this._findContactByPhone(normalizedPhone);
+        const attioRecordId = await this._findContactByPhone(normalizedPhone);
 
         if (!attioRecordId) {
             return null;

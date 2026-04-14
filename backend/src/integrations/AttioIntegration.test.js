@@ -1559,7 +1559,9 @@ describe('AttioIntegration (Refactored)', () => {
                 };
 
                 // Contact not found — returns null
-                integration._findAttioContactFromQuoWebhook.mockResolvedValue(null);
+                integration._findAttioContactFromQuoWebhook.mockResolvedValue(
+                    null,
+                );
 
                 const result =
                     await integration._handleQuoCallSummaryEvent(webhookData);
@@ -1583,15 +1585,21 @@ describe('AttioIntegration (Refactored)', () => {
             fetchError.statusCode = 401;
 
             // Mock _handleRecordUpdated to throw a 401 (expired token)
-            integration._handleRecordUpdated = jest.fn().mockRejectedValue(fetchError);
-            integration._verifyWebhookSignature = jest.fn().mockReturnValue(true);
+            integration._handleRecordUpdated = jest
+                .fn()
+                .mockRejectedValue(fetchError);
+            integration._verifyWebhookSignature = jest
+                .fn()
+                .mockReturnValue(true);
 
             const webhookData = {
                 body: {
-                    events: [{
-                        event_type: 'record.updated',
-                        id: { record_id: 'rec-123', object_id: 'obj-456' },
-                    }],
+                    events: [
+                        {
+                            event_type: 'record.updated',
+                            id: { record_id: 'rec-123', object_id: 'obj-456' },
+                        },
+                    ],
                 },
                 headers: { 'x-attio-signature': 'test-sig' },
                 integrationId: 'test-integration',
@@ -1601,22 +1609,31 @@ describe('AttioIntegration (Refactored)', () => {
             // statusCode must survive so isHaltError can classify it as permanent
             await expect(
                 integration._handleAttioWebhook(webhookData),
-            ).rejects.toMatchObject({ message: 'Unauthorized', statusCode: 401 });
+            ).rejects.toMatchObject({
+                message: 'Unauthorized',
+                statusCode: 401,
+            });
         });
 
         it('should re-throw 500 errors too (no reason to swallow with single event)', async () => {
             const serverError = new Error('Internal Server Error');
             serverError.statusCode = 500;
 
-            integration._handleRecordCreated = jest.fn().mockRejectedValue(serverError);
-            integration._verifyWebhookSignature = jest.fn().mockReturnValue(true);
+            integration._handleRecordCreated = jest
+                .fn()
+                .mockRejectedValue(serverError);
+            integration._verifyWebhookSignature = jest
+                .fn()
+                .mockReturnValue(true);
 
             const webhookData = {
                 body: {
-                    events: [{
-                        event_type: 'record.created',
-                        id: { record_id: 'rec-789' },
-                    }],
+                    events: [
+                        {
+                            event_type: 'record.created',
+                            id: { record_id: 'rec-789' },
+                        },
+                    ],
                 },
                 headers: { 'x-attio-signature': 'test-sig' },
                 integrationId: 'test-integration',
@@ -1628,15 +1645,21 @@ describe('AttioIntegration (Refactored)', () => {
         });
 
         it('should return success for valid events', async () => {
-            integration._handleRecordUpdated = jest.fn().mockResolvedValue(undefined);
-            integration._verifyWebhookSignature = jest.fn().mockReturnValue(true);
+            integration._handleRecordUpdated = jest
+                .fn()
+                .mockResolvedValue(undefined);
+            integration._verifyWebhookSignature = jest
+                .fn()
+                .mockReturnValue(true);
 
             const webhookData = {
                 body: {
-                    events: [{
-                        event_type: 'record.updated',
-                        id: { record_id: 'rec-123', object_id: 'obj-456' },
-                    }],
+                    events: [
+                        {
+                            event_type: 'record.updated',
+                            id: { record_id: 'rec-123', object_id: 'obj-456' },
+                        },
+                    ],
                 },
                 headers: { 'x-attio-signature': 'test-sig' },
                 integrationId: 'test-integration',
@@ -1719,7 +1742,8 @@ describe('AttioIntegration (Refactored)', () => {
                 mockAttioApi.api.queryRecords.mockResolvedValue({ data: [] });
                 mockAttioApi.api.searchRecords.mockResolvedValue({ data: [] });
 
-                const result = await integration._findAttioContactByPhone('+15551111111');
+                const result =
+                    await integration._findAttioContactByPhone('+15551111111');
                 expect(result).toBeNull();
             });
 

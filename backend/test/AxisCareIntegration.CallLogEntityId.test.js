@@ -125,7 +125,9 @@ describe('AxisCareIntegration - logCallToActivity entityId parsing', () => {
         });
 
         const payload = mockCreateCallLog.mock.calls[0][0];
-        expect(payload.tags).toEqual([{ type: 'client', entityId: 5551234567 }]);
+        expect(payload.tags).toEqual([
+            { type: 'client', entityId: 5551234567 },
+        ]);
     });
 
     it('should parse entityId from numeric contactId passed as a number', async () => {
