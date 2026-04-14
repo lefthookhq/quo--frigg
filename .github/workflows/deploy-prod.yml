@@ -114,14 +114,12 @@ jobs:
       - name: Deploy with Frigg (Direct Environment Variables)
         if: ${{ steps.app_config.outputs.deployment_type != 'ssm' }}
         run: |
-          ulimit -n 65536
           echo "Deploying ${{ steps.ref.outputs.label }} to prod..."
           npx frigg deploy --stage=prod --verbose
 
       - name: Deploy with Frigg (SSM Parameter Store)
         if: ${{ steps.app_config.outputs.deployment_type == 'ssm' }}
         run: |
-          ulimit -n 65536
           echo "Deploying ${{ steps.ref.outputs.label }} to prod with SSM..."
           npx frigg deploy --stage=prod --verbose --use-ssm
 

@@ -106,7 +106,6 @@ jobs:
         env:
           VERSION_TAG: ${{ github.event.inputs.version }}
         run: |
-          ulimit -n 65536
           echo "Rolling back prod to $VERSION_TAG..."
           npx frigg deploy --stage=prod --verbose
 
@@ -115,7 +114,6 @@ jobs:
         env:
           VERSION_TAG: ${{ github.event.inputs.version }}
         run: |
-          ulimit -n 65536
           echo "Rolling back prod to $VERSION_TAG with SSM..."
           npx frigg deploy --stage=prod --verbose --use-ssm
 
