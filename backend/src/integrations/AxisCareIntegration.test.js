@@ -206,12 +206,12 @@ describe('AxisCareIntegration', () => {
                 const mockResponse = {
                     results: {
                         caregivers: {
-                            '1': {
+                            1: {
                                 id: 1,
                                 firstName: 'George',
                                 lastName: 'Washington',
                             },
-                            '2': {
+                            2: {
                                 id: 2,
                                 firstName: 'Jane',
                                 lastName: 'Doe',
@@ -246,7 +246,7 @@ describe('AxisCareIntegration', () => {
                 const mockResponse = {
                     results: {
                         applicants: {
-                            '826': {
+                            826: {
                                 id: 826,
                                 firstName: 'Taizee',
                                 lastName: 'Sarwee',
@@ -307,9 +307,7 @@ describe('AxisCareIntegration', () => {
                     'https://10825.axiscare.com/api/leads?nextPageToken=ODEz&limit=50';
                 const mockResponse = {
                     results: {
-                        leads: [
-                            { id: 1, firstName: 'Jane', lastName: 'Lead' },
-                        ],
+                        leads: [{ id: 1, firstName: 'Jane', lastName: 'Lead' }],
                         nextPage: nextPageUrl,
                     },
                 };
@@ -361,7 +359,7 @@ describe('AxisCareIntegration', () => {
                 const mockResponse = {
                     results: {
                         caregivers: {
-                            '105': {
+                            105: {
                                 id: 105,
                                 firstName: 'Alice',
                                 lastName: 'Nurse',

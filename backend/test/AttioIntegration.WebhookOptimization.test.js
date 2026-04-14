@@ -142,7 +142,8 @@ describe('AttioIntegration - Webhook Mapping Optimization', () => {
             });
 
             // Act
-            const result = await integration._findAttioContactFromQuoWebhook(phoneNumber);
+            const result =
+                await integration._findAttioContactFromQuoWebhook(phoneNumber);
 
             // Assert — returns null instead of throwing
             expect(result).toBeNull();

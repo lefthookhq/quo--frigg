@@ -26,9 +26,7 @@ describe('QuoWebhookEventProcessor - Multi-Participant Call Handling', () => {
         });
 
         it('should log a warning for multi-participant calls instead of throwing', async () => {
-            const consoleSpy = jest
-                .spyOn(console, 'warn')
-                .mockImplementation();
+            const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
 
             const error = new Error('Too Many Participants');
             error.statusCode = 400;

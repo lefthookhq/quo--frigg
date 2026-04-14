@@ -20,10 +20,7 @@ describe('ZohoCRMIntegration - _fetchZohoObject JSON Error Handling', () => {
             );
             integration.zoho.api.getContact.mockRejectedValue(jsonError);
 
-            const result = await integration._fetchZohoObject(
-                'Contact',
-                '123',
-            );
+            const result = await integration._fetchZohoObject('Contact', '123');
 
             expect(result).toBeNull();
         });
@@ -34,18 +31,13 @@ describe('ZohoCRMIntegration - _fetchZohoObject JSON Error Handling', () => {
             );
             integration.zoho.api.getAccount.mockRejectedValue(jsonError);
 
-            const result = await integration._fetchZohoObject(
-                'Account',
-                '456',
-            );
+            const result = await integration._fetchZohoObject('Account', '456');
 
             expect(result).toBeNull();
         });
 
         it('should log a warning when returning null due to invalid JSON', async () => {
-            const consoleSpy = jest
-                .spyOn(console, 'warn')
-                .mockImplementation();
+            const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
 
             const jsonError = new Error(
                 'invalid json response body reason: Unexpected end of JSON input',
@@ -89,10 +81,7 @@ describe('ZohoCRMIntegration - _fetchZohoObject JSON Error Handling', () => {
                 data: [{ id: '123', Full_Name: 'John Doe' }],
             });
 
-            const result = await integration._fetchZohoObject(
-                'Contact',
-                '123',
-            );
+            const result = await integration._fetchZohoObject('Contact', '123');
 
             expect(result).toEqual({
                 id: '123',
@@ -106,10 +95,7 @@ describe('ZohoCRMIntegration - _fetchZohoObject JSON Error Handling', () => {
                 data: [{ id: '456', Account_Name: 'Acme Corp' }],
             });
 
-            const result = await integration._fetchZohoObject(
-                'Account',
-                '456',
-            );
+            const result = await integration._fetchZohoObject('Account', '456');
 
             expect(result).toEqual({
                 id: '456',

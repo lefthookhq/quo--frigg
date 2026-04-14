@@ -1,0 +1,201 @@
+name: Rollback Prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag to rollback to (e.g. v0.1.0)'
+        required: true
+        type: string
+      run_migrations:
+        description: 'Run database migrations (default: off for rollback)'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  rollback:
+    name: Rollback Prod to ${{ github.event.inputs.version }}
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ./backend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Validate version tag
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          if [ -z "$(git tag -l "$INPUT_VERSION")" ]; then
+            echo "❌ ERROR: '$INPUT_VERSION' is not a valid tag"
+            echo "Available version tags:"
+            git tag -l 'v*' | sort -V | tail -20
+            exit 1
+          fi
+          echo "✓ Rolling back to: $INPUT_VERSION"
+        working-directory: .
+
+      - name: Checkout version tag
+        env:
+          VERSION_TAG: ${{ github.event.inputs.version }}
+        run: git checkout "$VERSION_TAG"
+        working-directory: .
+
+      - name: Setup Node.js with Cache
+        uses: ./.github/actions/setup-node-with-cache
+        with:
+          working-directory: ./backend
+
+      - name: Parse app configuration
+        id: app_config
+        run: |
+          node ../.github/scripts/parse-app-config.js
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Set dynamic environment variables
+        id: dynamic_env
+        env:
+          ENV_VARS: ${{ steps.app_config.outputs.environment_vars }}
+          SECRETS_JSON: ${{ toJSON(secrets) }}
+        run: |
+          echo "Environment variables from appDefinition: $ENV_VARS"
+
+          IFS=',' read -ra VARS <<< "$ENV_VARS"
+
+          for var in "${VARS[@]}"; do
+            var=$(echo "$var" | xargs)
+
+            secret_value=$(echo "$SECRETS_JSON" | jq -r --arg key "$var" '.[$key] // empty')
+
+            if [ ! -z "$secret_value" ]; then
+              echo "${var}=${secret_value}" >> $GITHUB_ENV
+              echo "✓ Set $var"
+            else
+              echo "⚠ Warning: $var not found in secrets"
+              if [ "$var" = "NODE_ENV" ]; then
+                echo "NODE_ENV=production" >> $GITHUB_ENV
+                echo "  Using default: NODE_ENV=production"
+              fi
+            fi
+          done
+
+      - name: Deploy with Frigg (Direct Environment Variables)
+        if: ${{ steps.app_config.outputs.deployment_type != 'ssm' }}
+        env:
+          VERSION_TAG: ${{ github.event.inputs.version }}
+        run: |
+          echo "Rolling back prod to $VERSION_TAG..."
+          npx frigg deploy --stage=prod --verbose
+
+      - name: Deploy with Frigg (SSM Parameter Store)
+        if: ${{ steps.app_config.outputs.deployment_type == 'ssm' }}
+        env:
+          VERSION_TAG: ${{ github.event.inputs.version }}
+        run: |
+          echo "Rolling back prod to $VERSION_TAG with SSM..."
+          npx frigg deploy --stage=prod --verbose --use-ssm
+
+      - name: Run Database Migrations (via Lambda)
+        if: ${{ github.event.inputs.run_migrations == 'true' }}
+        env:
+          BASE_URL: ${{ secrets.BASE_URL }}
+          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
+        run: |
+          echo "Triggering database migrations via deployed Lambda..."
+
+          BASE_URL=$(echo "$BASE_URL" | xargs)
+          ADMIN_API_KEY=$(echo "$ADMIN_API_KEY" | xargs)
+
+          if [ -z "$BASE_URL" ]; then
+            echo "❌ ERROR: BASE_URL secret is empty or not set"
+            exit 1
+          fi
+
+          if [ -z "$ADMIN_API_KEY" ]; then
+            echo "❌ ERROR: ADMIN_API_KEY secret is empty or not set"
+            exit 1
+          fi
+
+          echo "✓ BASE_URL configured (${#BASE_URL} chars)"
+          echo "✓ ADMIN_API_KEY configured (${#ADMIN_API_KEY} chars)"
+
+          set +e
+          RESPONSE=$(curl -s -X POST "${BASE_URL}/db-migrate" \
+            -H "Content-Type: application/json" \
+            -H "x-frigg-admin-api-key: ${ADMIN_API_KEY}" \
+            -d '{"dbType": "postgresql", "stage": "prod"}' 2>&1)
+          CURL_EXIT_CODE=$?
+          set -e
+
+          if [ $CURL_EXIT_CODE -ne 0 ]; then
+            echo "❌ ERROR: curl command failed with exit code $CURL_EXIT_CODE"
+            echo "Response: $RESPONSE"
+            exit 1
+          fi
+
+          echo "Migration trigger response: $RESPONSE"
+
+          PROCESS_ID=$(echo $RESPONSE | jq -r '.processId // empty')
+
+          if [ -z "$PROCESS_ID" ]; then
+            echo "⚠️ Could not get process ID. Migration may have failed to start."
+            echo "Response: $RESPONSE"
+            exit 0
+          fi
+
+          echo "Migration started with process ID: $PROCESS_ID"
+
+          for i in {1..30}; do
+            sleep 10
+            STATUS=$(curl -s "${BASE_URL}/db-migrate/${PROCESS_ID}" \
+              -H "x-frigg-admin-api-key: ${ADMIN_API_KEY}")
+
+            STATE=$(echo $STATUS | jq -r '.state // empty')
+            echo "Migration status: $STATE"
+
+            if [ "$STATE" = "COMPLETED" ]; then
+              echo "✅ Database migrations completed successfully"
+              exit 0
+            elif [ "$STATE" = "FAILED" ]; then
+              echo "❌ Database migrations failed"
+              echo $STATUS | jq .
+              exit 1
+            fi
+          done
+
+          echo "❌ Migration timed out - check status manually"
+          exit 1
+
+      - name: Rollback Summary
+        env:
+          VERSION_TAG: ${{ github.event.inputs.version }}
+        run: |
+          echo "## Prod Rollback Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Action**: Rollback" >> $GITHUB_STEP_SUMMARY
+          echo "- **Stage**: prod" >> $GITHUB_STEP_SUMMARY
+          echo "- **Rolled back to**: $VERSION_TAG" >> $GITHUB_STEP_SUMMARY
+          echo "- **Region**: ${{ secrets.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Migrations**: ${{ github.event.inputs.run_migrations == 'true' && 'Executed' || 'Skipped' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Triggered by**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY

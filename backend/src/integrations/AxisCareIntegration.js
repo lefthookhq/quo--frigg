@@ -1618,9 +1618,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
                 : 'client';
 
             const prefixPattern = VALID_TAG_TYPES.join('|');
-            const prefixRegex = new RegExp(
-                `^(?:${prefixPattern})-(\\d+)$`,
-            );
+            const prefixRegex = new RegExp(`^(?:${prefixPattern})-(\\d+)$`);
             const parseEntityId = (contactId) => {
                 if (!contactId) return NaN;
                 const str = String(contactId);
@@ -1631,8 +1629,7 @@ class AxisCareIntegration extends BaseCRMIntegration {
 
             const entityId = parseEntityId(activity.contactId);
 
-            const tags =
-                entityId > 0 ? [{ type: tagType, entityId }] : [];
+            const tags = entityId > 0 ? [{ type: tagType, entityId }] : [];
 
             const callLogData = {
                 callerName:
@@ -2489,18 +2486,14 @@ class AxisCareIntegration extends BaseCRMIntegration {
                         caregiverIds: ids.join(','),
                         limit: ids.length,
                     });
-                    persons = Object.values(
-                        response.results?.caregivers || {},
-                    );
+                    persons = Object.values(response.results?.caregivers || {});
                     break;
                 case 'Applicant':
                     response = await this.axisCare.api.listApplicants({
                         applicantIds: ids.join(','),
                         limit: ids.length,
                     });
-                    persons = Object.values(
-                        response.results?.applicants || {},
-                    );
+                    persons = Object.values(response.results?.applicants || {});
                     break;
                 default:
                     response = await this.axisCare.api.listClients({

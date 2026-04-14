@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Version & Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js with Cache
+        uses: ./.github/actions/setup-node-with-cache
+        with:
+          working-directory: .
+
+      - name: Create Release PR or Tag
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          version: npx changeset version
+          publish: npx changeset tag
+          commit: "chore(release): version packages [skip ci]"
+          title: "chore(release): version packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Releases from new tags
+        if: steps.changesets.outputs.published == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PACKAGES='${{ steps.changesets.outputs.publishedPackages }}'
+          echo "$PACKAGES" | jq -c '.[]' | while read -r pkg; do
+            NAME=$(echo "$pkg" | jq -r '.name')
+            VERSION=$(echo "$pkg" | jq -r '.version')
+            TAG="${NAME}@${VERSION}"
+            # For single-package repos the tag is just the version
+            if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+              TAG="v${VERSION}"
+            fi
+            echo "Creating GitHub Release for $TAG"
+            gh release create "$TAG" --generate-notes || echo "Release for $TAG may already exist"
+          done
