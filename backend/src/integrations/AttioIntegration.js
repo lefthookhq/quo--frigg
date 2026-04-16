@@ -1619,15 +1619,6 @@ class AttioIntegration extends BaseCRMIntegration {
      */
     async _handleAttioWebhook(data) {
         const { body, headers, integrationId } = data;
-        console.log(
-            `[Attio Webhook: ${integrationId}] data:`,
-            JSON.stringify(data, null, 2),
-        );
-        console.log(
-            `[Attio Webhook: ${integrationId}] Entities currently loaded:`,
-            this.entities,
-        );
-
         const signature = headers['x-attio-signature'];
 
         console.log(
