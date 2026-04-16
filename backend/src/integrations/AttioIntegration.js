@@ -1619,17 +1619,10 @@ class AttioIntegration extends BaseCRMIntegration {
      */
     async _handleAttioWebhook(data) {
         const { body, headers, integrationId } = data;
-        console.log('Attio webhook data:', data);
-        console.log('Entites currently loaded:', this.entities);
-        console.log(
-            'Is api key loaded into quo api class? ',
-            !!this.quo.api.API_KEY_VALUE,
-        );
-
         const signature = headers['x-attio-signature'];
 
         console.log(
-            `[Attio Webhook] Processing webhook with ${body.events?.length || 0} event(s)`,
+            `[Attio Webhook: ${integrationId}] Processing webhook with ${body.events?.length || 0} event(s)`,
         );
 
         try {
@@ -1645,15 +1638,17 @@ class AttioIntegration extends BaseCRMIntegration {
 
                 if (!isValid) {
                     console.error(
-                        '[Attio Webhook] Invalid signature - possible security issue!',
+                        `[Attio Webhook: ${integrationId}] Invalid signature - possible security issue!`,
                     );
                     throw new Error('Webhook signature verification failed');
                 }
 
-                console.log('[Attio Webhook] ✓ Signature verified');
+                console.log(
+                    `[Attio Webhook: ${integrationId}] ✓ Signature verified`,
+                );
             } else {
                 console.warn(
-                    '[Attio Webhook] No secret or signature - skipping verification',
+                    `[Attio Webhook: ${integrationId}] No secret or signature - skipping verification`,
                 );
             }
 
@@ -1663,7 +1658,7 @@ class AttioIntegration extends BaseCRMIntegration {
                 body.events.length === 0
             ) {
                 throw new Error(
-                    'Webhook payload missing or empty events array',
+                    `[Attio Webhook: ${integrationId}] Webhook payload missing or empty events array`,
                 );
             }
 
@@ -1672,16 +1667,19 @@ class AttioIntegration extends BaseCRMIntegration {
                 const eventType = event.event_type;
                 const eventId = event.id;
 
-                console.log(`[Attio Webhook] Processing event:`, {
-                    eventType,
-                    recordId: eventId?.record_id,
-                    objectId: eventId?.object_id,
-                    workspaceId: eventId?.workspace_id,
-                });
+                console.log(
+                    `[Attio Webhook: ${integrationId}] Processing event:`,
+                    {
+                        eventType,
+                        recordId: eventId?.record_id,
+                        objectId: eventId?.object_id,
+                        workspaceId: eventId?.workspace_id,
+                    },
+                );
 
                 if (!eventType) {
                     console.warn(
-                        '[Attio Webhook] Event missing event_type, skipping',
+                        `[Attio Webhook: ${integrationId}] Event missing event_type, skipping`,
                     );
                     results.push({
                         success: false,
@@ -1714,7 +1712,7 @@ class AttioIntegration extends BaseCRMIntegration {
                         // Add more event handlers as needed
                         default:
                             console.log(
-                                `[Attio Webhook] Unhandled event type: ${eventType}`,
+                                `[Attio Webhook: ${integrationId}] Unhandled event type: ${eventType}`,
                             );
                             results.push({
                                 success: true,
@@ -1726,7 +1724,7 @@ class AttioIntegration extends BaseCRMIntegration {
                     }
 
                     console.log(
-                        `[Attio Webhook] ✓ Successfully processed ${eventType}`,
+                        `[Attio Webhook: ${integrationId}] ✓ Successfully processed ${eventType}`,
                     );
 
                     results.push({
@@ -1736,7 +1734,7 @@ class AttioIntegration extends BaseCRMIntegration {
                     });
                 } catch (eventError) {
                     console.error(
-                        `[Attio Webhook] Error processing event ${eventType}:`,
+                        `[Attio Webhook: ${integrationId}] Error processing event ${eventType}:`,
                         eventError,
                     );
                     throw eventError;
@@ -1750,7 +1748,10 @@ class AttioIntegration extends BaseCRMIntegration {
                 results,
             };
         } catch (error) {
-            console.error('[Attio Webhook] Processing error:', error);
+            console.error(
+                `[Attio Webhook: ${integrationId}] Processing error:`,
+                error,
+            );
 
             if (this.id) {
                 try {
@@ -1763,7 +1764,7 @@ class AttioIntegration extends BaseCRMIntegration {
                     );
                 } catch (msgError) {
                     console.error(
-                        '[Attio Webhook] Failed to record error message:',
+                        `[Attio Webhook: ${integrationId}] Failed to record error message:`,
                         msgError,
                     );
                 }
@@ -1785,7 +1786,7 @@ class AttioIntegration extends BaseCRMIntegration {
         const { body, headers } = data;
         const eventType = body.type; // "call.completed", "message.received", etc.
 
-        console.log(`[Quo Webhook] Processing event: ${eventType}`);
+        console.log(`[Quo Webhook: ${this.id}] Processing event: ${eventType}`);
 
         try {
             // TODO(quo-webhooks): Re-enable signature verification once Quo/OpenPhone
@@ -1810,7 +1811,9 @@ class AttioIntegration extends BaseCRMIntegration {
             ) {
                 result = await this._handleQuoMessageEvent(body);
             } else {
-                console.warn(`[Quo Webhook] Unknown event type: ${eventType}`);
+                console.warn(
+                    `[Quo Webhook: ${this.id}] Unknown event type: ${eventType}`,
+                );
                 return { success: true, skipped: true, eventType };
             }
 
@@ -1821,7 +1824,7 @@ class AttioIntegration extends BaseCRMIntegration {
                 result,
             };
         } catch (error) {
-            console.error('[Quo Webhook] Processing error:', error);
+            console.error(`[Quo Webhook: ${this.id}] Processing error:`, error);
 
             if (
                 eventType === QuoWebhookEvents.MESSAGE_RECEIVED ||
