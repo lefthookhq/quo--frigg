@@ -34,13 +34,13 @@ If unsure, add a patch. Over-counted bumps are harmless; missed ones aren't.
 
 ```markdown
 ---
-'quo-integrations-frigg-backend': patch
+'quo-integrations-frigg': patch
 ---
 
 <1–3 short paragraphs>
 ```
 
-Package key must be quoted and match `backend/package.json` `name` exactly.
+Package key must be quoted and match the **root** `package.json` `name` exactly (`quo-integrations-frigg`). The repo is set up as a single-package repo — Changesets does not see `backend/` as a separate package because there's no `workspaces` field in root `package.json`.
 
 ## Body — user-visible effect first
 
