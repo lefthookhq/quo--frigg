@@ -1,4 +1,5 @@
 const ZohoCRMIntegration = require('../src/integrations/ZohoCRMIntegration');
+const { HaltError } = require('@friggframework/core');
 
 describe('ZohoCRMIntegration - Notification Renewal', () => {
     let integration;
@@ -81,10 +82,10 @@ describe('ZohoCRMIntegration - Notification Renewal', () => {
             expect(result.watch[0].status).toBe('success');
         });
 
-        it('falls back to enableNotification when the message is sanitized but statusCode is 400 (prod FetchError)', async () => {
-            // In non-dev stages Frigg's FetchError strips the response body, so the
-            // matcher can't rely on the message text. We still fire the fallback
-            // because Zoho's PATCH /actions/watch only 400s for NOT_SUBSCRIBED/schema.
+        it('does NOT fall back on a generic 400 without NOT_SUBSCRIBED (retries instead)', async () => {
+            // Guard against over-broad detection: a 400 caused by something other
+            // than NOT_SUBSCRIBED (e.g. schema or transient) must still go through
+            // the 3× retry path and not trigger the POST fallback.
             const sanitizedError = new Error(
                 'An error ocurred while fetching an external resource.\n' +
                     'PATCH https://www.zohoapis.com/crm/v8/actions/watch\n' +
@@ -94,23 +95,14 @@ describe('ZohoCRMIntegration - Notification Renewal', () => {
             sanitizedError.statusCode = 400;
             sanitizedError.response = { status: 400 };
 
-            mockZohoApi.updateNotification.mockRejectedValueOnce(
-                sanitizedError,
-            );
-            mockZohoApi.enableNotification.mockResolvedValueOnce({
-                watch: [
-                    { channel_id: renewalParams.channelId, status: 'success' },
-                ],
-            });
+            mockZohoApi.updateNotification.mockRejectedValue(sanitizedError);
 
-            const result =
-                await integration._renewZohoNotificationWithRetry(
-                    renewalParams,
-                );
+            await expect(
+                integration._renewZohoNotificationWithRetry(renewalParams),
+            ).rejects.toThrow(/400 Bad Request/);
 
-            expect(mockZohoApi.updateNotification).toHaveBeenCalledTimes(1);
-            expect(mockZohoApi.enableNotification).toHaveBeenCalledTimes(1);
-            expect(result.watch[0].status).toBe('success');
+            expect(mockZohoApi.updateNotification).toHaveBeenCalledTimes(3);
+            expect(mockZohoApi.enableNotification).not.toHaveBeenCalled();
         });
 
         it('still retries + throws on non-NOT_SUBSCRIBED errors (no fallback)', async () => {
@@ -130,7 +122,42 @@ describe('ZohoCRMIntegration - Notification Renewal', () => {
             expect(mockZohoApi.enableNotification).not.toHaveBeenCalled();
         });
 
-        it('throws when enableNotification fallback itself returns a non-success watch', async () => {
+        it('propagates network/5xx errors from enableNotification fallback unchanged so Frigg can retry', async () => {
+            // When the POST fallback itself fails transiently (5xx, network),
+            // the FetchError must propagate as-is — statusCode preserved, not
+            // wrapped — so Frigg's retry/isHaltError logic can classify it.
+            mockZohoApi.updateNotification.mockRejectedValueOnce(
+                buildNotSubscribedFetchError(),
+            );
+
+            const transportError = new Error(
+                'An error ocurred while fetching an external resource.\n' +
+                    'POST https://www.zohoapis.com/crm/v8/actions/watch\n' +
+                    '503 Service Unavailable',
+            );
+            transportError.name = 'FetchError';
+            transportError.statusCode = 503;
+            transportError.response = { status: 503 };
+            mockZohoApi.enableNotification.mockRejectedValueOnce(
+                transportError,
+            );
+
+            let caught;
+            try {
+                await integration._renewZohoNotificationWithRetry(
+                    renewalParams,
+                );
+            } catch (err) {
+                caught = err;
+            }
+
+            expect(caught).toBe(transportError);
+            expect(caught.statusCode).toBe(503);
+            expect(caught.isHaltError).toBeUndefined();
+            expect(mockZohoApi.enableNotification).toHaveBeenCalledTimes(1);
+        });
+
+        it('throws HaltError when enableNotification fallback returns a non-success watch (avoids pointless DLQ retries)', async () => {
             mockZohoApi.updateNotification.mockRejectedValueOnce(
                 buildNotSubscribedFetchError(),
             );
@@ -138,9 +165,18 @@ describe('ZohoCRMIntegration - Notification Renewal', () => {
                 watch: [{ status: 'error', code: 'SOMETHING_ELSE' }],
             });
 
-            await expect(
-                integration._renewZohoNotificationWithRetry(renewalParams),
-            ).rejects.toThrow(/re-subscription failed/i);
+            let caught;
+            try {
+                await integration._renewZohoNotificationWithRetry(
+                    renewalParams,
+                );
+            } catch (err) {
+                caught = err;
+            }
+
+            expect(caught).toBeInstanceOf(HaltError);
+            expect(caught.isHaltError).toBe(true);
+            expect(caught.message).toMatch(/re-subscription failed/i);
             expect(mockZohoApi.enableNotification).toHaveBeenCalledTimes(1);
         });
     });

@@ -4,6 +4,7 @@ const zohoCrm = require('@friggframework/api-module-zoho-crm');
 const {
     createFriggCommands,
     createSchedulerCommands,
+    HaltError,
 } = require('@friggframework/core');
 const CallSummaryEnrichmentService = require('../base/services/CallSummaryEnrichmentService');
 const QuoWebhookEventProcessor = require('../base/services/QuoWebhookEventProcessor');
@@ -955,15 +956,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
     _isNotSubscribedError(error) {
         if (!error) return false;
         const message = typeof error.message === 'string' ? error.message : '';
-        if (message.includes('NOT_SUBSCRIBED')) return true;
-        // In non-dev stages Frigg's FetchError strips the response body from the
-        // message, so the NOT_SUBSCRIBED string is gone. Zoho's PATCH /actions/watch
-        // only returns 400 for NOT_SUBSCRIBED or malformed payload; our payload is
-        // built programmatically by the api-module, so a 400 on the renewal path is
-        // treated as NOT_SUBSCRIBED and the POST fallback will either recover or
-        // surface the real error.
-        const statusCode = error.statusCode ?? error.response?.status;
-        return statusCode === 400;
+        return message.includes('NOT_SUBSCRIBED');
     }
 
     async _reSubscribeNotification(watchConfig) {
@@ -986,7 +979,12 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             response.watch.length === 0 ||
             response.watch[0].status !== 'success'
         ) {
-            throw new Error(
+            // Zoho returned 200 but refused the subscription (e.g. channel-limit,
+            // invalid config). Retrying the exact same POST will give the same
+            // response, so halt the SQS message instead of burning 3 retries + DLQ.
+            // Transport-level failures (FetchError from enableNotification above)
+            // still propagate unchanged so transient 5xx/network errors retry.
+            throw new HaltError(
                 `Notification re-subscription failed: ${JSON.stringify(response)}`,
             );
         }
