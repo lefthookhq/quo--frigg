@@ -967,7 +967,19 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
     }
 
     async _reSubscribeNotification(watchConfig) {
-        const response = await this.zoho.api.enableNotification(watchConfig);
+        // Match the initial subscription payload (setupZohoNotifications) so the
+        // re-created channel keeps field-level diff data and ignores related-action
+        // notifications. PATCH preserves these server-side on renewal; POST creates
+        // a fresh channel and would otherwise fall back to Zoho defaults.
+        const enableConfig = {
+            watch: watchConfig.watch.map((item) => ({
+                ...item,
+                return_affected_field_values: true,
+                notify_on_related_action: false,
+            })),
+        };
+
+        const response = await this.zoho.api.enableNotification(enableConfig);
 
         if (
             !response?.watch ||

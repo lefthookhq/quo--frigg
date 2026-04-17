@@ -70,6 +70,10 @@ describe('ZohoCRMIntegration - Notification Renewal', () => {
                             events: renewalParams.events,
                             token: renewalParams.token,
                             notify_url: renewalParams.notifyUrl,
+                            // Must match the initial subscription so webhook payloads
+                            // keep field-level diff data on a re-created channel.
+                            return_affected_field_values: true,
+                            notify_on_related_action: false,
                         }),
                     ],
                 }),
