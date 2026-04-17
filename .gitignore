@@ -44,13 +44,19 @@ backend/layers/
 backend/security/
 postgres-tunnel.sh
 
-# Claude AI files
-*.claude
+# Claude AI files — everything under .claude is ignored except hook scripts,
+# shared skills, and the team-shared settings.json (which wires up the hooks).
+# Personal settings/permissions live in .claude/settings.local.json.
 *.claude-flow
 .claude-flow/
 backend/.claude/
-.claude/
 /backend/.claude-flow
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
+!.claude/hooks/**
+!.claude/skills/
+!.claude/skills/**
 backend/.env.local.local
 backend/.env.development
 backend/.env.production
