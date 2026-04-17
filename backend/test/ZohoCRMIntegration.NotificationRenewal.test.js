@@ -94,12 +94,15 @@ describe('ZohoCRMIntegration - Notification Renewal', () => {
                 sanitizedError,
             );
             mockZohoApi.enableNotification.mockResolvedValueOnce({
-                watch: [{ channel_id: renewalParams.channelId, status: 'success' }],
+                watch: [
+                    { channel_id: renewalParams.channelId, status: 'success' },
+                ],
             });
 
-            const result = await integration._renewZohoNotificationWithRetry(
-                renewalParams,
-            );
+            const result =
+                await integration._renewZohoNotificationWithRetry(
+                    renewalParams,
+                );
 
             expect(mockZohoApi.updateNotification).toHaveBeenCalledTimes(1);
             expect(mockZohoApi.enableNotification).toHaveBeenCalledTimes(1);
