@@ -4,6 +4,7 @@ const zohoCrm = require('@friggframework/api-module-zoho-crm');
 const {
     createFriggCommands,
     createSchedulerCommands,
+    HaltError,
 } = require('@friggframework/core');
 const CallSummaryEnrichmentService = require('../base/services/CallSummaryEnrichmentService');
 const QuoWebhookEventProcessor = require('../base/services/QuoWebhookEventProcessor');
@@ -881,30 +882,29 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         notifyUrl,
     }) {
         const maxRetries = 3;
+        const watchConfig = {
+            watch: [
+                {
+                    channel_id: channelId,
+                    events: events,
+                    channel_expiry: this._formatDateTimeForZoho(
+                        expiry.toISOString(),
+                    ),
+                    token: token,
+                    notify_url: notifyUrl,
+                },
+            ],
+        };
         let lastError;
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-                const updateConfig = {
-                    watch: [
-                        {
-                            channel_id: channelId,
-                            events: events,
-                            channel_expiry: this._formatDateTimeForZoho(
-                                expiry.toISOString(),
-                            ),
-                            token: token,
-                            notify_url: notifyUrl,
-                        },
-                    ],
-                };
-
                 console.log(
                     `[Zoho CRM] Renewing notification channel ${channelId} (attempt ${attempt}/${maxRetries})`,
                 );
 
                 const response =
-                    await this.zoho.api.updateNotification(updateConfig);
+                    await this.zoho.api.updateNotification(watchConfig);
 
                 if (
                     !response?.watch ||
@@ -922,6 +922,17 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 return response;
             } catch (error) {
                 lastError = error;
+
+                // Zoho GCs expired or orphaned channels server-side. PATCH then
+                // returns 400 NOT_SUBSCRIBED and renewal would loop forever.
+                // Recreate the subscription via POST so the integration recovers.
+                if (this._isNotSubscribedError(error)) {
+                    console.warn(
+                        `[Zoho CRM] Notification channel ${channelId} reported NOT_SUBSCRIBED — falling back to enableNotification to re-create the subscription`,
+                    );
+                    return await this._reSubscribeNotification(watchConfig);
+                }
+
                 console.warn(
                     `[Zoho CRM] Renewal attempt ${attempt}/${maxRetries} failed: ${error.message}`,
                 );
@@ -940,6 +951,48 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         }
 
         throw lastError;
+    }
+
+    _isNotSubscribedError(error) {
+        if (!error) return false;
+        const message = typeof error.message === 'string' ? error.message : '';
+        return message.includes('NOT_SUBSCRIBED');
+    }
+
+    async _reSubscribeNotification(watchConfig) {
+        // Match the initial subscription payload (setupZohoNotifications) so the
+        // re-created channel keeps field-level diff data and ignores related-action
+        // notifications. PATCH preserves these server-side on renewal; POST creates
+        // a fresh channel and would otherwise fall back to Zoho defaults.
+        const enableConfig = {
+            watch: watchConfig.watch.map((item) => ({
+                ...item,
+                return_affected_field_values: true,
+                notify_on_related_action: false,
+            })),
+        };
+
+        const response = await this.zoho.api.enableNotification(enableConfig);
+
+        if (
+            !response?.watch ||
+            response.watch.length === 0 ||
+            response.watch[0].status !== 'success'
+        ) {
+            // Zoho returned 200 but refused the subscription (e.g. channel-limit,
+            // invalid config). Retrying the exact same POST will give the same
+            // response, so halt the SQS message instead of burning 3 retries + DLQ.
+            // Transport-level failures (FetchError from enableNotification above)
+            // still propagate unchanged so transient 5xx/network errors retry.
+            throw new HaltError(
+                `Notification re-subscription failed: ${JSON.stringify(response)}`,
+            );
+        }
+
+        console.log(
+            `[Zoho CRM] ✓ Notification channel re-subscribed successfully`,
+        );
+        return response;
     }
 
     /**
