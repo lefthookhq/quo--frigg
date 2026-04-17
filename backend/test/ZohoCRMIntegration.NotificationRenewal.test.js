@@ -77,6 +77,35 @@ describe('ZohoCRMIntegration - Notification Renewal', () => {
             expect(result.watch[0].status).toBe('success');
         });
 
+        it('falls back to enableNotification when the message is sanitized but statusCode is 400 (prod FetchError)', async () => {
+            // In non-dev stages Frigg's FetchError strips the response body, so the
+            // matcher can't rely on the message text. We still fire the fallback
+            // because Zoho's PATCH /actions/watch only 400s for NOT_SUBSCRIBED/schema.
+            const sanitizedError = new Error(
+                'An error ocurred while fetching an external resource.\n' +
+                    'PATCH https://www.zohoapis.com/crm/v8/actions/watch\n' +
+                    '400 Bad Request',
+            );
+            sanitizedError.name = 'FetchError';
+            sanitizedError.statusCode = 400;
+            sanitizedError.response = { status: 400 };
+
+            mockZohoApi.updateNotification.mockRejectedValueOnce(
+                sanitizedError,
+            );
+            mockZohoApi.enableNotification.mockResolvedValueOnce({
+                watch: [{ channel_id: renewalParams.channelId, status: 'success' }],
+            });
+
+            const result = await integration._renewZohoNotificationWithRetry(
+                renewalParams,
+            );
+
+            expect(mockZohoApi.updateNotification).toHaveBeenCalledTimes(1);
+            expect(mockZohoApi.enableNotification).toHaveBeenCalledTimes(1);
+            expect(result.watch[0].status).toBe('success');
+        });
+
         it('still retries + throws on non-NOT_SUBSCRIBED errors (no fallback)', async () => {
             const transientError = new Error(
                 'An error ocurred while fetching an external resource.\n500 Internal Server Error',
@@ -104,7 +133,8 @@ describe('ZohoCRMIntegration - Notification Renewal', () => {
 
             await expect(
                 integration._renewZohoNotificationWithRetry(renewalParams),
-            ).rejects.toThrow(/re-subscription failed|renewal failed/i);
+            ).rejects.toThrow(/re-subscription failed/i);
+            expect(mockZohoApi.enableNotification).toHaveBeenCalledTimes(1);
         });
     });
 });

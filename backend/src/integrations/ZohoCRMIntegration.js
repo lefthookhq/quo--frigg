@@ -955,7 +955,15 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
     _isNotSubscribedError(error) {
         if (!error) return false;
         const message = typeof error.message === 'string' ? error.message : '';
-        return message.includes('NOT_SUBSCRIBED');
+        if (message.includes('NOT_SUBSCRIBED')) return true;
+        // In non-dev stages Frigg's FetchError strips the response body from the
+        // message, so the NOT_SUBSCRIBED string is gone. Zoho's PATCH /actions/watch
+        // only returns 400 for NOT_SUBSCRIBED or malformed payload; our payload is
+        // built programmatically by the api-module, so a 400 on the renewal path is
+        // treated as NOT_SUBSCRIBED and the POST fallback will either recover or
+        // surface the real error.
+        const statusCode = error.statusCode ?? error.response?.status;
+        return statusCode === 400;
     }
 
     async _reSubscribeNotification(watchConfig) {
