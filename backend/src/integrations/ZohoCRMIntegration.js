@@ -881,30 +881,29 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         notifyUrl,
     }) {
         const maxRetries = 3;
+        const watchConfig = {
+            watch: [
+                {
+                    channel_id: channelId,
+                    events: events,
+                    channel_expiry: this._formatDateTimeForZoho(
+                        expiry.toISOString(),
+                    ),
+                    token: token,
+                    notify_url: notifyUrl,
+                },
+            ],
+        };
         let lastError;
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-                const updateConfig = {
-                    watch: [
-                        {
-                            channel_id: channelId,
-                            events: events,
-                            channel_expiry: this._formatDateTimeForZoho(
-                                expiry.toISOString(),
-                            ),
-                            token: token,
-                            notify_url: notifyUrl,
-                        },
-                    ],
-                };
-
                 console.log(
                     `[Zoho CRM] Renewing notification channel ${channelId} (attempt ${attempt}/${maxRetries})`,
                 );
 
                 const response =
-                    await this.zoho.api.updateNotification(updateConfig);
+                    await this.zoho.api.updateNotification(watchConfig);
 
                 if (
                     !response?.watch ||
@@ -922,6 +921,17 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 return response;
             } catch (error) {
                 lastError = error;
+
+                // Zoho GCs expired or orphaned channels server-side. PATCH then
+                // returns 400 NOT_SUBSCRIBED and renewal would loop forever.
+                // Recreate the subscription via POST so the integration recovers.
+                if (this._isNotSubscribedError(error)) {
+                    console.warn(
+                        `[Zoho CRM] Notification channel ${channelId} reported NOT_SUBSCRIBED — falling back to enableNotification to re-create the subscription`,
+                    );
+                    return await this._reSubscribeNotification(watchConfig);
+                }
+
                 console.warn(
                     `[Zoho CRM] Renewal attempt ${attempt}/${maxRetries} failed: ${error.message}`,
                 );
@@ -940,6 +950,31 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         }
 
         throw lastError;
+    }
+
+    _isNotSubscribedError(error) {
+        if (!error) return false;
+        const message = typeof error.message === 'string' ? error.message : '';
+        return message.includes('NOT_SUBSCRIBED');
+    }
+
+    async _reSubscribeNotification(watchConfig) {
+        const response = await this.zoho.api.enableNotification(watchConfig);
+
+        if (
+            !response?.watch ||
+            response.watch.length === 0 ||
+            response.watch[0].status !== 'success'
+        ) {
+            throw new Error(
+                `Notification re-subscription failed: ${JSON.stringify(response)}`,
+            );
+        }
+
+        console.log(
+            `[Zoho CRM] ✓ Notification channel re-subscribed successfully`,
+        );
+        return response;
     }
 
     /**
