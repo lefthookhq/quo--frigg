@@ -49,6 +49,20 @@ if [ -n "$added" ]; then
     exit 0
 fi
 
+# Allow PRs that only touch .changeset/ or .claude/ (release-process / tooling-only
+# changes — e.g. fixing the changeset config, removing an orphaned empty changeset,
+# editing the hook itself). These PRs legitimately have no deployable code change.
+all_files=$(git diff --name-only "origin/$base"...HEAD 2>/dev/null || true)
+non_meta=$(printf '%s\n' "$all_files" \
+    | grep -vE '^\.changeset/' \
+    | grep -vE '^\.claude/' \
+    | grep -v '^$' \
+    || true)
+
+if [ -z "$non_meta" ] && [ -n "$all_files" ]; then
+    exit 0
+fi
+
 cat <<'MSG' >&2
 Pre-PR check blocked: no changeset file added on this branch.
 
