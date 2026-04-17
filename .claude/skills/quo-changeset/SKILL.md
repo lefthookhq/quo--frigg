@@ -42,6 +42,8 @@ If unsure, add a patch. Over-counted bumps are harmless; missed ones aren't.
 
 Package key must be quoted and match the **root** `package.json` `name` exactly (`quo-integrations-frigg`). The repo is set up as a single-package repo — Changesets does not see `backend/` as a separate package because there's no `workspaces` field in root `package.json`.
 
+The root package is `"private": true`, so `.changeset/config.json` sets `privatePackages: { version: true, tag: true }`. Without that flag, `changeset tag` silently skips tagging private packages — the version bump + CHANGELOG land on main but no `v{X.Y.Z}` tag is created, and the Release step looks successful while producing nothing.
+
 ## Body — user-visible effect first
 
 Aim for: **what changed** (observable behavior, not implementation) → **why/context** (include integration IDs, endpoints, prod observation if that triggered it) → **scope** (which integrations/customers, under what conditions).
