@@ -1127,6 +1127,7 @@ class BaseCRMIntegration extends IntegrationBase {
      * This method implements the lookup-then-create/update pattern:
      * 1. Look up contact by externalId using listContacts
      * 2. If found, update using updateFriggContact
+     *    2a. On 404 (stale/deleted contact), fall back to create
      * 3. If not found, create using createFriggContact
      * 4. On 409 Conflict, attempt recovery via _recoverFrom409Conflict
      * 5. Store mapping by phone number

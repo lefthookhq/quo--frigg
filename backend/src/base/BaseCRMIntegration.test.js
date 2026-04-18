@@ -1765,6 +1765,7 @@ describe('BaseCRMIntegration', () => {
             expect(result1.quoContactId).toBe('quo-created');
             expect(result2.quoContactId).toBe('quo-created');
         });
+
         it('should fall back to create when update returns 404 (stale contact)', async () => {
             const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
 
