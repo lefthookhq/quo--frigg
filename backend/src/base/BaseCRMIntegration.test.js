@@ -1765,6 +1765,137 @@ describe('BaseCRMIntegration', () => {
             expect(result1.quoContactId).toBe('quo-created');
             expect(result2.quoContactId).toBe('quo-created');
         });
+        it('should fall back to create when update returns 404 (stale contact)', async () => {
+            const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+
+            const quoContact = {
+                externalId: 'crm-stale',
+                defaultFields: {
+                    firstName: 'Stale',
+                    lastName: 'Contact',
+                    phoneNumbers: [{ name: 'mobile', value: '+15557770000' }],
+                },
+            };
+
+            const notFoundError = new Error('Not Found');
+            notFoundError.statusCode = 404;
+
+            integration.quo.api.listContacts.mockResolvedValue({
+                data: [{ id: 'stale-quo-id', externalId: 'crm-stale' }],
+            });
+            integration.quo.api.updateFriggContact.mockRejectedValue(
+                notFoundError,
+            );
+            integration.quo.api.createFriggContact.mockResolvedValue({
+                data: {
+                    id: 'new-quo-id',
+                    externalId: 'crm-stale',
+                    defaultFields: {
+                        phoneNumbers: [
+                            { name: 'mobile', value: '+15557770000' },
+                        ],
+                    },
+                },
+            });
+
+            const result = await integration.upsertContactToQuo(quoContact);
+
+            expect(integration.quo.api.updateFriggContact).toHaveBeenCalledWith(
+                'stale-quo-id',
+                quoContact,
+            );
+            expect(
+                integration.quo.api.createFriggContact,
+            ).toHaveBeenCalledWith(quoContact);
+            expect(result).toEqual({
+                action: 'created',
+                quoContactId: 'new-quo-id',
+                externalId: 'crm-stale',
+            });
+            expect(consoleSpy).toHaveBeenCalledWith(
+                expect.stringContaining('404 on update'),
+                expect.anything(),
+            );
+            consoleSpy.mockRestore();
+        });
+
+        it('should handle 404 on update followed by 409 on create (race condition)', async () => {
+            const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+
+            const quoContact = {
+                externalId: 'crm-404-then-409',
+                defaultFields: {
+                    firstName: 'DoubleConflict',
+                    phoneNumbers: [{ name: 'mobile', value: '+15557771111' }],
+                },
+            };
+
+            const notFoundError = new Error('Not Found');
+            notFoundError.statusCode = 404;
+            const conflictError = new Error('Conflict');
+            conflictError.statusCode = 409;
+
+            integration.quo.api.listContacts
+                .mockResolvedValueOnce({
+                    data: [
+                        { id: 'stale-id', externalId: 'crm-404-then-409' },
+                    ],
+                })
+                .mockResolvedValueOnce({
+                    data: [
+                        { id: 'recreated-id', externalId: 'crm-404-then-409' },
+                    ],
+                });
+            integration.quo.api.updateFriggContact
+                .mockRejectedValueOnce(notFoundError)
+                .mockResolvedValueOnce({
+                    data: {
+                        id: 'recreated-id',
+                        externalId: 'crm-404-then-409',
+                        defaultFields: {
+                            phoneNumbers: [
+                                { name: 'mobile', value: '+15557771111' },
+                            ],
+                        },
+                    },
+                });
+            integration.quo.api.createFriggContact.mockRejectedValue(
+                conflictError,
+            );
+
+            const result = await integration.upsertContactToQuo(quoContact);
+
+            expect(result).toEqual({
+                action: 'updated',
+                quoContactId: 'recreated-id',
+                externalId: 'crm-404-then-409',
+            });
+            consoleSpy.mockRestore();
+        });
+
+        it('should still throw non-404 update errors', async () => {
+            const quoContact = {
+                externalId: 'crm-500-update',
+                defaultFields: { firstName: 'ServerError' },
+            };
+
+            const serverError = new Error('Internal Server Error');
+            serverError.statusCode = 500;
+
+            integration.quo.api.listContacts.mockResolvedValue({
+                data: [{ id: 'existing-id', externalId: 'crm-500-update' }],
+            });
+            integration.quo.api.updateFriggContact.mockRejectedValue(
+                serverError,
+            );
+
+            await expect(
+                integration.upsertContactToQuo(quoContact),
+            ).rejects.toThrow('Internal Server Error');
+            expect(
+                integration.quo.api.createFriggContact,
+            ).not.toHaveBeenCalled();
+        });
     });
 
     describe('onUpdate - Configuration Updates', () => {
