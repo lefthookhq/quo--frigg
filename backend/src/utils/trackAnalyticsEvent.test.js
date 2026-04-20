@@ -145,4 +145,43 @@ describe('trackAnalyticsEvent', () => {
 
         jest.useRealTimers();
     });
+
+    it('should not cause unhandled rejection when analytics rejects after timeout', async () => {
+        jest.useFakeTimers();
+
+        const unhandledRejections = [];
+        const handler = (reason) => unhandledRejections.push(reason);
+        process.on('unhandledRejection', handler);
+
+        const integration = createMockIntegration();
+        integration.quo.api.sendAnalyticsEvent.mockImplementation(
+            () =>
+                new Promise((_, reject) => {
+                    setTimeout(
+                        () => reject(new Error('502 Bad Gateway')),
+                        10_000
+                    );
+                })
+        );
+
+        const trackPromise = trackAnalyticsEvent(integration, 'ContactUpdated');
+
+        // Timeout fires at 5s
+        await jest.advanceTimersByTimeAsync(5_000);
+        await trackPromise;
+
+        expect(warnSpy).toHaveBeenCalledWith(
+            expect.stringContaining('timed out')
+        );
+
+        // Analytics call rejects at 10s (after timeout already won)
+        await jest.advanceTimersByTimeAsync(5_000);
+        // Flush microtasks so the late rejection propagates
+        await jest.advanceTimersByTimeAsync(0);
+
+        expect(unhandledRejections).toHaveLength(0);
+
+        process.removeListener('unhandledRejection', handler);
+        jest.useRealTimers();
+    });
 });

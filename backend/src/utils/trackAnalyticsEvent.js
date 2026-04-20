@@ -43,6 +43,9 @@ async function trackAnalyticsEvent(integration, event, data = {}) {
             data,
         });
 
+        // Swallow late rejections if the timeout wins the race
+        analyticsCall.catch(() => {});
+
         let timer;
         const timeout = new Promise((_, reject) => {
             timer = setTimeout(
@@ -59,9 +62,9 @@ async function trackAnalyticsEvent(integration, event, data = {}) {
 
         console.log(`[Analytics][${integrationName}] Tracked ${event}`);
     } catch (error) {
-        const msg = error.message.includes('timed out')
+        const msg = error?.message?.includes('timed out')
             ? `timed out after ${ANALYTICS_TIMEOUT_MS}ms`
-            : error.message;
+            : error?.message || String(error);
         console.warn(
             `[Analytics][${integrationName}] Failed to track ${event}: ${msg}`
         );
