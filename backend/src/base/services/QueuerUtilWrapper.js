@@ -50,6 +50,77 @@ const awsConfigOptions = () => {
 
 const sqs = new SQSClient(awsConfigOptions());
 
+// Best-effort extraction of the logical event/processId/integrationId from a
+// JSON SQS message body. Used only for log correlation — never throws.
+const summarizeMessageBody = (bodyStr) => {
+    try {
+        const parsed = JSON.parse(bodyStr);
+        return {
+            event: parsed?.event,
+            processId: parsed?.data?.processId,
+            integrationId: parsed?.data?.integrationId,
+        };
+    } catch {
+        return {};
+    }
+};
+
+// Inspect SendMessageBatchResult for partial failures and log them.
+//
+// AWS SendMessageBatch can succeed at the HTTP level (2xx) while rejecting
+// individual entries — KMS errors, per-entry throttling, service errors. Callers
+// that don't inspect `result.Failed` silently lose those messages. This was a
+// real production incident in this codebase: cursor=800 FETCH_PERSON_PAGE
+// messages disappeared with no DLQ, no Lambda invocation, no trace. The Frigg
+// framework's queuer-util has the same gap upstream (observability logs added
+// in frigg PR #578) — this mirror makes sure the local wrapper is equally loud.
+const inspectBatchResult = (result, queueUrl, buffer) => {
+    const bufferSize = buffer.length;
+    const failedCount = result?.Failed?.length ?? 0;
+    const successCount = result?.Successful?.length ?? 0;
+
+    const bufferById = new Map(buffer.map((b) => [b.Id, b]));
+
+    if (failedCount > 0) {
+        console.error(
+            `[QueuerUtilWrapper] SendMessageBatch partial failure: ${failedCount}/${bufferSize} failed`,
+            {
+                queueUrl,
+                bufferSize,
+                successCount,
+                failedCount,
+                failed: result.Failed.map((f) => {
+                    const bufEntry = bufferById.get(f.Id);
+                    const summary = bufEntry
+                        ? summarizeMessageBody(bufEntry.MessageBody)
+                        : {};
+                    return {
+                        Id: f.Id,
+                        Code: f.Code,
+                        SenderFault: f.SenderFault,
+                        Message: f.Message,
+                        ...summary,
+                    };
+                }),
+            },
+        );
+    } else if (successCount > 0) {
+        const entries = result.Successful.map((s) => {
+            const bufEntry = bufferById.get(s.Id);
+            const summary = bufEntry
+                ? summarizeMessageBody(bufEntry.MessageBody)
+                : {};
+            return { MessageId: s.MessageId, ...summary };
+        });
+        console.log(
+            `[QueuerUtilWrapper] SendMessageBatch ok: ${successCount}/${bufferSize} to ${queueUrl}`,
+            { entries },
+        );
+    }
+
+    return result;
+};
+
 /**
  * Enhanced QueuerUtil with delay support
  *
@@ -78,7 +149,11 @@ const QueuerUtilWrapper = {
         }
 
         const command = new SendMessageCommand(params);
-        return sqs.send(command);
+        const result = await sqs.send(command);
+        console.log(
+            `[QueuerUtilWrapper] SendMessage ok: MessageId=${result?.MessageId} to ${queueUrl}`,
+        );
+        return result;
     },
 
     /**
@@ -130,7 +205,8 @@ const QueuerUtilWrapper = {
                     Entries: buffer,
                     QueueUrl: queueUrl,
                 });
-                await sqs.send(command);
+                const result = await sqs.send(command);
+                inspectBatchResult(result, queueUrl, buffer);
                 // Clear buffer after successful send
                 buffer.splice(0, buffer.length);
             }
@@ -145,7 +221,8 @@ const QueuerUtilWrapper = {
                 Entries: buffer,
                 QueueUrl: queueUrl,
             });
-            return sqs.send(command);
+            const result = await sqs.send(command);
+            return inspectBatchResult(result, queueUrl, buffer);
         }
 
         // No messages to send
