@@ -1,46 +1,30 @@
-# Stuck CRM-sync chains — cursor=800 SQS message vanishes
+# Stuck CRM-sync chains — SQS messages vanish mid-pagination
 
-**Status:** Active. Workaround: manual SQS re-send of the missing message. Long-term mitigation: watchdog Lambda (not yet built).
+**Status:** Active. **Root cause unconfirmed.** Mitigations: manual SQS re-send (workaround), watchdog Lambda (designed, not built). Observability patches shipped.
 
-**First observed:** 2026-04-20 during Attio integration 800 (Murphy Advisory Solutions) onboarding.
+**First observed:** 2026-04-20 on Attio integration 800 (Murphy Advisory Solutions) onboarding.
 
-**Reproductions on integration 800:** processes 8185, 8189, 8218, 8223, 8224 — every single `INITIAL_SYNC` run hits the same wall after fetching exactly 16 pages.
+**Scope:** Confirmed reproductions on integration 800 (5/5). Likely affects **~347 other stuck processes** across many integrations — but investigation has not verified whether those stick via the same mechanism.
 
----
-
-## TL;DR
-
-For the Attio CRM sync, every `initial sync` that has to paginate past 16 pages gets stuck at cursor=800. The 16th page-fetch Lambda runs cleanly, enqueues the 17th message (`FETCH_PERSON_PAGE` cursor=800) to SQS, and AWS acknowledges it with a MessageId. **No Lambda ever runs with that MessageId.** The message doesn't show up visible in the queue, isn't NotVisible, isn't in the DLQ, and doesn't trigger an orphan Lambda invocation. It just… vanishes.
-
-Manually re-sending the same body via `aws sqs send-message` delivers it instantly. So the queue and Lambda are both healthy at the moment of the manual test — the issue is time-correlated with the chain's 17th send.
+**Companion document:** [`stuck-queue-messages-investigation.md`](./stuck-queue-messages-investigation.md) — detailed investigation log, all tested hypotheses, reproduction steps.
 
 ---
 
-## Symptoms
+## Symptom
 
-**Process row, always identical pattern:**
+CRM initial-sync chains get stuck mid-pagination. For each affected tenant, the stuck point is consistent — always the same cursor, always after the same `pageCount`. But stuck cursors vary across tenants: integration 800 stops at cursor 800, others at 750 / 184 / 1500.
+
+**Process row, always identical pattern per tenant:**
 
 ```
 state:              FETCHING_PAGE
-context.metadata:   { pageCount: 16, lastCursor: 750, totalFetched: 800 }
+context.metadata:   { pageCount: N, lastCursor: X, totalFetched: N*50 }
 context.pagination: { hasMore: true, pageSize: 50, currentCursor: null }
-results.aggregate:  { totalSynced: 38, totalFailed: 0 }
-updatedAt:          <timestamp of the 16th Lambda's exit>
+results.aggregate:  { totalSynced: <tenant-specific>, totalFailed: 0 }
+updatedAt:          <timestamp of the last successful Lambda's exit>
 ```
 
-**Integration 800 sync chain behavior:**
-
-```
-cursor=null → fetch 50 at offset 0   → page 1 synced (2-3 records)
-cursor=50   → fetch 50 at offset 50  → page 2 synced
-cursor=100  → …
-…
-cursor=700  → fetch 50 at offset 700 → page 15 synced
-cursor=750  → fetch 50 at offset 750 → page 16 synced
-cursor=800  → ❌ never delivered to Lambda
-```
-
-Total synced stays at 38 across all 5 reproductions (sum of 2-3 phone-having contacts per page × 16 pages; the other ~762 records have no phone and are skipped by design).
+For integration 800: after Lambda #16 successfully fetches 50 records at `offset=750`, enqueues a `FETCH_PERSON_PAGE` message for `cursor=800`, and exits cleanly — **no Lambda ever executes the cursor=800 message**. The chain is silently truncated.
 
 ---
 
@@ -134,40 +118,37 @@ Lambda #16 — RequestId 1118fe46
 │ 19:28:48.066  REPORT  Duration: 2426ms                           │
 └──────────────────────────────────────────────────────────────────┘
                              │
-                             │ AWS SQS says "I have message 7059e3c6"
+                             │ AWS SQS confirms MessageId 7059e3c6
+                             │ (SQS NumberOfMessagesSent counter incremented)
                              ▼
                    ╔═══════════════════════════╗
                    ║  SQS: AttioQueue          ║
                    ║                           ║
-                   ║  MessageId 7059e3c6 is…   ║
-                   ║        ???                ║
+                   ║  Message IS in the queue  ║
+                   ║  at this point            ║
                    ║                           ║
-                   ║  • Not visible            ║
-                   ║  • Not in-flight          ║
-                   ║  • Not in DLQ             ║
-                   ║  • Never delivered to     ║
-                   ║    Lambda (no logs, no    ║
-                   ║    orphan invocations)    ║
+                   ║  Received counter also    ║
+                   ║  increments, matching     ║
+                   ║  Sent → message was       ║
+                   ║  delivered to some        ║
+                   ║  consumer                 ║
                    ╚═══════════════════════════╝
                              │
-                     ┌───────┴────────┐
-                     │                │
-                     ▼                ▼
-           Other messages       cursor=800 message
-           continue flowing     (never seen again)
-           through normally
-                     │
-                     ▼
+                             ▼
+              ??? No Lambda logs for MessageId 7059e3c6 ???
+              (Verified across ALL quo-integrations-prod-*
+               log groups — not just attioQueueWorker)
+                             │
+                             ▼
         Process 8224 sits frozen at:
           state: FETCHING_PAGE
           updatedAt: 19:28:48.052
           synced: 38, pages: 16, fetched: 800
-          (forever, because nothing will ever trigger the next step)
 ```
 
 ---
 
-## Proof the queue + Lambda are fine — manual re-send
+## Proof the queue + Lambda are currently functional — manual re-send
 
 ```
 19:33:54.103 (5 minutes later, manual re-send of identical body via AWS CLI)
@@ -183,56 +164,65 @@ Lambda #16 — RequestId 1118fe46
 │  Lambda — RequestId 3ab8c04b                                     │
 │  19:33:54.103  [Worker] record begin  msg=2d33a9fe  cursor=800   │
 │  19:33:54.192  [BaseCRM] Cursor-based pagination: cursor=800     │
-│  19:33:54.xxx  [Attio] Fetched 50 people at offset 800           │
-│  19:33:54.xxx  [BaseCRM] Processing 50 records inline            │
 │  19:33:57.081  [Worker] record success                           │
 │  (continues the chain: enqueues cursor=850, 900, 950, …)         │
 └──────────────────────────────────────────────────────────────────┘
 
-  → Chain resumes. Process 8224 unblocks. Same body, same queue,
-    same concurrency settings. The only difference is the TIMING.
+  → Same body, same queue, same Lambda, same concurrency. Manual
+    send delivers in <100ms. The failure mode is time-correlated
+    with the end of a rapid 16-send burst, not with the message
+    body or the infrastructure in general.
 ```
 
-Same MessageBody, same queue, same Lambda ESM, same concurrency — the manual send delivers in <100ms. The issue is narrowly time-correlated with the 17th send at the end of a rapid chain.
-
 ---
 
-## What we ruled out
+## What's been ruled out (verified)
 
-| Hypothesis | Disproof |
+| Hypothesis | Ruled out by |
 |-----------|----------|
-| Lambda concurrency throttling | Zero Lambda throttles in the minute of the send (CloudWatch) and ReservedConcurrentExecutions bumped to 50 |
-| Aurora connection exhaustion | Aurora MaxCapacity raised to 5.0 ACU, peak connections ~53/~540 max |
-| SQS DLQ after MaxReceiveCount=3 | DLQ `NumberOfMessagesSent = 0` for the entire day |
-| Message retention expiry | 4-day retention; messages are minutes old |
-| AWS partial-batch failure | `SendMessageBatchResult.Failed[]` is empty; AWS returned `Successful: [{ MessageId }]` |
-| HaltError swallow path | No `[createHandler] halt error suppressed` / `[Worker] record halted` logs for these messages |
-| Silent Lambda crash before first log | 94 RequestIds in the post-send window, zero orphans (every START has matching handler logs) |
-| State-machine code bug (17th message skipped) | Same body sent manually → delivered and processed correctly |
-| Message body invalid | Same body works when sent manually |
-| Integration DISABLED/ERROR guard | Integration 800 status = ENABLED throughout |
-| KMS / SSE issue | Would affect all messages equally; other messages deliver fine |
-| Cold start init failure | Would produce an orphan RequestId (no orphans found) |
-| Queue name mismatch / wrong queue | Buffer log shows the exact AttioQueue URL being targeted |
+| Lambda concurrency throttling | CloudWatch `Throttles=0` at 19:28 UTC. `ReservedConcurrentExecutions` bumped to 50. |
+| Aurora connection exhaustion | Aurora `MaxCapacity` raised to 5.0 ACU. Peak connections ~53 of ~540 available. |
+| Messages accumulating in DLQ | `quo-integrations-prod-InternalErrorQueue` `NumberOfMessagesSent = 0` for entire day. |
+| Message retention expiry | 4-day retention; messages are minutes old. |
+| AWS `SendMessageBatch` partial failure | `Successful: [{MessageId}]`, `Failed: []`. Also independently verified via SQS `NumberOfMessagesSent` counter increment. |
+| HaltError silent-discard path | No `[createHandler] halt error suppressed` or `[Worker] record halted` logs for the lost MessageIds. |
+| State-machine code bug (17th message skipped) | Same body sent manually → delivered and processed. |
+| Integration `DISABLED`/`ERROR` status | Integration 800 `status = ENABLED` throughout. |
+| KMS throttling on SSE-encrypted queue | `AWS/KMS ThrottleCount` metric is not exposed. Indirect signals (no spikes in `AWS/Lambda Errors`, `AWS/SQS` metrics consistent) don't support this. Remains partially unconfirmed. |
+| Zero orphan Lambda invocations | 94 RequestIds in post-send window, all have handler logs. BUT — this check searched only attioQueueWorker; adversarial re-audit confirmed the MessageId isn't in any other `quo-integrations-prod-*` log group either. |
+| Cold-start init failure | No `InitDuration` anomalies, `Errors=0`. |
+| Wrong queue / queue-URL drift | Buffer log shows exact AttioQueue URL. Only ONE ESM on this queue (verified). |
+| AWS SDK keep-alive socket with fake MessageId | Ruled out: SQS `NumberOfMessagesSent` incremented, confirming the MessageId corresponds to a real committed message. |
 
 ---
 
-## Most plausible remaining explanation
+## What the evidence actually supports
 
-**SQS durability / delivery edge case at the boundary of a chain's final send.** When a Lambda finishes a batch and immediately returns success to the ESM (`batchItemFailures: []`), AWS commits a DELETE of the inbound message. If the same Lambda's `SendMessageBatchCommand` for the outbound message is still being committed on AWS's side (distributed storage replication), there may be a rare race where the outbound send's MessageId is issued but the message never lands durably.
+**Confirmed facts:**
 
-Across 5 reproductions on integration 800:
-- Every run fails at the same spot
-- Each at a different UTC time, across different infra configurations (pre-bump, post-bump, post-deploy)
-- 100% reproducible for this specific sync, 0% for manual sends → pattern is tied to the chain-ending send
+1. The `SendMessageBatch` API call succeeded at AWS side — `NumberOfMessagesSent` counter incremented, not just the local SDK log claiming success.
+2. A consumer received the message — SQS `NumberOfMessagesReceived` matches `NumberOfMessagesSent` at the minute granularity (199 vs 199 at 19:28 UTC).
+3. attioQueueWorker has no log entries for MessageId `7059e3c6`. No other Lambda function in `quo-integrations-prod-*` does either.
+4. Across 5 reproductions on integration 800, the failure is **deterministic**: same cursor (800), same pageCount (16), same totalSynced (38). Different UTC times, different deploys, different concurrency configs. A probabilistic race would produce variance.
+5. For other affected tenants, the stuck cursor is consistent per tenant but different across tenants (750, 184, 1500) — suggests the bug is state-dependent or dataset-size-dependent, not strictly "cursor=800".
 
-Without AWS Support inspecting the ESM's internal state, this can't be conclusively proven. But it fits every observed symptom.
+**What this implies:**
+
+- Not an AWS SQS durability failure (the original framing of this doc was wrong).
+- Not a code bug in Frigg's cursor-math or state machine (manual resend works).
+- Something happens **after** SQS accepts the message **before** handler logs are emitted, and it reproduces deterministically per tenant.
+
+**Possibilities we can't currently distinguish between:**
+
+- (A) Lambda invoked but CloudWatch dropped the log stream for that specific invocation (rare; no direct evidence).
+- (B) The message received state-bit was incremented but no Lambda invocation actually ran (possible CloudWatch metric approximation).
+- (C) The message is still alive in an SQS invisible-backoff cycle, not yet delivered — the agent found `ApproximateAgeOfOldestMessage = 52 min` during the incident window, which is consistent with some messages languishing.
 
 ---
 
 ## Current workaround
 
-Manual SQS re-send via AWS CLI unblocks the chain. Example for process 8224 at cursor=800:
+Manual SQS re-send via AWS CLI unblocks the chain:
 
 ```bash
 AWS_PROFILE=quo-deploy aws sqs send-message \
@@ -241,109 +231,44 @@ AWS_PROFILE=quo-deploy aws sqs send-message \
   --message-body '{"event":"FETCH_PERSON_PAGE","data":{"processId":"<ID>","personObjectType":"people","page":null,"cursor":<LOST_CURSOR>,"limit":50,"modifiedSince":null,"sortDesc":true}}'
 ```
 
-Where `<ID>` is the stuck Process ID and `<LOST_CURSOR>` is `context.metadata.lastCursor + context.pagination.pageSize`. The `processId` MUST be a string (without quoting it, Frigg's `UpdateProcessState` validation throws "processId must be a non-empty string").
+- `<ID>` must be a string (without quoting it, Frigg's `UpdateProcessState` validation throws `"processId must be a non-empty string"`).
+- `<LOST_CURSOR>` = `context.metadata.lastCursor + context.pagination.pageSize`.
 
 ---
 
-## Long-term mitigation — watchdog Lambda
+## Long-term mitigation — watchdog Lambda (designed, not built)
 
-**Not yet built.** Design notes below.
+A scheduled Lambda (every 2–5 min) that scans the `Process` table for rows stuck in `FETCHING_PAGE` / `PROCESSING_BATCHES` with stale `updatedAt`, reconstructs the next expected cursor from `context.metadata`, and re-enqueues the `FETCH_PERSON_PAGE` message. Idempotent: re-fetching the same Attio page and re-running `bulkUpsertToQuo` produces identical side effects.
 
-### Variant A: Periodic janitor (recommended)
-
-A new scheduled Lambda that scans for stuck processes and re-enqueues their next message.
-
-**Schedule:** every 2-5 min via EventBridge / serverless `@schedule`.
-
-**Scan query (Postgres):**
-```sql
-SELECT id, "integrationId", state, context, results, "updatedAt"
-FROM "Process"
-WHERE state IN ('FETCHING_PAGE', 'PROCESSING_BATCHES')
-  AND "updatedAt" < NOW() - INTERVAL '3 minutes'
-  AND type = 'CRM_SYNC'
-ORDER BY "updatedAt" ASC
-LIMIT 50;
-```
-
-**Per-candidate action:**
-1. Load the integration; skip if `status !== 'ENABLED'`
-2. Read `context.metadata.watchdogResends` (int, default 0); cap at 5 to avoid infinite loops
-3. Compute next cursor: `lastCursor = context.metadata.lastCursor`; `nextCursor = lastCursor + context.pagination.pageSize`
-4. Guard: only re-enqueue if `context.pagination.hasMore === true`
-5. Send `FETCH_PERSON_PAGE` via the existing local `QueueManager.queueFetchPersonPage`
-6. Increment `context.metadata.watchdogResends` in the Process row
-7. Log `[Watchdog] re-enqueued { processId, cursor, stuckFor, resends }`
-
-**Idempotency guarantees:**
-- `fetchPersonPage(offset=N)` is deterministic under stable reads
-- `bulkUpsertToQuo` upserts by `externalId` — re-running produces the same mapping, not a duplicate
-- `upsertMapping` is keyed on `(integrationId, phoneNumber)` — re-running updates `lastSyncedAt`, no duplicates
-- If the original message somehow surfaces after the re-enqueue, worst case is one page processed twice, which is harmless
-
-**Rollout plan:**
-1. Build watchdog Lambda + EventBridge rule in `backend/serverless.js`
-2. Handler at `backend/src/handlers/watchdogStuckProcesses.js` (~150 lines)
-3. Deploy to dev; verify metrics for a day (ideally 0 re-enqueues for healthy syncs, occasional for real stuck cases)
-4. Deploy to prod
-5. Add CloudWatch metric filter on `[Watchdog] re-enqueued` → alarm if counts spike (would indicate an underlying regression)
-
-### Variant B: End-of-chain verify-and-resend (rejected)
-
-Wrap `QueuerUtilWrapper.batchSend` to verify the outbound message landed by polling `GetQueueAttributes` after a short delay. Rejected because:
-- Adds 2+ seconds to every page Lambda
-- `ApproximateNumberOfMessages` is unreliable under concurrent traffic
-- Same AWS bug could hit the verify call
+Full design in the [investigation log](./stuck-queue-messages-investigation.md#long-term-mitigation-watchdog-lambda).
 
 ---
 
 ## Observability changes already landed
 
-Shipped as part of debugging this incident so that future occurrences (or recurrences) are fully traceable:
+1. **Frigg framework PR #578** (`friggframework/frigg`) — queue-worker observability logs in `@friggframework/core`.
+2. **Quo local wrapper patch** (`quo--frigg` PR on branch `chore/local-queuer-wrapper-partial-failure-logs`) — mirrors the partial-failure inspection into `backend/src/base/services/QueuerUtilWrapper.js`, which is the code path actually used by `BaseCRMIntegration`.
+3. **Infra bumps (prod):**
+   - `attioQueueWorker` `ReservedConcurrentExecutions`: 20 → 50.
+   - Aurora `ServerlessV2ScalingConfiguration.MaxCapacity`: 1.0 → 5.0 ACU.
 
-### Frigg framework PR #578
-`friggframework/frigg` PR **#578** — observability logs in `@friggframework/core`:
-- `packages/core/queues/queuer-util.js`: inspects `SendMessageBatchResult.Failed[]` on every send; logs partial failures with per-entry `Code` / `Message` / `event` / `processId` / `integrationId`
-- `packages/core/core/Worker.js`: per-record `begin` / `success` / `halted` / `failed` logs with `messageId` + `ApproximateReceiveCount`
-- `packages/core/handlers/backend-utils.js`: hydration phase logs (`hydrating by processId`, `hydrated`, `dispatching`, `dispatched ok`)
-- `packages/core/core/create-handler.js`: WARN log when HaltErrors are suppressed (previously silent)
-
-### Quo-side local wrapper
-`quo--frigg` PR — same `SendMessageBatch` inspection ported into `backend/src/base/services/QueuerUtilWrapper.js`. This was necessary because `BaseCRMIntegration._createQueueManager` wires `QueueManager` to the local wrapper, not to Frigg core's `QueuerUtil`. Without this, the framework-level logs never fire on the active code path.
-
-### Infra bumps (also related)
-- `attioQueueWorker` `ReservedConcurrentExecutions`: 20 → 50 (`aws lambda put-function-concurrency`). Survives deploys because Serverless's CloudFormation diff doesn't regenerate the property when unchanged in the template.
-- Aurora `MaxCapacity`: 1.0 → 5.0 ACU (`aws rds modify-db-cluster`). Aurora CPU was pinned at 100% for a week before this; immediately dropped to ~68% after the bump.
-
----
-
-## Open questions
-
-- Is this AWS SQS issue specific to a queue attribute, region, or account, or is it a general SDK/service-integration quirk? Would AWS Support be willing to inspect the ESM's internal state for a specific lost MessageId?
-- Would switching to FIFO queues (with content-based deduplication disabled) avoid the issue? FIFO has stronger ordering + exactly-once delivery semantics, at the cost of 300 msg/sec throughput cap per message group. Probably not worth it for CRM syncs, but worth knowing.
-- Could we bypass the issue entirely by using SQS Worker Pool batching (fetching multiple pages per Lambda invocation with a while-loop) instead of a message-per-page chain? That trades off retry granularity for fewer SQS hops.
-- Once Quo fixes the API-key-propagation delay, `QueuerUtilWrapper` can be deleted entirely and everything routes through Frigg core's `QueuerUtil`. At that point the Quo-side observability patch becomes obsolete.
+Details, commands, and verification steps in the investigation log.
 
 ---
 
 ## Affected tenants
 
-- **Integration 800** (Murphy Advisory Solutions, org `ORays1Jp0J`, user `US8lMxx8kK` — Jeff Murphy). 5 confirmed stuck sync attempts on 2026-04-20.
-- Likely many more — DB query showed **347 processes in `FETCHING_PAGE` state** across all integrations. Every CRM sync that paginates past a certain threshold is at risk until the watchdog lands. Biggest candidates by `fetched` count: integrations 8912 (184), 8911 (750), 8847 (750), 8845 (1500), 8812 (750), 4211, 5183, 4232, 5249, 4203, 4725, 4267, 4095, 7132.
+- **Integration 800** (Murphy Advisory Solutions, org `ORays1Jp0J`, user `US8lMxx8kK` — Jeff Murphy). 5 confirmed stuck sync attempts on 2026-04-20. Now progressing past the stuck point via manual re-sends.
+- **~347 other processes** DB-wide in `FETCHING_PAGE` state. NOT VERIFIED whether they stick via the same mechanism — some may be stuck for unrelated reasons. Candidates by `fetched` count: integrations 8912, 8911, 8847, 8845, 8812, 4211, 5183, 4232, 5249, 4203, 4725, 4267, 4095, 7132.
 
 ---
 
-## Timeline — 2026-04-20
+## What's still needed to conclusively identify the root cause
 
-| UTC | Event |
-|-----|-------|
-| 14:54 | Process 8185 for int 800 triggered. Stuck at cursor=800. |
-| 15:27 | Process 8189 retry. Same stuck pattern. |
-| 16:39 | Infra bumps: attioQueueWorker concurrency 20→30, Aurora 1.0→5.0 ACU. |
-| 16:51 | Process 8218 retry. Stuck again. |
-| 16:49 | attioQueueWorker concurrency bumped again: 30→50. |
-| 17:03 | Manual SQS send of cursor=800 (string processId) unblocks process 8218. |
-| 19:02 | Process 8223 retry (post-Frigg-canary deploy). Stuck. |
-| 19:26 | Process 8224 retry (post-local-wrapper-logs deploy). Stuck. First run with full observability across both wrappers. |
-| 19:28 | Confirmed: `SendMessageBatch` returned `Successful: [{MessageId: 7059e3c6…}]`, Failed: []. No Lambda ever ran with this MessageId. |
-| 19:33 | Manual SQS re-send of same body → delivered in <100ms. Proof the queue + Lambda are healthy; the original message was lost AWS-side. |
+Two high-value instrumentation changes to run on the next reproduction:
+
+1. **Log `event.Records[].messageId` as the very first line of the Lambda handler** — before `createHandler`, before any framework code. If the lost MessageId appears here but not in `[Worker] record begin`, it's a bug in the Worker instrumentation. If it never appears, Lambda was truly never invoked for that message.
+
+2. **Enable SQS data-event logging in CloudTrail** for the AttioQueue. Gives server-side visibility into `ReceiveMessage` / `DeleteMessage` calls with MessageIds, independent of our own logs.
+
+Without one of these, the root cause remains probable but unconfirmed.
