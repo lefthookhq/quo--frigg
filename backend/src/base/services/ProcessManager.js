@@ -82,8 +82,11 @@ class ProcessManager {
         totalRecords = 0,
         pageSize = 100,
     }) {
-        // Construct process name
-        const processName = `${integrationId}-${personObjectType}-sync`;
+        // Frigg Core validates these as strings; coerce for PostgreSQL numeric IDs
+        const strIntegrationId = String(integrationId);
+        const strUserId = String(userId);
+
+        const processName = `${strIntegrationId}-${personObjectType}-sync`;
 
         // Build CRM sync context structure
         const context = {
@@ -125,8 +128,8 @@ class ProcessManager {
 
         // Create process via use case
         const process = await this.createProcessUseCase.execute({
-            userId,
-            integrationId,
+            userId: strUserId,
+            integrationId: strIntegrationId,
             name: processName,
             type: 'CRM_SYNC',
             state,

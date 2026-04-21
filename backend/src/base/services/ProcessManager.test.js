@@ -126,6 +126,23 @@ describe('ProcessManager', () => {
             );
         });
 
+        it('should coerce numeric integrationId and userId to strings', async () => {
+            const mockProcess = buildProcessRecord();
+            mockCreateProcessUseCase.execute.mockResolvedValue(mockProcess);
+
+            await processManager.createSyncProcess({
+                integrationId: 800,
+                userId: 42,
+                syncType: 'INITIAL',
+                personObjectType: 'Contact',
+            });
+
+            const callArgs = mockCreateProcessUseCase.execute.mock.calls[0][0];
+            expect(callArgs.integrationId).toBe('800');
+            expect(callArgs.userId).toBe('42');
+            expect(callArgs.name).toBe('800-Contact-sync');
+        });
+
         it('should use custom pageSize if provided', async () => {
             const mockProcess = buildProcessRecord();
             mockCreateProcessUseCase.execute.mockResolvedValue(mockProcess);
