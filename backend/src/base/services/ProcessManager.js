@@ -62,8 +62,8 @@ class ProcessManager {
     /**
      * Create a new CRM sync process with appropriate context structure
      * @param {Object} params
-     * @param {string} params.integrationId - Integration ID
-     * @param {string} params.userId - User ID
+     * @param {string|number} params.integrationId - Integration ID (coerced to string)
+     * @param {string|number} params.userId - User ID (coerced to string)
      * @param {string} params.syncType - Type of sync (INITIAL, ONGOING, WEBHOOK)
      * @param {string} params.personObjectType - CRM object type (Contact, Lead, etc.)
      * @param {string} [params.state='INITIALIZING'] - Initial state
@@ -82,6 +82,12 @@ class ProcessManager {
         totalRecords = 0,
         pageSize = 100,
     }) {
+        if (!integrationId || !userId) {
+            throw new Error(
+                `createSyncProcess requires integrationId and userId, got integrationId=${integrationId}, userId=${userId}`,
+            );
+        }
+
         // Frigg Core validates these as strings; coerce for PostgreSQL numeric IDs
         const strIntegrationId = String(integrationId);
         const strUserId = String(userId);

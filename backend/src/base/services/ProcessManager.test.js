@@ -143,6 +143,26 @@ describe('ProcessManager', () => {
             expect(callArgs.name).toBe('800-Contact-sync');
         });
 
+        it('should throw when integrationId or userId is missing', async () => {
+            await expect(
+                processManager.createSyncProcess({
+                    integrationId: undefined,
+                    userId: 'user-456',
+                    syncType: 'INITIAL',
+                    personObjectType: 'Contact',
+                }),
+            ).rejects.toThrow('createSyncProcess requires integrationId and userId');
+
+            await expect(
+                processManager.createSyncProcess({
+                    integrationId: 'integration-123',
+                    userId: null,
+                    syncType: 'INITIAL',
+                    personObjectType: 'Contact',
+                }),
+            ).rejects.toThrow('createSyncProcess requires integrationId and userId');
+        });
+
         it('should use custom pageSize if provided', async () => {
             const mockProcess = buildProcessRecord();
             mockCreateProcessUseCase.execute.mockResolvedValue(mockProcess);
