@@ -2038,7 +2038,12 @@ class BaseCRMIntegration extends IntegrationBase {
                         '[Config Update] Failed to update phone configuration:',
                         error,
                     );
-                    throw error;
+                    return {
+                        success: false,
+                        error: 'webhook_creation_failed',
+                        message: `Phone configuration could not be updated: ${error.message}. Your previous configuration remains active.`,
+                        config: this.config,
+                    };
                 }
             }
         }
