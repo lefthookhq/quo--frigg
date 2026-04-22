@@ -2132,16 +2132,18 @@ describe('BaseCRMIntegration', () => {
         });
 
         describe('error handling', () => {
-            it('should throw if webhook creation fails', async () => {
+            it('should return structured error if webhook creation fails', async () => {
                 integration.quo.api.createMessageWebhook.mockRejectedValue(
                     new Error('Webhook creation failed'),
                 );
 
-                await expect(
-                    integration.onUpdate({
-                        config: { resourceIds: ['PN-new-1'] },
-                    }),
-                ).rejects.toThrow('Webhook creation failed');
+                const result = await integration.onUpdate({
+                    config: { resourceIds: ['PN-new-1'] },
+                });
+
+                expect(result.success).toBe(false);
+                expect(result.error).toBe('phone_config_update_failed');
+                expect(result.message).toContain('Webhook creation failed');
             });
 
             it('should create webhooks when none configured but phone IDs provided', async () => {

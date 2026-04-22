@@ -348,8 +348,71 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
         });
     });
 
-    describe('Webhook rollback behavior on creation failure', () => {
-        it('should rollback message webhook if call webhook creation fails', async () => {
+    describe('Webhook creation failure handling', () => {
+        it('should return structured error instead of throwing when webhook creation fails', async () => {
+            // Arrange
+            mockQuoApi.createMessageWebhook = jest
+                .fn()
+                .mockRejectedValue(new Error('403 Forbidden'));
+
+            const updateParams = {
+                config: {
+                    enabledPhoneIds: ['phone-3'],
+                },
+            };
+
+            // Act
+            const result = await integration.onUpdate(updateParams);
+
+            // Assert — should NOT throw, should return structured error
+            expect(result.success).toBe(false);
+            expect(result.error).toBe('phone_config_update_failed');
+            expect(result.message).toContain('403 Forbidden');
+            // Warning should be added to integration messages for the framework DTO
+            expect(integration.messages.warnings).toHaveLength(1);
+            expect(integration.messages.warnings[0]).toContain('403 Forbidden');
+        });
+
+        it('should not save config to database if webhook creation fails', async () => {
+            // Arrange
+            mockQuoApi.createMessageWebhook = jest
+                .fn()
+                .mockRejectedValue(new Error('Webhook creation failed'));
+
+            const updateParams = {
+                config: {
+                    enabledPhoneIds: ['phone-3'],
+                },
+            };
+
+            // Act
+            await integration.onUpdate(updateParams);
+
+            // Assert
+            expect(mockCommands.updateIntegrationConfig).not.toHaveBeenCalled();
+        });
+
+        it('should preserve original config when webhook recreation fails', async () => {
+            // Arrange
+            const originalConfig = { ...integration.config };
+            mockQuoApi.createMessageWebhook = jest
+                .fn()
+                .mockRejectedValue(new Error('API Error'));
+
+            const updateParams = {
+                config: {
+                    enabledPhoneIds: ['phone-3'],
+                },
+            };
+
+            // Act
+            await integration.onUpdate(updateParams);
+
+            // Assert
+            expect(integration.config).toEqual(originalConfig);
+        });
+
+        it('should still rollback partially created webhooks on failure', async () => {
             // Arrange
             let createdMessageWebhookId;
             mockQuoApi.createMessageWebhook = jest
@@ -370,79 +433,17 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
                 },
             };
 
-            // Act & Assert
-            await expect(integration.onUpdate(updateParams)).rejects.toThrow(
-                'Call webhook API error',
-            );
-            expect(mockQuoApi.createMessageWebhook).toHaveBeenCalledTimes(1);
+            // Act
+            const result = await integration.onUpdate(updateParams);
+
+            // Assert — rollback still happens
+            expect(result.success).toBe(false);
             expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith(
                 createdMessageWebhookId,
             );
         });
 
-        it('should rollback message and call webhooks if call summary webhook creation fails', async () => {
-            // Arrange
-            let createdMessageWebhookId;
-            let createdCallWebhookId;
-
-            mockQuoApi.createMessageWebhook = jest
-                .fn()
-                .mockImplementation(() => {
-                    createdMessageWebhookId = `msg-webhook-${Date.now()}`;
-                    return Promise.resolve({
-                        data: { id: createdMessageWebhookId, key: 'test-key' },
-                    });
-                });
-            mockQuoApi.createCallWebhook = jest.fn().mockImplementation(() => {
-                createdCallWebhookId = `call-webhook-${Date.now()}`;
-                return Promise.resolve({
-                    data: { id: createdCallWebhookId, key: 'test-key' },
-                });
-            });
-            mockQuoApi.createCallSummaryWebhook = jest
-                .fn()
-                .mockRejectedValue(new Error('Call summary webhook API error'));
-
-            const updateParams = {
-                config: {
-                    enabledPhoneIds: ['phone-3'],
-                },
-            };
-
-            // Act & Assert
-            await expect(integration.onUpdate(updateParams)).rejects.toThrow(
-                'Call summary webhook API error',
-            );
-            expect(mockQuoApi.createMessageWebhook).toHaveBeenCalledTimes(1);
-            expect(mockQuoApi.createCallWebhook).toHaveBeenCalledTimes(1);
-            expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith(
-                createdMessageWebhookId,
-            );
-            expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith(
-                createdCallWebhookId,
-            );
-        });
-
-        it('should not save config to database if webhook creation fails', async () => {
-            // Arrange
-            mockQuoApi.createMessageWebhook = jest
-                .fn()
-                .mockRejectedValue(new Error('Webhook creation failed'));
-
-            const updateParams = {
-                config: {
-                    enabledPhoneIds: ['phone-3'],
-                },
-            };
-
-            // Act & Assert
-            await expect(integration.onUpdate(updateParams)).rejects.toThrow(
-                'Webhook creation failed',
-            );
-            expect(mockCommands.updateIntegrationConfig).not.toHaveBeenCalled();
-        });
-
-        it('should continue rollback even if rollback deletion fails', async () => {
+        it('should handle rollback deletion failures gracefully', async () => {
             // Arrange
             let createdMessageWebhookId;
             mockQuoApi.createMessageWebhook = jest
@@ -466,21 +467,22 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
                 },
             };
 
-            // Act & Assert - should throw original error, not rollback error
-            await expect(integration.onUpdate(updateParams)).rejects.toThrow(
-                'Call webhook API error',
-            );
+            // Act — should not throw even when rollback fails
+            const result = await integration.onUpdate(updateParams);
+
+            // Assert
+            expect(result.success).toBe(false);
+            expect(result.error).toBe('phone_config_update_failed');
             expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith(
                 createdMessageWebhookId,
             );
         });
 
-        it('should preserve original config when webhook recreation fails', async () => {
+        it('should include previous config in error response', async () => {
             // Arrange
-            const originalConfig = { ...integration.config };
             mockQuoApi.createMessageWebhook = jest
                 .fn()
-                .mockRejectedValue(new Error('API Error'));
+                .mockRejectedValue(new Error('403 Forbidden'));
 
             const updateParams = {
                 config: {
@@ -489,12 +491,14 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
             };
 
             // Act
-            try {
-                await integration.onUpdate(updateParams);
-            } catch (e) {}
+            const result = await integration.onUpdate(updateParams);
 
-            // Assert
-            expect(integration.config).toEqual(originalConfig);
+            // Assert — response includes the unchanged config
+            expect(result.config).toEqual(integration.config);
+            expect(result.config.enabledPhoneIds).toEqual([
+                'phone-1',
+                'phone-2',
+            ]);
         });
     });
 

@@ -2038,7 +2038,16 @@ class BaseCRMIntegration extends IntegrationBase {
                         '[Config Update] Failed to update phone configuration:',
                         error,
                     );
-                    throw error;
+                    const warningMessage = `Phone configuration could not be updated: ${error.message}. Your previous configuration remains active.`;
+                    if (!this.messages) this.messages = { errors: [], warnings: [] };
+                    if (!this.messages.warnings) this.messages.warnings = [];
+                    this.messages.warnings.push(warningMessage);
+                    return {
+                        success: false,
+                        error: 'phone_config_update_failed',
+                        message: warningMessage,
+                        config: this.config,
+                    };
                 }
             }
         }
