@@ -366,8 +366,11 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
 
             // Assert — should NOT throw, should return structured error
             expect(result.success).toBe(false);
-            expect(result.error).toBe('webhook_creation_failed');
+            expect(result.error).toBe('phone_config_update_failed');
             expect(result.message).toContain('403 Forbidden');
+            // Warning should be added to integration messages for the framework DTO
+            expect(integration.messages.warnings).toHaveLength(1);
+            expect(integration.messages.warnings[0]).toContain('403 Forbidden');
         });
 
         it('should not save config to database if webhook creation fails', async () => {
@@ -469,7 +472,7 @@ describe('BaseCRMIntegration - onUpdate Handler', () => {
 
             // Assert
             expect(result.success).toBe(false);
-            expect(result.error).toBe('webhook_creation_failed');
+            expect(result.error).toBe('phone_config_update_failed');
             expect(mockQuoApi.deleteWebhook).toHaveBeenCalledWith(
                 createdMessageWebhookId,
             );

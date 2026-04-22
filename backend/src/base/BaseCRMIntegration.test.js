@@ -2142,7 +2142,7 @@ describe('BaseCRMIntegration', () => {
                 });
 
                 expect(result.success).toBe(false);
-                expect(result.error).toBe('webhook_creation_failed');
+                expect(result.error).toBe('phone_config_update_failed');
                 expect(result.message).toContain('Webhook creation failed');
             });
 
