@@ -1670,7 +1670,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
             const config = result.context.record.config || {};
             const settings = {
                 callActivityDestination:
-                    config.callActivityDestination || 'contact',
+                    config.callActivityDestination || 'all',
             };
             res.json({ settings });
         } catch (error) {
@@ -1697,7 +1697,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
 
             const updates = req.body;
 
-            const VALID_DESTINATIONS = ['contact', 'deal', 'lead'];
+            const VALID_DESTINATIONS = ['all', 'contact', 'deal', 'lead'];
             if (updates.callActivityDestination !== undefined) {
                 if (
                     !VALID_DESTINATIONS.includes(
@@ -1740,7 +1740,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 success: true,
                 settings: {
                     callActivityDestination:
-                        updatedConfig.callActivityDestination || 'contact',
+                        updatedConfig.callActivityDestination || 'all',
                 },
             });
         } catch (error) {
@@ -1840,11 +1840,24 @@ class PipedriveIntegration extends BaseCRMIntegration {
                     );
                     const personId = parseInt(contactId);
                     const destination =
-                        this.config?.callActivityDestination || 'contact';
+                        this.config?.callActivityDestination || 'all';
 
                     let dealId = null;
                     let leadId = null;
-                    if (destination === 'deal') {
+                    if (destination === 'all') {
+                        // Waterfall: deal takes priority over lead (deal is further
+                        // along the pipeline). Pipedrive only allows one of deal_id
+                        // or lead_id per activity.
+                        dealId = await this._findMostRecentOpenDeal(personId);
+                        if (!dealId) {
+                            leadId = await this._findLeadByPerson(personId);
+                        }
+                        if (!dealId && !leadId) {
+                            console.log(
+                                `${this._logPrefix} No deal or lead found for person ${personId}, logging to contact only`,
+                            );
+                        }
+                    } else if (destination === 'deal') {
                         dealId = await this._findMostRecentOpenDeal(personId);
                         if (!dealId) {
                             console.log(
