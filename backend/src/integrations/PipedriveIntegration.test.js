@@ -1328,11 +1328,15 @@ describe('PipedriveIntegration (Refactored)', () => {
             integration.config = { callActivityDestination: 'all' };
             mockPipedriveApi.api.listDeals = jest.fn();
             mockPipedriveApi.api.listLeads = jest.fn();
-            mockPipedriveApi.api.createActivity = jest.fn().mockResolvedValue({ data: { id: 1 } });
+            mockPipedriveApi.api.createActivity = jest
+                .fn()
+                .mockResolvedValue({ data: { id: 1 } });
         });
 
         it('should use deal_id when an open deal exists', async () => {
-            mockPipedriveApi.api.listDeals.mockResolvedValue({ data: [{ id: 42 }] });
+            mockPipedriveApi.api.listDeals.mockResolvedValue({
+                data: [{ id: 42 }],
+            });
 
             await integration._findMostRecentOpenDeal(123);
 
