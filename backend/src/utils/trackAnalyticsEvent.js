@@ -1,29 +1,16 @@
 /**
- * Track an analytics event to Quo's analytics API (fire-and-forget)
- *
- * This utility wraps the Quo API call to prevent analytics failures from blocking
- * business logic. All tracking is non-blocking and errors are logged but not thrown.
- *
- * The integration name is automatically derived from integration.constructor.Definition.name,
- * eliminating the need for manual string parameters and reducing copy-paste errors.
- *
- * @param {Object} integration - The integration instance
- * @param {Object} integration.constructor.Definition - Static Definition with name field
- * @param {string} integration.constructor.Definition.name - Integration name (e.g., 'attio')
- * @param {Object} integration.quo - Quo module with API instance
- * @param {Object} integration.quo.api - Quo API with sendAnalyticsEvent method
- * @param {Object} integration.commands - Commands object with findOrganizationUserById
- * @param {string} integration.userId - The user ID to look up
- * @param {string} event - Event type from QUO_ANALYTICS_EVENTS
- * @param {Object} [data={}] - Event-specific data (contactId, messageId, callId, error)
- * @returns {void}
+ * Track an analytics event to Quo's analytics API.
+ * Errors are logged but never thrown. Aborts after ANALYTICS_TIMEOUT_MS to prevent
+ * a slow/down analytics endpoint from blocking Lambda execution.
  */
+const ANALYTICS_TIMEOUT_MS = 5_000;
+
 async function trackAnalyticsEvent(integration, event, data = {}) {
     const integrationName = integration.constructor.Definition.name;
 
     if (!integration?.quo?.api || !integration?.commands) {
         console.warn(
-            `[Analytics][${integrationName}] Quo API or commands not available, skipping tracking`,
+            `[Analytics][${integrationName}] Quo API or commands not available, skipping tracking`
         );
         return;
     }
@@ -39,16 +26,16 @@ async function trackAnalyticsEvent(integration, event, data = {}) {
 
         if (!quoEntity) {
             console.warn(
-                `[Analytics][${integrationName}] No Quo entity found for user ${integration.userId}, skipping tracking`,
+                `[Analytics][${integrationName}] No Quo entity found for user ${integration.userId}, skipping tracking`
             );
             return;
         }
 
         const user = await integration.commands.findOrganizationUserById(
-            integration.userId,
+            integration.userId
         );
 
-        await integration.quo.api.sendAnalyticsEvent({
+        const analyticsCall = integration.quo.api.sendAnalyticsEvent({
             orgId: user?.appOrgId || null,
             userId: quoEntity.externalId || null,
             integration: integrationName,
@@ -56,10 +43,30 @@ async function trackAnalyticsEvent(integration, event, data = {}) {
             data,
         });
 
+        // Swallow late rejections if the timeout wins the race
+        analyticsCall.catch(() => {});
+
+        let timer;
+        const timeout = new Promise((_, reject) => {
+            timer = setTimeout(
+                () => reject(new Error('Analytics request timed out')),
+                ANALYTICS_TIMEOUT_MS
+            );
+        });
+
+        try {
+            await Promise.race([analyticsCall, timeout]);
+        } finally {
+            clearTimeout(timer);
+        }
+
         console.log(`[Analytics][${integrationName}] Tracked ${event}`);
     } catch (error) {
+        const msg = error?.message?.includes('timed out')
+            ? `timed out after ${ANALYTICS_TIMEOUT_MS}ms`
+            : error?.message || String(error);
         console.warn(
-            `[Analytics][${integrationName}] Failed to track ${event}: ${error.message}`,
+            `[Analytics][${integrationName}] Failed to track ${event}: ${msg}`
         );
     }
 }
