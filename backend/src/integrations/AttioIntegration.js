@@ -487,10 +487,18 @@ class AttioIntegration extends BaseCRMIntegration {
         const object_type = await this._resolveObjectType(object_id);
 
         try {
-            const response = await this.attio.api.getRecord(
-                object_id,
-                record_id,
-            );
+            let response;
+            try {
+                response = await this.attio.api.getRecord(object_id, record_id);
+            } catch (err) {
+                if (err.statusCode === 404) {
+                    console.warn(
+                        `[Attio Webhook] Record ${record_id} returned 404 from Attio — likely deleted before processing`,
+                    );
+                    return;
+                }
+                throw err;
+            }
 
             const record = response?.data;
 
@@ -543,10 +551,18 @@ class AttioIntegration extends BaseCRMIntegration {
         const objectType = await this._resolveObjectType(object_id);
 
         try {
-            const response = await this.attio.api.getRecord(
-                object_id,
-                record_id,
-            );
+            let response;
+            try {
+                response = await this.attio.api.getRecord(object_id, record_id);
+            } catch (err) {
+                if (err.statusCode === 404) {
+                    console.warn(
+                        `[Attio Webhook] Record ${record_id} returned 404 from Attio — likely deleted before processing`,
+                    );
+                    return;
+                }
+                throw err;
+            }
 
             const record = response?.data;
 
