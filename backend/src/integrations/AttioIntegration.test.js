@@ -1918,6 +1918,47 @@ describe('AttioIntegration (Refactored)', () => {
             });
         });
 
+        describe('_handleRecordCreated 404 from Attio API', () => {
+            it('should return early when getRecord throws 404 (record deleted before processing)', async () => {
+                const eventData = {
+                    record_id: 'rec-deleted',
+                    object_id: 'obj-people',
+                };
+
+                const notFoundError = new Error('Not Found');
+                notFoundError.statusCode = 404;
+                mockAttioApi.api.getRecord.mockRejectedValue(notFoundError);
+
+                const consoleSpy = jest
+                    .spyOn(console, 'warn')
+                    .mockImplementation();
+
+                await integration._handleRecordCreated(eventData);
+
+                expect(consoleSpy).toHaveBeenCalledWith(
+                    expect.stringContaining('rec-deleted'),
+                );
+                expect(mockQuoApi.api.createContact).not.toHaveBeenCalled();
+
+                consoleSpy.mockRestore();
+            });
+
+            it('should still throw non-404 errors from getRecord', async () => {
+                const eventData = {
+                    record_id: 'rec-500',
+                    object_id: 'obj-people',
+                };
+
+                const serverError = new Error('Internal Server Error');
+                serverError.statusCode = 500;
+                mockAttioApi.api.getRecord.mockRejectedValue(serverError);
+
+                await expect(
+                    integration._handleRecordCreated(eventData),
+                ).rejects.toThrow('Internal Server Error');
+            });
+        });
+
         describe('_handleRecordCreated with upsertContactToQuo', () => {
             it('should use upsertContactToQuo instead of singleton createContact', async () => {
                 const eventData = {
@@ -1990,6 +2031,46 @@ describe('AttioIntegration (Refactored)', () => {
                 await expect(
                     integration._handleRecordCreated(eventData),
                 ).rejects.toThrow();
+            });
+        });
+
+        describe('_handleRecordUpdated 404 from Attio API', () => {
+            it('should return early when getRecord throws 404 (record deleted before processing)', async () => {
+                const eventData = {
+                    record_id: 'rec-deleted',
+                    object_id: 'obj-people',
+                };
+
+                const notFoundError = new Error('Not Found');
+                notFoundError.statusCode = 404;
+                mockAttioApi.api.getRecord.mockRejectedValue(notFoundError);
+
+                const consoleSpy = jest
+                    .spyOn(console, 'warn')
+                    .mockImplementation();
+
+                await integration._handleRecordUpdated(eventData);
+
+                expect(consoleSpy).toHaveBeenCalledWith(
+                    expect.stringContaining('rec-deleted'),
+                );
+
+                consoleSpy.mockRestore();
+            });
+
+            it('should still throw non-404 errors from getRecord', async () => {
+                const eventData = {
+                    record_id: 'rec-500',
+                    object_id: 'obj-people',
+                };
+
+                const serverError = new Error('Internal Server Error');
+                serverError.statusCode = 500;
+                mockAttioApi.api.getRecord.mockRejectedValue(serverError);
+
+                await expect(
+                    integration._handleRecordUpdated(eventData),
+                ).rejects.toThrow('Internal Server Error');
             });
         });
 
