@@ -1670,7 +1670,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
             const config = result.context.record.config || {};
             const settings = {
                 callActivityDestination:
-                    config.callActivityDestination || 'contact',
+                    config.callActivityDestination || 'all',
             };
             res.json({ settings });
         } catch (error) {
@@ -1684,7 +1684,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
 
     /**
      * Update integration settings
-     * Allows changing where call activities are logged (contact or deal)
+     * Allows changing where call activities are logged (contact, deal, or lead)
      */
     updateSettings = async ({ req, res }) => {
         try {
@@ -1697,7 +1697,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
 
             const updates = req.body;
 
-            const VALID_DESTINATIONS = ['contact', 'deal'];
+            const VALID_DESTINATIONS = ['all', 'contact', 'deal', 'lead'];
             if (updates.callActivityDestination !== undefined) {
                 if (
                     !VALID_DESTINATIONS.includes(
@@ -1740,7 +1740,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                 success: true,
                 settings: {
                     callActivityDestination:
-                        updatedConfig.callActivityDestination || 'contact',
+                        updatedConfig.callActivityDestination || 'all',
                 },
             });
         } catch (error) {
@@ -1783,6 +1783,34 @@ class PipedriveIntegration extends BaseCRMIntegration {
     }
 
     /**
+     * Find the most recently updated lead for a given person
+     * Returns the lead ID (UUID), or null if no lead exists
+     *
+     * @private
+     * @param {number} personId - Pipedrive person ID
+     * @returns {Promise<string|null>} Lead UUID or null
+     */
+    async _findLeadByPerson(personId) {
+        try {
+            const response = await this.pipedrive.api.listLeads({
+                person_id: personId,
+                sort: 'update_time DESC',
+                limit: 1,
+            });
+            const leads = response?.data;
+            if (!Array.isArray(leads) || leads.length === 0) {
+                return null;
+            }
+            return leads[0].id;
+        } catch (error) {
+            console.error(
+                `${this._logPrefix} Failed to fetch leads for person ${personId}: ${error.message}`,
+            );
+            return null;
+        }
+    }
+
+    /**
      * Handle Quo call.completed webhook event
      * Uses QuoWebhookEventProcessor for orchestration
      *
@@ -1812,14 +1840,35 @@ class PipedriveIntegration extends BaseCRMIntegration {
                     );
                     const personId = parseInt(contactId);
                     const destination =
-                        this.config?.callActivityDestination || 'contact';
+                        this.config?.callActivityDestination || 'all';
 
                     let dealId = null;
-                    if (destination === 'deal') {
+                    let leadId = null;
+                    if (destination === 'all') {
+                        // Waterfall: deal takes priority over lead (deal is further
+                        // along the pipeline). Pipedrive only allows one of deal_id
+                        // or lead_id per activity.
+                        dealId = await this._findMostRecentOpenDeal(personId);
+                        if (!dealId) {
+                            leadId = await this._findLeadByPerson(personId);
+                        }
+                        if (!dealId && !leadId) {
+                            console.log(
+                                `${this._logPrefix} No deal or lead found for person ${personId}, logging to contact only`,
+                            );
+                        }
+                    } else if (destination === 'deal') {
                         dealId = await this._findMostRecentOpenDeal(personId);
                         if (!dealId) {
                             console.log(
                                 `${this._logPrefix} No open deal found for person ${personId}, falling back to contact`,
+                            );
+                        }
+                    } else if (destination === 'lead') {
+                        leadId = await this._findLeadByPerson(personId);
+                        if (!leadId) {
+                            console.log(
+                                `${this._logPrefix} No lead found for person ${personId}, falling back to contact`,
                             );
                         }
                     }
@@ -1832,6 +1881,7 @@ class PipedriveIntegration extends BaseCRMIntegration {
                         participants: [{ person_id: personId, primary: true }],
                         duration: formatDurationForPipedrive(activity.duration),
                         ...(dealId && { deal_id: dealId }),
+                        ...(leadId && { lead_id: leadId }),
                         ...(ownerId && { owner_id: ownerId }),
                     };
                     const activityResponse =

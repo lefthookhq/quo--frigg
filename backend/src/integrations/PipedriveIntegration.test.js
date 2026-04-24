@@ -1181,7 +1181,7 @@ describe('PipedriveIntegration (Refactored)', () => {
     });
 
     describe('getSettings', () => {
-        it('should return default callActivityDestination of contact when config is empty', async () => {
+        it('should return default callActivityDestination of all when config is empty', async () => {
             const req = { query: { integrationId: '44' } };
             const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
             integration.commands.loadIntegrationContextById.mockResolvedValue({
@@ -1191,7 +1191,7 @@ describe('PipedriveIntegration (Refactored)', () => {
             await integration.getSettings({ req, res });
 
             expect(res.json).toHaveBeenCalledWith({
-                settings: { callActivityDestination: 'contact' },
+                settings: { callActivityDestination: 'all' },
             });
         });
 
@@ -1268,7 +1268,7 @@ describe('PipedriveIntegration (Refactored)', () => {
         it('should reject an invalid callActivityDestination', async () => {
             const req = {
                 query: { integrationId: '44' },
-                body: { callActivityDestination: 'lead' },
+                body: { callActivityDestination: 'invalid_value' },
             };
             const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
 
@@ -1285,6 +1285,31 @@ describe('PipedriveIntegration (Refactored)', () => {
             ).not.toHaveBeenCalled();
         });
 
+        it('should update callActivityDestination to lead', async () => {
+            const req = {
+                query: { integrationId: '44' },
+                body: { callActivityDestination: 'lead' },
+            };
+            const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
+
+            await integration.updateSettings({ req, res });
+
+            expect(
+                integration.commands.updateIntegrationConfig,
+            ).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    config: expect.objectContaining({
+                        callActivityDestination: 'lead',
+                    }),
+                }),
+            );
+            expect(res.json).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    settings: { callActivityDestination: 'lead' },
+                }),
+            );
+        });
+
         it('should return 400 when integrationId is missing', async () => {
             const req = {
                 query: {},
@@ -1295,6 +1320,54 @@ describe('PipedriveIntegration (Refactored)', () => {
             await integration.updateSettings({ req, res });
 
             expect(res.status).toHaveBeenCalledWith(400);
+        });
+    });
+
+    describe("callActivityDestination 'all' waterfall", () => {
+        beforeEach(() => {
+            integration.config = { callActivityDestination: 'all' };
+            mockPipedriveApi.api.listDeals = jest.fn();
+            mockPipedriveApi.api.listLeads = jest.fn();
+            mockPipedriveApi.api.createActivity = jest
+                .fn()
+                .mockResolvedValue({ data: { id: 1 } });
+        });
+
+        it('should use deal_id when an open deal exists', async () => {
+            mockPipedriveApi.api.listDeals.mockResolvedValue({
+                data: [{ id: 42 }],
+            });
+
+            await integration._findMostRecentOpenDeal(123);
+
+            expect(mockPipedriveApi.api.listDeals).toHaveBeenCalledWith(
+                expect.objectContaining({ person_id: 123, status: 'open' }),
+            );
+            expect(mockPipedriveApi.api.listLeads).not.toHaveBeenCalled();
+        });
+
+        it('should fall back to lead_id when no open deal exists', async () => {
+            mockPipedriveApi.api.listDeals.mockResolvedValue({ data: [] });
+            mockPipedriveApi.api.listLeads.mockResolvedValue({
+                data: [{ id: 'adf21080-0e10-11eb-879b-05d71fb426ec' }],
+            });
+
+            const dealId = await integration._findMostRecentOpenDeal(123);
+            const leadId = await integration._findLeadByPerson(123);
+
+            expect(dealId).toBeNull();
+            expect(leadId).toBe('adf21080-0e10-11eb-879b-05d71fb426ec');
+        });
+
+        it('should log to contact only when neither deal nor lead exists', async () => {
+            mockPipedriveApi.api.listDeals.mockResolvedValue({ data: [] });
+            mockPipedriveApi.api.listLeads.mockResolvedValue({ data: [] });
+
+            const dealId = await integration._findMostRecentOpenDeal(123);
+            const leadId = await integration._findLeadByPerson(123);
+
+            expect(dealId).toBeNull();
+            expect(leadId).toBeNull();
         });
     });
 
@@ -1332,6 +1405,46 @@ describe('PipedriveIntegration (Refactored)', () => {
                 .mockRejectedValue(new Error('API error'));
 
             const result = await integration._findMostRecentOpenDeal(123);
+
+            expect(result).toBeNull();
+        });
+    });
+
+    describe('_findLeadByPerson', () => {
+        it('should return the most recently updated lead ID for a person', async () => {
+            mockPipedriveApi.api.listLeads = jest.fn().mockResolvedValue({
+                data: [
+                    { id: 'adf21080-0e10-11eb-879b-05d71fb426ec' },
+                    { id: 'bcd32191-1f21-22fc-98ac-16e82gc537fd' },
+                ],
+            });
+
+            const result = await integration._findLeadByPerson(123);
+
+            expect(mockPipedriveApi.api.listLeads).toHaveBeenCalledWith({
+                person_id: 123,
+                sort: 'update_time DESC',
+                limit: 1,
+            });
+            expect(result).toBe('adf21080-0e10-11eb-879b-05d71fb426ec');
+        });
+
+        it('should return null when no leads exist for the person', async () => {
+            mockPipedriveApi.api.listLeads = jest.fn().mockResolvedValue({
+                data: [],
+            });
+
+            const result = await integration._findLeadByPerson(123);
+
+            expect(result).toBeNull();
+        });
+
+        it('should return null and not throw when API call fails', async () => {
+            mockPipedriveApi.api.listLeads = jest
+                .fn()
+                .mockRejectedValue(new Error('API error'));
+
+            const result = await integration._findLeadByPerson(123);
 
             expect(result).toBeNull();
         });

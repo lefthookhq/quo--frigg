@@ -33,7 +33,7 @@
         "@aws-sdk/client-scheduler": "^3.971.0",
         "@friggframework/api-module-attio": "1.1.0-next.4",
         "@friggframework/api-module-frigg-scale-test": "0.2.0-next.5",
-        "@friggframework/api-module-pipedrive": "2.1.0-next.6",
+        "@friggframework/api-module-pipedrive": "2.1.0-next.7",
         "@friggframework/api-module-zoho-crm": "2.0.0-next.9",
         "@friggframework/core": "2.0.0--canary.578.3f8e78e.0",
         "axios": "^1.6.0",
