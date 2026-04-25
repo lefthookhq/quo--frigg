@@ -87,7 +87,7 @@ class AttioIntegration extends BaseCRMIntegration {
         queueConfig: {
             maxWorkers: 15,
             provisioned: 5,
-            maxConcurrency: 50,
+            maxConcurrency: 150,
             batchSize: 1,
             timeout: 600,
         },
