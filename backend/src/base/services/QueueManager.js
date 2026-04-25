@@ -178,10 +178,13 @@ class QueueManager {
                 },
             };
 
-            if (maxConcurrency) {
+            if (maxConcurrency != null && maxConcurrency > 0) {
                 const wave = Math.floor(pageIndex / maxConcurrency);
                 if (wave > 0) {
-                    message.delaySeconds = wave * delayPerWaveSeconds;
+                    message.delaySeconds = Math.min(
+                        wave * delayPerWaveSeconds,
+                        900,
+                    );
                 }
             }
 

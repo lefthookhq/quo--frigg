@@ -350,6 +350,26 @@ describe('QueueManager', () => {
             expect(messages[6].delaySeconds).toBe(20);
         });
 
+        it('should cap delay at 900 seconds (SQS maximum)', async () => {
+            const params = {
+                processId: 'process-123',
+                personObjectType: 'Contact',
+                totalPages: 102,
+                startPage: 1,
+                limit: 100,
+                maxConcurrency: 1,
+                delayPerWaveSeconds: 100,
+            };
+
+            await queueManager.fanOutPages(params);
+
+            const messages = mockQueuerUtil.batchSend.mock.calls[0][0];
+            // Wave 10 would be 1000s, but should be capped at 900
+            expect(messages[10].delaySeconds).toBe(900);
+            // Last message: wave 100 would be 10000s, capped at 900
+            expect(messages[100].delaySeconds).toBe(900);
+        });
+
         it('should not apply delays when maxConcurrency is not provided', async () => {
             const params = {
                 processId: 'process-123',
