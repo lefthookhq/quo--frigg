@@ -181,6 +181,12 @@ describe('AttioIntegration (Refactored)', () => {
             expect(AttioIntegration.CRMConfig.queueConfig.maxWorkers).toBe(15);
             expect(AttioIntegration.CRMConfig.queueConfig.provisioned).toBe(5);
         });
+
+        it('should have maxConcurrency >= 150 to prevent Lambda throttling during pagination bursts', () => {
+            expect(
+                AttioIntegration.CRMConfig.queueConfig.maxConcurrency,
+            ).toBeGreaterThanOrEqual(150);
+        });
     });
 
     describe('Required Methods - BaseCRMIntegration', () => {

@@ -321,6 +321,52 @@ describe('QueueManager', () => {
 
             expect(mockQueuerUtil.batchSend).not.toHaveBeenCalled();
         });
+
+        it('should apply staggered delays when maxConcurrency is provided', async () => {
+            const params = {
+                processId: 'process-123',
+                personObjectType: 'Contact',
+                totalPages: 8,
+                startPage: 1,
+                limit: 100,
+                maxConcurrency: 3,
+                delayPerWaveSeconds: 10,
+            };
+
+            await queueManager.fanOutPages(params);
+
+            const messages = mockQueuerUtil.batchSend.mock.calls[0][0];
+            expect(messages).toHaveLength(7);
+
+            // Pages 1-3 (wave 0): no delay
+            expect(messages[0].delaySeconds).toBeUndefined();
+            expect(messages[1].delaySeconds).toBeUndefined();
+            expect(messages[2].delaySeconds).toBeUndefined();
+            // Pages 4-6 (wave 1): 10s delay
+            expect(messages[3].delaySeconds).toBe(10);
+            expect(messages[4].delaySeconds).toBe(10);
+            expect(messages[5].delaySeconds).toBe(10);
+            // Page 7 (wave 2): 20s delay
+            expect(messages[6].delaySeconds).toBe(20);
+        });
+
+        it('should not apply delays when maxConcurrency is not provided', async () => {
+            const params = {
+                processId: 'process-123',
+                personObjectType: 'Contact',
+                totalPages: 5,
+                startPage: 1,
+                limit: 100,
+            };
+
+            await queueManager.fanOutPages(params);
+
+            const messages = mockQueuerUtil.batchSend.mock.calls[0][0];
+            expect(messages).toHaveLength(4);
+            messages.forEach((msg) => {
+                expect(msg.delaySeconds).toBeUndefined();
+            });
+        });
     });
 
     describe('queueMultipleBatches', () => {

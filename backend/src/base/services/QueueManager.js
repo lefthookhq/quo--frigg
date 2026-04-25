@@ -145,6 +145,8 @@ class QueueManager {
      * @param {number} params.limit - Records per page
      * @param {Date} [params.modifiedSince] - Filter by modification date
      * @param {boolean} [params.sortDesc=true] - Sort descending
+     * @param {number} [params.maxConcurrency] - If set, stagger messages in waves of this size
+     * @param {number} [params.delayPerWaveSeconds=10] - Seconds between each wave
      * @returns {Promise<void>}
      */
     async fanOutPages({
@@ -155,12 +157,14 @@ class QueueManager {
         limit,
         modifiedSince = null,
         sortDesc = true,
+        maxConcurrency,
+        delayPerWaveSeconds = 10,
     }) {
-        // Build array of messages for all pages
         const messages = [];
 
         for (let page = startPage; page < totalPages; page++) {
-            messages.push({
+            const pageIndex = page - startPage;
+            const message = {
                 event: 'FETCH_PERSON_PAGE',
                 data: {
                     processId,
@@ -172,10 +176,18 @@ class QueueManager {
                         : null,
                     sortDesc,
                 },
-            });
+            };
+
+            if (maxConcurrency) {
+                const wave = Math.floor(pageIndex / maxConcurrency);
+                if (wave > 0) {
+                    message.delaySeconds = wave * delayPerWaveSeconds;
+                }
+            }
+
+            messages.push(message);
         }
 
-        // Send all messages at once (QueuerUtil handles batching internally)
         if (messages.length > 0) {
             await this.queuerUtil.batchSend(messages, this.queueUrl);
         }
