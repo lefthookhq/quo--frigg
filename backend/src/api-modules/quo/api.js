@@ -2,7 +2,7 @@ const { ApiKeyRequester, get } = require('@friggframework/core');
 
 class Api extends ApiKeyRequester {
     constructor(params = {}) {
-        super(params);
+        super({ ...params, backOff: [1, 3, 10] });
         this.baseUrl =
             params.baseUrl ||
             process.env.QUO_BASE_URL ||

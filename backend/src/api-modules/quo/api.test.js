@@ -1,5 +1,21 @@
 const { Api } = require('./api');
 
+describe('Quo API - Retry Backoff', () => {
+    it('should use a short backoff to avoid exhausting Lambda timeout', () => {
+        const api = new Api({ api_key: 'test-key' });
+
+        const totalBackoff = api.backOff.reduce((sum, s) => sum + s, 0);
+        expect(totalBackoff).toBeLessThanOrEqual(30);
+        expect(api.backOff.length).toBeLessThanOrEqual(3);
+    });
+
+    it('should override the framework default backoff', () => {
+        const api = new Api({ api_key: 'test-key' });
+
+        expect(api.backOff).not.toEqual([1, 3, 10, 30, 60, 180]);
+    });
+});
+
 describe('Quo API - API Key Compatibility', () => {
     describe('API_KEY_VALUE getter', () => {
         it('should return api_key value via API_KEY_VALUE getter for backward compatibility', () => {

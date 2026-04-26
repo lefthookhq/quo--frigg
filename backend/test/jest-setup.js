@@ -101,6 +101,7 @@ jest.mock('@friggframework/core', () => ({
             // Match actual frigg framework: uses snake_case (api_key_name, api_key)
             this.api_key_name = params.api_key_name || 'key';
             this.api_key = params.api_key || null;
+            this.backOff = params.backOff || [1, 3, 10, 30, 60, 180];
         }
         async addAuthHeaders(headers) {
             if (this.api_key) {
