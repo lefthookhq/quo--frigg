@@ -117,10 +117,13 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
     static ZOHO_DEFAULT_RENEWAL_DAYS = 6;
 
     static generateChannelId(integrationId) {
-        return (
-            ZohoCRMIntegration.ZOHO_CHANNEL_ID_BASE +
-            parseInt(integrationId, 10)
-        );
+        const parsed = parseInt(integrationId, 10);
+        if (Number.isNaN(parsed)) {
+            throw new Error(
+                `Invalid integration ID for channel generation: ${integrationId}`,
+            );
+        }
+        return ZohoCRMIntegration.ZOHO_CHANNEL_ID_BASE + parsed;
     }
 
     constructor(params) {
@@ -937,8 +940,11 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 // returns 400 NOT_SUBSCRIBED and renewal would loop forever.
                 // Recreate the subscription via POST so the integration recovers.
                 if (this._isNotSubscribedError(error)) {
+                    const reason = error.message?.includes('NOT_SUBSCRIBED')
+                        ? 'NOT_SUBSCRIBED'
+                        : '400 (assumed NOT_SUBSCRIBED — response body stripped)';
                     console.warn(
-                        `[Zoho CRM] Notification channel ${channelId} reported NOT_SUBSCRIBED — falling back to enableNotification to re-create the subscription`,
+                        `[Zoho CRM] Channel ${channelId} ${reason} — re-subscribing`,
                     );
                     return await this._reSubscribeNotification(watchConfig);
                 }
@@ -977,9 +983,11 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         const newChannelId = this.constructor.generateChannelId(this.id);
 
         const enableConfig = {
-            watch: watchConfig.watch.map((item) => ({
-                ...item,
+            watch: watchConfig.watch.map(({ events, token, notify_url }) => ({
                 channel_id: newChannelId,
+                events,
+                token,
+                notify_url,
                 return_affected_field_values: true,
                 notify_on_related_action: false,
             })),
@@ -1000,8 +1008,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         console.log(
             `[Zoho CRM] ✓ Notification channel re-subscribed with new channel ID ${newChannelId}`,
         );
-        response.newChannelId = newChannelId;
-        return response;
+        return { ...response, newChannelId };
     }
 
     /**

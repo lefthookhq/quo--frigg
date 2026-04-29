@@ -105,7 +105,7 @@ describe('ZohoCRMIntegration (Refactored)', () => {
         integration = new ZohoCRMIntegration();
         integration.zoho = mockZohoCrm;
         integration.quo = mockQuoApi;
-        integration.id = 'test-integration-id';
+        integration.id = 99999;
         integration.userId = 'test-user-id';
 
         // Mock base class methods

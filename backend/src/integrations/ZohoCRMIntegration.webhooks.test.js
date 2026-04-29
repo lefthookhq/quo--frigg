@@ -995,6 +995,18 @@ describe('ZohoCRMIntegration - Channel ID Generation', () => {
             const fromNumber = ZohoCRMIntegration.generateChannelId(9604);
             expect(fromString).toBe(fromNumber);
         });
+
+        it('throws on non-numeric integration IDs', () => {
+            expect(() => ZohoCRMIntegration.generateChannelId('abc')).toThrow(
+                'Invalid integration ID for channel generation: abc',
+            );
+        });
+
+        it('produces safe integers at max PostgreSQL INT', () => {
+            const maxPgInt = 2147483647;
+            const channelId = ZohoCRMIntegration.generateChannelId(maxPgInt);
+            expect(Number.isSafeInteger(channelId)).toBe(true);
+        });
     });
 });
 
