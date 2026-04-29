@@ -40,7 +40,7 @@ describe('QueueManager', () => {
     });
 
     describe('queueFetchPersonPage', () => {
-        it('should queue a fetch person page job', async () => {
+        it('should queue a fetch person page job with default delaySeconds=5', async () => {
             const params = {
                 processId: 'process-123',
                 personObjectType: 'Contact',
@@ -65,6 +65,7 @@ describe('QueueManager', () => {
                             modifiedSince: '2024-01-01T10:00:00.000Z',
                             sortDesc: true,
                         },
+                        delaySeconds: 5,
                     },
                 ],
                 'https://sqs.test.com/queue',
@@ -95,6 +96,7 @@ describe('QueueManager', () => {
                             modifiedSince: null,
                             sortDesc: false,
                         },
+                        delaySeconds: 5,
                     },
                 ],
                 'https://sqs.test.com/queue',
@@ -124,10 +126,51 @@ describe('QueueManager', () => {
                             modifiedSince: null,
                             sortDesc: true, // default value
                         },
+                        delaySeconds: 5,
                     },
                 ],
                 'https://sqs.test.com/queue',
             );
+        });
+
+        it('should propagate an explicit delaySeconds override', async () => {
+            await queueManager.queueFetchPersonPage({
+                processId: 'process-123',
+                personObjectType: 'Contact',
+                cursor: 'abc',
+                limit: 50,
+                delaySeconds: 30,
+            });
+
+            const message = mockQueuerUtil.batchSend.mock.calls[0][0][0];
+            expect(message.delaySeconds).toBe(30);
+        });
+
+        it('should keep delaySeconds=0 when explicitly opted out', async () => {
+            await queueManager.queueFetchPersonPage({
+                processId: 'process-123',
+                personObjectType: 'Contact',
+                cursor: 'abc',
+                limit: 50,
+                delaySeconds: 0,
+            });
+
+            const message = mockQueuerUtil.batchSend.mock.calls[0][0][0];
+            expect(message.delaySeconds).toBe(0);
+        });
+
+        it('should omit delaySeconds when caller passes null', async () => {
+            // null = "use upstream/SQS default", distinct from 0 which is an explicit zero delay
+            await queueManager.queueFetchPersonPage({
+                processId: 'process-123',
+                personObjectType: 'Contact',
+                cursor: 'abc',
+                limit: 50,
+                delaySeconds: null,
+            });
+
+            const message = mockQueuerUtil.batchSend.mock.calls[0][0][0];
+            expect(message).not.toHaveProperty('delaySeconds');
         });
     });
 
@@ -257,6 +300,7 @@ describe('QueueManager', () => {
                             page: 1,
                             limit: 100,
                         }),
+                        delaySeconds: 5,
                     }),
                     expect.objectContaining({
                         event: 'FETCH_PERSON_PAGE',
@@ -266,6 +310,7 @@ describe('QueueManager', () => {
                             page: 14,
                             limit: 100,
                         }),
+                        delaySeconds: 5,
                     }),
                 ]),
                 'https://sqs.test.com/queue',
@@ -274,6 +319,38 @@ describe('QueueManager', () => {
             // Should have 14 messages (pages 1-14)
             const messages = mockQueuerUtil.batchSend.mock.calls[0][0];
             expect(messages).toHaveLength(14);
+            // Every fan-out message must carry the delay so the recursion-detector
+            // doesn't see them as a tight chain off the parent invocation
+            expect(messages.every((m) => m.delaySeconds === 5)).toBe(true);
+        });
+
+        it('should propagate an explicit delaySeconds override to every page', async () => {
+            await queueManager.fanOutPages({
+                processId: 'process-123',
+                personObjectType: 'Contact',
+                totalPages: 4,
+                startPage: 1,
+                limit: 50,
+                delaySeconds: 10,
+            });
+
+            const messages = mockQueuerUtil.batchSend.mock.calls[0][0];
+            expect(messages).toHaveLength(3);
+            expect(messages.every((m) => m.delaySeconds === 10)).toBe(true);
+        });
+
+        it('should omit delaySeconds when caller passes null', async () => {
+            await queueManager.fanOutPages({
+                processId: 'process-123',
+                personObjectType: 'Contact',
+                totalPages: 3,
+                startPage: 1,
+                limit: 50,
+                delaySeconds: null,
+            });
+
+            const messages = mockQueuerUtil.batchSend.mock.calls[0][0];
+            expect(messages.every((m) => !('delaySeconds' in m))).toBe(true);
         });
 
         it('should not queue any messages if no pages to fan out', async () => {

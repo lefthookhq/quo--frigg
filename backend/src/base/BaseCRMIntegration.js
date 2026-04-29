@@ -94,6 +94,7 @@ class BaseCRMIntegration extends IntegrationBase {
      * @property {number} syncConfig.initialBatchSize - Records per page for initial sync
      * @property {number} syncConfig.ongoingBatchSize - Records per page for delta sync
      * @property {number} syncConfig.pollIntervalMinutes - Polling interval if no webhooks
+     * @property {number} [syncConfig.paginationDelaySeconds] - SQS DelaySeconds applied to enqueued FETCH_PERSON_PAGE messages. Defaults to 5 in QueueManager. Required to break AWS Lambda's recursive-loop trace lineage on cursor-based syncs >800 records (16 pages × 50). Set to 0 only if you know the chain stays under depth 16.
      * @property {number} [onCreateDelaySeconds=35] - Delay before webhook setup and initial sync (TEMPORARY: works around Quo API key propagation delay, will be removed once Quo fixes this)
      * @property {Object} queueConfig - SQS queue configuration
      * @property {number} queueConfig.maxWorkers - Maximum concurrent queue workers
@@ -737,6 +738,9 @@ class BaseCRMIntegration extends IntegrationBase {
                         ? new Date(modifiedSince)
                         : null,
                     sortDesc,
+                    delaySeconds:
+                        this.constructor.CRMConfig?.syncConfig
+                            ?.paginationDelaySeconds,
                 });
 
                 await this.processManager.updateState(
@@ -917,6 +921,9 @@ class BaseCRMIntegration extends IntegrationBase {
                     limit,
                     modifiedSince,
                     sortDesc,
+                    delaySeconds:
+                        this.constructor.CRMConfig?.syncConfig
+                            ?.paginationDelaySeconds,
                 });
             } else {
                 console.log(`[BaseCRM] All pages fetched, completing sync`);

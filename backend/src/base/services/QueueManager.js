@@ -49,6 +49,12 @@ class QueueManager {
 
     /**
      * Queue a fetch person page job
+     *
+     * `delaySeconds` defaults to 5 to break AWS Lambda's recursive-loop trace lineage.
+     * Cursor-based pagination self-enqueues the next page from inside the worker
+     * — Lambda → SQS → same Lambda — and AWS terminates that chain at depth 16.
+     * A non-zero SQS DelaySeconds severs the lineage so each page starts fresh.
+     *
      * @param {Object} params
      * @param {string} params.processId - Process ID
      * @param {string} params.personObjectType - CRM object type
@@ -57,6 +63,7 @@ class QueueManager {
      * @param {number} params.limit - Records per page
      * @param {Date} [params.modifiedSince] - Filter by modification date
      * @param {boolean} [params.sortDesc=true] - Sort descending
+     * @param {number} [params.delaySeconds=5] - SQS delay for the next-page message (0-900)
      * @returns {Promise<void>}
      */
     async queueFetchPersonPage({
@@ -67,6 +74,7 @@ class QueueManager {
         limit,
         modifiedSince = null,
         sortDesc = true,
+        delaySeconds = 5,
     }) {
         const message = {
             event: 'FETCH_PERSON_PAGE',
@@ -82,6 +90,10 @@ class QueueManager {
                 sortDesc,
             },
         };
+
+        if (delaySeconds !== undefined && delaySeconds !== null) {
+            message.delaySeconds = delaySeconds;
+        }
 
         await this.queuerUtil.batchSend([message], this.queueUrl);
     }
@@ -145,6 +157,7 @@ class QueueManager {
      * @param {number} params.limit - Records per page
      * @param {Date} [params.modifiedSince] - Filter by modification date
      * @param {boolean} [params.sortDesc=true] - Sort descending
+     * @param {number} [params.delaySeconds=5] - SQS delay applied to every fan-out page (0-900). Same rationale as queueFetchPersonPage.
      * @returns {Promise<void>}
      */
     async fanOutPages({
@@ -155,12 +168,16 @@ class QueueManager {
         limit,
         modifiedSince = null,
         sortDesc = true,
+        delaySeconds = 5,
     }) {
+        const applyDelay =
+            delaySeconds !== undefined && delaySeconds !== null;
+
         // Build array of messages for all pages
         const messages = [];
 
         for (let page = startPage; page < totalPages; page++) {
-            messages.push({
+            const message = {
                 event: 'FETCH_PERSON_PAGE',
                 data: {
                     processId,
@@ -172,7 +189,11 @@ class QueueManager {
                         : null,
                     sortDesc,
                 },
-            });
+            };
+            if (applyDelay) {
+                message.delaySeconds = delaySeconds;
+            }
+            messages.push(message);
         }
 
         // Send all messages at once (QueuerUtil handles batching internally)
