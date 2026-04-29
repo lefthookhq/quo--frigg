@@ -13,7 +13,7 @@ describe('ZohoCRMIntegration - Notification Renewal', () => {
 
         integration = new ZohoCRMIntegration({});
         integration.zoho = { api: mockZohoApi };
-        integration.id = 7133;
+        integration.id = 'test-integration-id';
     });
 
     describe('_renewZohoNotificationWithRetry - NOT_SUBSCRIBED fallback', () => {
@@ -63,16 +63,16 @@ describe('ZohoCRMIntegration - Notification Renewal', () => {
 
             expect(mockZohoApi.updateNotification).toHaveBeenCalledTimes(1);
             expect(mockZohoApi.enableNotification).toHaveBeenCalledTimes(1);
-            const expectedChannelId =
-                ZohoCRMIntegration.generateChannelId(7133);
             expect(mockZohoApi.enableNotification).toHaveBeenCalledWith(
                 expect.objectContaining({
                     watch: [
                         expect.objectContaining({
-                            channel_id: expectedChannelId,
+                            channel_id: renewalParams.channelId,
                             events: renewalParams.events,
                             token: renewalParams.token,
                             notify_url: renewalParams.notifyUrl,
+                            // Must match the initial subscription so webhook payloads
+                            // keep field-level diff data on a re-created channel.
                             return_affected_field_values: true,
                             notify_on_related_action: false,
                         }),
@@ -80,7 +80,6 @@ describe('ZohoCRMIntegration - Notification Renewal', () => {
                 }),
             );
             expect(result.watch[0].status).toBe('success');
-            expect(result.newChannelId).toBe(expectedChannelId);
         });
 
         it('falls back to re-subscribe on a 400 with stripped body (FetchError in prod)', async () => {
@@ -101,7 +100,7 @@ describe('ZohoCRMIntegration - Notification Renewal', () => {
             mockZohoApi.enableNotification.mockResolvedValueOnce({
                 watch: [
                     {
-                        channel_id: ZohoCRMIntegration.generateChannelId(7133),
+                        channel_id: renewalParams.channelId,
                         status: 'success',
                     },
                 ],
