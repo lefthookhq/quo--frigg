@@ -113,8 +113,15 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         QUO_CALL_SUMMARIES: [QuoWebhookEvents.CALL_SUMMARY_COMPLETED],
     };
 
-    static ZOHO_NOTIFICATION_CHANNEL_ID = 1735593600000; // Unique bigint channel ID for Zoho webhooks
-    static ZOHO_DEFAULT_RENEWAL_DAYS = 6; // Days before notification expiry to schedule renewal. In Zoho, notifications (webhooks) expire after 7 days.
+    static ZOHO_CHANNEL_ID_BASE = 1735000000000;
+    static ZOHO_DEFAULT_RENEWAL_DAYS = 6;
+
+    static generateChannelId(integrationId) {
+        return (
+            ZohoCRMIntegration.ZOHO_CHANNEL_ID_BASE +
+            parseInt(integrationId, 10)
+        );
+    }
 
     constructor(params) {
         super(params);
@@ -557,11 +564,12 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             const crypto = require('crypto');
             const notificationToken = crypto.randomBytes(20).toString('hex');
 
+            const channelId = this.constructor.generateChannelId(this.id);
+
             const notificationConfig = {
                 watch: [
                     {
-                        channel_id:
-                            this.constructor.ZOHO_NOTIFICATION_CHANNEL_ID,
+                        channel_id: channelId,
                         events: ['Accounts.all', 'Contacts.all'],
                         notify_url: notificationUrl,
                         token: notificationToken,
@@ -592,7 +600,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 .map((e) => e.resource_name)
                 .join(', ');
             console.log(
-                `[Zoho CRM] ✓ Notification channel ${this.constructor.ZOHO_NOTIFICATION_CHANNEL_ID} enabled for: ${subscribedResources}`,
+                `[Zoho CRM] ✓ Notification channel ${channelId} enabled for: ${subscribedResources}`,
             );
 
             // Calculate notification expiry (7 days from now - Zoho max)
@@ -601,8 +609,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
 
             const updatedConfig = {
                 ...this.config,
-                zohoNotificationChannelId:
-                    this.constructor.ZOHO_NOTIFICATION_CHANNEL_ID,
+                zohoNotificationChannelId: channelId,
                 zohoNotificationToken: notificationToken,
                 zohoNotificationUrl: notificationUrl,
                 notificationCreatedAt: new Date().toISOString(),
@@ -644,7 +651,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
 
             return {
                 status: 'configured',
-                channelId: this.constructor.ZOHO_NOTIFICATION_CHANNEL_ID,
+                channelId: channelId,
                 notificationUrl: notificationUrl,
                 events: ['Accounts.all', 'Contacts.all'],
             };
@@ -784,7 +791,7 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             newExpiry.setDate(newExpiry.getDate() + 7);
 
             // 7. Call Zoho API to renew notification (with retry)
-            await this._renewZohoNotificationWithRetry({
+            const renewResult = await this._renewZohoNotificationWithRetry({
                 channelId: config.zohoNotificationChannelId,
                 events: config.notificationEvents || [
                     'Accounts.all',
@@ -798,6 +805,9 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             // 8. Update config with new expiry and tracking info
             const updatedConfig = {
                 ...config,
+                zohoNotificationChannelId:
+                    renewResult?.newChannelId ||
+                    config.zohoNotificationChannelId,
                 zohoNotificationExpiresAt: newExpiry.toISOString(),
                 lastRenewalAttemptAt: new Date().toISOString(),
                 lastRenewalStatus: 'success',
@@ -956,17 +966,20 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
     _isNotSubscribedError(error) {
         if (!error) return false;
         const message = typeof error.message === 'string' ? error.message : '';
-        return message.includes('NOT_SUBSCRIBED');
+        if (message.includes('NOT_SUBSCRIBED')) return true;
+        // FetchError strips response body in non-dev environments, so a 400
+        // on renewal is likely NOT_SUBSCRIBED. Fall back to re-subscribe.
+        if (error.statusCode === 400) return true;
+        return false;
     }
 
     async _reSubscribeNotification(watchConfig) {
-        // Match the initial subscription payload (setupZohoNotifications) so the
-        // re-created channel keeps field-level diff data and ignores related-action
-        // notifications. PATCH preserves these server-side on renewal; POST creates
-        // a fresh channel and would otherwise fall back to Zoho defaults.
+        const newChannelId = this.constructor.generateChannelId(this.id);
+
         const enableConfig = {
             watch: watchConfig.watch.map((item) => ({
                 ...item,
+                channel_id: newChannelId,
                 return_affected_field_values: true,
                 notify_on_related_action: false,
             })),
@@ -979,19 +992,15 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             response.watch.length === 0 ||
             response.watch[0].status !== 'success'
         ) {
-            // Zoho returned 200 but refused the subscription (e.g. channel-limit,
-            // invalid config). Retrying the exact same POST will give the same
-            // response, so halt the SQS message instead of burning 3 retries + DLQ.
-            // Transport-level failures (FetchError from enableNotification above)
-            // still propagate unchanged so transient 5xx/network errors retry.
             throw new HaltError(
                 `Notification re-subscription failed: ${JSON.stringify(response)}`,
             );
         }
 
         console.log(
-            `[Zoho CRM] ✓ Notification channel re-subscribed successfully`,
+            `[Zoho CRM] ✓ Notification channel re-subscribed with new channel ID ${newChannelId}`,
         );
+        response.newChannelId = newChannelId;
         return response;
     }
 

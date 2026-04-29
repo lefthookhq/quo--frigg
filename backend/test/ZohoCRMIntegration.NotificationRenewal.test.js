@@ -13,7 +13,7 @@ describe('ZohoCRMIntegration - Notification Renewal', () => {
 
         integration = new ZohoCRMIntegration({});
         integration.zoho = { api: mockZohoApi };
-        integration.id = 'test-integration-id';
+        integration.id = 7133;
     });
 
     describe('_renewZohoNotificationWithRetry - NOT_SUBSCRIBED fallback', () => {
@@ -63,16 +63,16 @@ describe('ZohoCRMIntegration - Notification Renewal', () => {
 
             expect(mockZohoApi.updateNotification).toHaveBeenCalledTimes(1);
             expect(mockZohoApi.enableNotification).toHaveBeenCalledTimes(1);
+            const expectedChannelId =
+                ZohoCRMIntegration.generateChannelId(7133);
             expect(mockZohoApi.enableNotification).toHaveBeenCalledWith(
                 expect.objectContaining({
                     watch: [
                         expect.objectContaining({
-                            channel_id: renewalParams.channelId,
+                            channel_id: expectedChannelId,
                             events: renewalParams.events,
                             token: renewalParams.token,
                             notify_url: renewalParams.notifyUrl,
-                            // Must match the initial subscription so webhook payloads
-                            // keep field-level diff data on a re-created channel.
                             return_affected_field_values: true,
                             notify_on_related_action: false,
                         }),
@@ -80,12 +80,14 @@ describe('ZohoCRMIntegration - Notification Renewal', () => {
                 }),
             );
             expect(result.watch[0].status).toBe('success');
+            expect(result.newChannelId).toBe(expectedChannelId);
         });
 
-        it('does NOT fall back on a generic 400 without NOT_SUBSCRIBED (retries instead)', async () => {
-            // Guard against over-broad detection: a 400 caused by something other
-            // than NOT_SUBSCRIBED (e.g. schema or transient) must still go through
-            // the 3× retry path and not trigger the POST fallback.
+        it('falls back to re-subscribe on a 400 with stripped body (FetchError in prod)', async () => {
+            // In non-dev environments, FetchError strips the response body so
+            // the NOT_SUBSCRIBED code is invisible. Any 400 on renewal should
+            // trigger re-subscribe — if the cause was different, the POST will
+            // also fail and throw HaltError, stopping retries.
             const sanitizedError = new Error(
                 'An error ocurred while fetching an external resource.\n' +
                     'PATCH https://www.zohoapis.com/crm/v8/actions/watch\n' +
@@ -96,13 +98,23 @@ describe('ZohoCRMIntegration - Notification Renewal', () => {
             sanitizedError.response = { status: 400 };
 
             mockZohoApi.updateNotification.mockRejectedValue(sanitizedError);
+            mockZohoApi.enableNotification.mockResolvedValueOnce({
+                watch: [
+                    {
+                        channel_id: ZohoCRMIntegration.generateChannelId(7133),
+                        status: 'success',
+                    },
+                ],
+            });
 
-            await expect(
-                integration._renewZohoNotificationWithRetry(renewalParams),
-            ).rejects.toThrow(/400 Bad Request/);
+            const result =
+                await integration._renewZohoNotificationWithRetry(
+                    renewalParams,
+                );
 
-            expect(mockZohoApi.updateNotification).toHaveBeenCalledTimes(3);
-            expect(mockZohoApi.enableNotification).not.toHaveBeenCalled();
+            expect(mockZohoApi.updateNotification).toHaveBeenCalledTimes(1);
+            expect(mockZohoApi.enableNotification).toHaveBeenCalledTimes(1);
+            expect(result.watch[0].status).toBe('success');
         });
 
         it('still retries + throws on non-NOT_SUBSCRIBED errors (no fallback)', async () => {

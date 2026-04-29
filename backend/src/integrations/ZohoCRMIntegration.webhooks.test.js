@@ -166,7 +166,7 @@ describe('ZohoCRMIntegration - Notification Setup', () => {
         };
 
         integration.zoho = mockZohoCrmApi;
-        integration.id = 'test-integration-id';
+        integration.id = 12345;
         integration.config = {};
 
         // Mock commands
@@ -312,13 +312,12 @@ describe('ZohoCRMIntegration - Notification Setup', () => {
                     integration.commands.updateIntegrationConfig,
                 ).toHaveBeenCalledWith(
                     expect.objectContaining({
-                        integrationId: 'test-integration-id',
+                        integrationId: 12345,
                         config: expect.objectContaining({
                             zohoNotificationChannelId: expect.any(Number),
                             zohoNotificationToken: expect.any(String),
-                            zohoNotificationUrl: expect.stringContaining(
-                                'test-integration-id',
-                            ),
+                            zohoNotificationUrl:
+                                expect.stringContaining('12345'),
                             notificationEvents: [
                                 'Accounts.all',
                                 'Contacts.all',
@@ -330,7 +329,7 @@ describe('ZohoCRMIntegration - Notification Setup', () => {
                 consoleSpy.mockRestore();
             });
 
-            it('uses constant ZOHO_NOTIFICATION_CHANNEL_ID', async () => {
+            it('uses a unique channel ID derived from integration ID', async () => {
                 const mockResponse = {
                     watch: [
                         {
@@ -359,7 +358,7 @@ describe('ZohoCRMIntegration - Notification Setup', () => {
                     integration.commands.updateIntegrationConfig.mock
                         .calls[0][0];
                 expect(configCall.config.zohoNotificationChannelId).toBe(
-                    ZohoCRMIntegration.ZOHO_NOTIFICATION_CHANNEL_ID,
+                    ZohoCRMIntegration.generateChannelId(12345),
                 );
 
                 consoleSpy.mockRestore();
@@ -967,6 +966,217 @@ describe('ZohoCRMIntegration - Notification Processing', () => {
 
             logSpy.mockRestore();
             errorSpy.mockRestore();
+        });
+    });
+});
+
+describe('ZohoCRMIntegration - Channel ID Generation', () => {
+    describe('generateChannelId', () => {
+        it('generates a unique channel ID from integration ID', () => {
+            const channelId = ZohoCRMIntegration.generateChannelId(9604);
+            expect(typeof channelId).toBe('number');
+            expect(channelId).toBeGreaterThan(1000000000000);
+        });
+
+        it('generates different IDs for different integrations', () => {
+            const id1 = ZohoCRMIntegration.generateChannelId(9604);
+            const id2 = ZohoCRMIntegration.generateChannelId(9670);
+            expect(id1).not.toBe(id2);
+        });
+
+        it('is deterministic for the same integration ID', () => {
+            const first = ZohoCRMIntegration.generateChannelId(100);
+            const second = ZohoCRMIntegration.generateChannelId(100);
+            expect(first).toBe(second);
+        });
+
+        it('handles string integration IDs', () => {
+            const fromString = ZohoCRMIntegration.generateChannelId('9604');
+            const fromNumber = ZohoCRMIntegration.generateChannelId(9604);
+            expect(fromString).toBe(fromNumber);
+        });
+    });
+});
+
+describe('ZohoCRMIntegration - NOT_SUBSCRIBED Detection', () => {
+    let integration;
+
+    beforeEach(() => {
+        integration = new ZohoCRMIntegration();
+    });
+
+    describe('_isNotSubscribedError', () => {
+        it('detects NOT_SUBSCRIBED in error message', () => {
+            const error = new Error('Channel NOT_SUBSCRIBED');
+            expect(integration._isNotSubscribedError(error)).toBe(true);
+        });
+
+        it('detects 400 status code from FetchError', () => {
+            const error = new Error('400 Bad Request');
+            error.statusCode = 400;
+            expect(integration._isNotSubscribedError(error)).toBe(true);
+        });
+
+        it('does not match non-400 status codes', () => {
+            const error = new Error('500 Internal Server Error');
+            error.statusCode = 500;
+            expect(integration._isNotSubscribedError(error)).toBe(false);
+        });
+
+        it('returns false for null error', () => {
+            expect(integration._isNotSubscribedError(null)).toBe(false);
+        });
+
+        it('returns false for generic errors without status code', () => {
+            const error = new Error('Network timeout');
+            expect(integration._isNotSubscribedError(error)).toBe(false);
+        });
+    });
+});
+
+describe('ZohoCRMIntegration - Renewal with unique channel ID', () => {
+    let integration;
+    let mockZohoCrmApi;
+
+    beforeEach(() => {
+        integration = new ZohoCRMIntegration();
+
+        mockZohoCrmApi = {
+            api: {
+                enableNotification: jest.fn(),
+                updateNotification: jest.fn(),
+            },
+        };
+
+        integration.zoho = mockZohoCrmApi;
+        integration.id = 9604;
+        integration.config = {};
+
+        jest.spyOn(console, 'log').mockImplementation();
+        jest.spyOn(console, 'warn').mockImplementation();
+        jest.spyOn(console, 'error').mockImplementation();
+    });
+
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    describe('setupZohoNotifications', () => {
+        it('uses a unique channel ID based on integration ID', async () => {
+            integration.commands = {
+                updateIntegrationConfig: jest.fn().mockResolvedValue({}),
+            };
+
+            mockZohoCrmApi.api.enableNotification.mockResolvedValue({
+                watch: [
+                    {
+                        status: 'success',
+                        details: {
+                            events: [
+                                { resource_name: 'Accounts' },
+                                { resource_name: 'Contacts' },
+                            ],
+                        },
+                    },
+                ],
+            });
+
+            process.env.BASE_URL = 'https://test.example.com';
+
+            await integration.setupZohoNotifications();
+
+            const enableCall =
+                mockZohoCrmApi.api.enableNotification.mock.calls[0][0];
+            const channelId = enableCall.watch[0].channel_id;
+
+            expect(channelId).toBe(ZohoCRMIntegration.generateChannelId(9604));
+            expect(channelId).not.toBe(1735593600000);
+
+            delete process.env.BASE_URL;
+        });
+    });
+
+    describe('_reSubscribeNotification', () => {
+        it('generates a new unique channel ID on re-subscribe', async () => {
+            mockZohoCrmApi.api.enableNotification.mockResolvedValue({
+                watch: [
+                    {
+                        status: 'success',
+                        details: {
+                            events: [
+                                { resource_name: 'Accounts' },
+                                { resource_name: 'Contacts' },
+                            ],
+                        },
+                    },
+                ],
+            });
+
+            const oldWatchConfig = {
+                watch: [
+                    {
+                        channel_id: 1735593600000,
+                        events: ['Accounts.all', 'Contacts.all'],
+                        token: 'test-token',
+                        notify_url: 'https://test.example.com/webhooks/9604',
+                    },
+                ],
+            };
+
+            const result =
+                await integration._reSubscribeNotification(oldWatchConfig);
+
+            const enableCall =
+                mockZohoCrmApi.api.enableNotification.mock.calls[0][0];
+            const newChannelId = enableCall.watch[0].channel_id;
+
+            expect(newChannelId).toBe(
+                ZohoCRMIntegration.generateChannelId(9604),
+            );
+            expect(newChannelId).not.toBe(1735593600000);
+
+            expect(result.newChannelId).toBe(newChannelId);
+        });
+    });
+
+    describe('_renewZohoNotificationWithRetry', () => {
+        it('falls back to re-subscribe on 400 FetchError (stripped body)', async () => {
+            const fetchError = new Error(
+                'An error ocurred while fetching an external resource.\n400 Bad Request',
+            );
+            fetchError.statusCode = 400;
+
+            mockZohoCrmApi.api.updateNotification.mockRejectedValue(fetchError);
+
+            mockZohoCrmApi.api.enableNotification.mockResolvedValue({
+                watch: [
+                    {
+                        status: 'success',
+                        details: {
+                            events: [
+                                { resource_name: 'Accounts' },
+                                { resource_name: 'Contacts' },
+                            ],
+                        },
+                    },
+                ],
+            });
+
+            const result = await integration._renewZohoNotificationWithRetry({
+                channelId: 1735593600000,
+                events: ['Accounts.all', 'Contacts.all'],
+                expiry: new Date('2026-05-06'),
+                token: 'test-token',
+                notifyUrl: 'https://test.example.com/webhooks/9604',
+            });
+
+            expect(mockZohoCrmApi.api.updateNotification).toHaveBeenCalledTimes(
+                1,
+            );
+            expect(mockZohoCrmApi.api.enableNotification).toHaveBeenCalledTimes(
+                1,
+            );
+            expect(result).toBeDefined();
         });
     });
 });
