@@ -970,39 +970,3 @@ describe('ZohoCRMIntegration - Notification Processing', () => {
         });
     });
 });
-
-describe('ZohoCRMIntegration - NOT_SUBSCRIBED Detection', () => {
-    let integration;
-
-    beforeEach(() => {
-        integration = new ZohoCRMIntegration();
-    });
-
-    describe('_isNotSubscribedError', () => {
-        it('detects NOT_SUBSCRIBED in error message', () => {
-            const error = new Error('Channel NOT_SUBSCRIBED');
-            expect(integration._isNotSubscribedError(error)).toBe(true);
-        });
-
-        it('detects 400 status code from FetchError', () => {
-            const error = new Error('400 Bad Request');
-            error.statusCode = 400;
-            expect(integration._isNotSubscribedError(error)).toBe(true);
-        });
-
-        it('does not match non-400 status codes', () => {
-            const error = new Error('500 Internal Server Error');
-            error.statusCode = 500;
-            expect(integration._isNotSubscribedError(error)).toBe(false);
-        });
-
-        it('returns false for null error', () => {
-            expect(integration._isNotSubscribedError(null)).toBe(false);
-        });
-
-        it('returns false for generic errors without status code', () => {
-            const error = new Error('Network timeout');
-            expect(integration._isNotSubscribedError(error)).toBe(false);
-        });
-    });
-});

@@ -2,6 +2,6 @@
 "quo-integrations-frigg": patch
 ---
 
-fix(zoho): treat 400 on PATCH renewal as NOT_SUBSCRIBED
+fix(zoho): always re-subscribe on PATCH renewal failure with GET/DELETE recovery
 
-When Zoho expires a notification channel, the PATCH renewal returns 400 with `NOT_SUBSCRIBED` in the response body. In prod, FetchError strips that body, so the existing string-match detection never fired and the renewal kept retrying. Now `_isNotSubscribedError` also returns true for `error.statusCode === 400`, triggering the existing re-subscribe fallback path.
+When the PATCH /actions/watch renewal fails for any reason (NOT_SUBSCRIBED, FetchError-stripped 400, transient 5xx, schema, etc.), the integration now falls back to re-subscribe via POST. If the initial POST fails, it queries Zoho for the existing channel via GET, deletes it via DELETE if found, and retries POST. If recovery still fails, it throws a HaltError tagged with the integration ID so SQS halts cleanly instead of burning DLQ retries.
