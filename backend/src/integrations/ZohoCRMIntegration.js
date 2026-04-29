@@ -863,16 +863,18 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
     }
 
     /**
-     * Calls Zoho API to renew notification with retry logic.
-     * Retries 3 times with exponential backoff.
+     * Renew a Zoho notification channel via PATCH /actions/watch. On any
+     * failure (NOT_SUBSCRIBED, FetchError-stripped 400, transient 5xx,
+     * non-success watch status), falls back to {@link _reSubscribeNotification}
+     * which owns the recovery flow.
      * @private
-     * @param {Object} params - Notification parameters
+     * @param {Object} params
      * @param {string} params.channelId - Channel ID to renew
      * @param {string[]} params.events - Events to watch
      * @param {Date} params.expiry - New expiry date
      * @param {string} params.token - Verification token
      * @param {string} params.notifyUrl - Callback URL
-     * @returns {Promise<Object>} - Zoho API response
+     * @returns {Promise<Object>} Zoho API response
      */
     async _renewZohoNotificationWithRetry({
         channelId,
@@ -881,7 +883,6 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
         token,
         notifyUrl,
     }) {
-        const maxRetries = 3;
         const watchConfig = {
             watch: [
                 {
@@ -895,75 +896,42 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 },
             ],
         };
-        let lastError;
 
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                console.log(
-                    `[Zoho CRM] Renewing notification channel ${channelId} (attempt ${attempt}/${maxRetries})`,
+        try {
+            console.log(
+                `[Zoho CRM] Renewing notification channel ${channelId} for integration ${this.id}`,
+            );
+
+            const response =
+                await this.zoho.api.updateNotification(watchConfig);
+
+            if (
+                !response?.watch ||
+                response.watch.length === 0 ||
+                response.watch[0].status !== 'success'
+            ) {
+                throw new Error(
+                    `Notification renewal failed: ${JSON.stringify(response)}`,
                 );
-
-                const response =
-                    await this.zoho.api.updateNotification(watchConfig);
-
-                if (
-                    !response?.watch ||
-                    response.watch.length === 0 ||
-                    response.watch[0].status !== 'success'
-                ) {
-                    throw new Error(
-                        `Notification renewal failed: ${JSON.stringify(response)}`,
-                    );
-                }
-
-                console.log(
-                    `[Zoho CRM] ✓ Notification channel renewed successfully`,
-                );
-                return response;
-            } catch (error) {
-                lastError = error;
-
-                // Zoho GCs expired or orphaned channels server-side. PATCH then
-                // returns 400 NOT_SUBSCRIBED and renewal would loop forever.
-                // Recreate the subscription via POST so the integration recovers.
-                if (this._isNotSubscribedError(error)) {
-                    console.warn(
-                        `[Zoho CRM] Notification channel ${channelId} reported NOT_SUBSCRIBED — falling back to enableNotification to re-create the subscription`,
-                    );
-                    return await this._reSubscribeNotification(watchConfig);
-                }
-
-                console.warn(
-                    `[Zoho CRM] Renewal attempt ${attempt}/${maxRetries} failed: ${error.message}`,
-                );
-
-                if (attempt < maxRetries) {
-                    // Exponential backoff: 1s, 2s, 4s
-                    const backoffMs = Math.pow(2, attempt - 1) * 1000;
-                    console.log(
-                        `[Zoho CRM] Waiting ${backoffMs}ms before retry...`,
-                    );
-                    await new Promise((resolve) =>
-                        setTimeout(resolve, backoffMs),
-                    );
-                }
             }
+
+            console.log(
+                `[Zoho CRM] ✓ Notification channel ${channelId} renewed successfully for integration ${this.id}`,
+            );
+            return response;
+        } catch (error) {
+            // Any failure on PATCH renewal — transient, NOT_SUBSCRIBED with
+            // stripped body, schema, or otherwise — falls back to re-subscribe.
+            // _reSubscribeNotification owns the recovery flow (GET → DELETE →
+            // POST) and throws HaltError if it can't recover.
+            console.warn(
+                `[Zoho CRM] PATCH renewal failed for integration ${this.id} (channel ${channelId}): ${error.message} — attempting re-subscribe with recovery`,
+            );
+            return await this._reSubscribeNotification(watchConfig);
         }
-
-        throw lastError;
-    }
-
-    _isNotSubscribedError(error) {
-        if (!error) return false;
-        const message = typeof error.message === 'string' ? error.message : '';
-        return message.includes('NOT_SUBSCRIBED');
     }
 
     async _reSubscribeNotification(watchConfig) {
-        // Match the initial subscription payload (setupZohoNotifications) so the
-        // re-created channel keeps field-level diff data and ignores related-action
-        // notifications. PATCH preserves these server-side on renewal; POST creates
-        // a fresh channel and would otherwise fall back to Zoho defaults.
         const enableConfig = {
             watch: watchConfig.watch.map((item) => ({
                 ...item,
@@ -971,7 +939,58 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
                 notify_on_related_action: false,
             })),
         };
+        const channelId = watchConfig.watch[0]?.channel_id;
 
+        try {
+            return await this._performSubscribe(enableConfig, 'initial');
+        } catch (initialError) {
+            console.warn(
+                `[Zoho CRM] Initial re-subscribe failed for integration ${this.id} (channel ${channelId}): ${initialError.message} — attempting recovery`,
+            );
+
+            // Cleanup is best-effort: a transient GET/DELETE failure should
+            // not block the recovery POST. The POST itself is what we care
+            // about — if there's a stale channel, deleting it helps; if we
+            // can't tell, just try the POST anyway.
+            try {
+                await this._cleanupStaleChannel(channelId);
+            } catch (cleanupError) {
+                console.warn(
+                    `[Zoho CRM] Cleanup of channel ${channelId} failed for integration ${this.id}: ${cleanupError.message} — proceeding with recovery POST anyway`,
+                );
+            }
+
+            try {
+                return await this._performSubscribe(enableConfig, 'recovery');
+            } catch (recoveryError) {
+                // HaltError stops SQS retries. Only halt for non-retriable
+                // failures (4xx with statusCode, or no statusCode meaning
+                // logical failure like Zoho's 200-with-error response).
+                // Transient 5xx and network errors propagate as-is so SQS
+                // can retry the whole renewal flow on the next attempt.
+                if (this._isRetriableError(recoveryError)) {
+                    throw recoveryError;
+                }
+                throw new HaltError(
+                    `[Zoho CRM] Re-subscribe failed for integration ${this.id} (channel ${channelId}) after recovery attempt: ${recoveryError.message}`,
+                );
+            }
+        }
+    }
+
+    _isRetriableError(error) {
+        if (!error) return false;
+        const status = error.statusCode ?? error.response?.status;
+        // 5xx HTTP errors are server-side and worth retrying.
+        if (status >= 500) return true;
+        // FetchError without a status = transport-level (timeout, ECONNRESET).
+        // Plain Errors thrown by _performSubscribe (Zoho 200-with-error) are
+        // logical refusals and must halt — they won't change on retry.
+        if (status === undefined && error.name === 'FetchError') return true;
+        return false;
+    }
+
+    async _performSubscribe(enableConfig, phase) {
         const response = await this.zoho.api.enableNotification(enableConfig);
 
         if (
@@ -979,20 +998,36 @@ class ZohoCRMIntegration extends BaseCRMIntegration {
             response.watch.length === 0 ||
             response.watch[0].status !== 'success'
         ) {
-            // Zoho returned 200 but refused the subscription (e.g. channel-limit,
-            // invalid config). Retrying the exact same POST will give the same
-            // response, so halt the SQS message instead of burning 3 retries + DLQ.
-            // Transport-level failures (FetchError from enableNotification above)
-            // still propagate unchanged so transient 5xx/network errors retry.
-            throw new HaltError(
-                `Notification re-subscription failed: ${JSON.stringify(response)}`,
+            throw new Error(
+                `Zoho returned non-success watch on ${phase} subscribe: ${JSON.stringify(response)}`,
             );
         }
 
         console.log(
-            `[Zoho CRM] ✓ Notification channel re-subscribed successfully`,
+            `[Zoho CRM] ✓ Notification channel re-subscribed successfully (${phase}) for integration ${this.id}`,
         );
         return response;
+    }
+
+    async _cleanupStaleChannel(channelId) {
+        if (!channelId) return;
+
+        const details = await this.zoho.api.getNotificationDetails();
+        const existing = (details?.watch || []).find(
+            (w) => String(w.channel_id) === String(channelId),
+        );
+
+        if (!existing) {
+            console.log(
+                `[Zoho CRM] No stale channel ${channelId} found in Zoho — proceeding to re-subscribe`,
+            );
+            return;
+        }
+
+        console.log(
+            `[Zoho CRM] Found stale channel ${channelId} — deleting before re-subscribe`,
+        );
+        await this.zoho.api.disableNotification([channelId]);
     }
 
     /**
