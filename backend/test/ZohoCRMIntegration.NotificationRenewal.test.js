@@ -299,29 +299,40 @@ describe('ZohoCRMIntegration - Notification Renewal', () => {
             expect(mockZohoApi.enableNotification).toHaveBeenCalledTimes(2);
         });
 
-        it('throws HaltError when GET (getNotificationDetails) fails', async () => {
-            mockZohoApi.enableNotification.mockRejectedValueOnce(
-                buildFetchError(400, 'Bad Request'),
-            );
+        it('continues to recovery POST when GET (getNotificationDetails) fails (cleanup is best-effort)', async () => {
+            mockZohoApi.enableNotification
+                .mockRejectedValueOnce(buildFetchError(400, 'Bad Request'))
+                .mockResolvedValueOnce({
+                    watch: [
+                        {
+                            channel_id: watchConfig.watch[0].channel_id,
+                            status: 'success',
+                        },
+                    ],
+                });
             mockZohoApi.getNotificationDetails.mockRejectedValueOnce(
                 buildFetchError(500, 'Internal Server Error'),
             );
 
-            let caught;
-            try {
+            const result =
                 await integration._reSubscribeNotification(watchConfig);
-            } catch (err) {
-                caught = err;
-            }
 
-            expect(caught).toBeInstanceOf(HaltError);
-            expect(caught.message).toContain('integration 7133');
+            expect(mockZohoApi.enableNotification).toHaveBeenCalledTimes(2);
+            expect(mockZohoApi.disableNotification).not.toHaveBeenCalled();
+            expect(result.watch[0].status).toBe('success');
         });
 
-        it('throws HaltError when DELETE (disableNotification) fails', async () => {
-            mockZohoApi.enableNotification.mockRejectedValueOnce(
-                buildFetchError(400, 'Bad Request'),
-            );
+        it('continues to recovery POST when DELETE (disableNotification) fails (cleanup is best-effort)', async () => {
+            mockZohoApi.enableNotification
+                .mockRejectedValueOnce(buildFetchError(400, 'Bad Request'))
+                .mockResolvedValueOnce({
+                    watch: [
+                        {
+                            channel_id: watchConfig.watch[0].channel_id,
+                            status: 'success',
+                        },
+                    ],
+                });
             mockZohoApi.getNotificationDetails.mockResolvedValueOnce({
                 watch: [
                     {
@@ -334,6 +345,22 @@ describe('ZohoCRMIntegration - Notification Renewal', () => {
                 buildFetchError(500, 'Internal Server Error'),
             );
 
+            const result =
+                await integration._reSubscribeNotification(watchConfig);
+
+            expect(mockZohoApi.enableNotification).toHaveBeenCalledTimes(2);
+            expect(result.watch[0].status).toBe('success');
+        });
+
+        it('propagates 5xx errors from recovery POST as-is (lets SQS retry, no HaltError)', async () => {
+            const transientError = buildFetchError(503, 'Service Unavailable');
+            mockZohoApi.enableNotification
+                .mockRejectedValueOnce(buildFetchError(400, 'Bad Request'))
+                .mockRejectedValueOnce(transientError);
+            mockZohoApi.getNotificationDetails.mockResolvedValueOnce({
+                watch: [],
+            });
+
             let caught;
             try {
                 await integration._reSubscribeNotification(watchConfig);
@@ -341,8 +368,31 @@ describe('ZohoCRMIntegration - Notification Renewal', () => {
                 caught = err;
             }
 
-            expect(caught).toBeInstanceOf(HaltError);
-            expect(caught.message).toContain('integration 7133');
+            expect(caught).toBe(transientError);
+            expect(caught.isHaltError).toBeUndefined();
+            expect(caught.statusCode).toBe(503);
+        });
+
+        it('propagates network errors (FetchError without statusCode) from recovery POST as-is', async () => {
+            const networkError = new Error('ECONNRESET');
+            networkError.name = 'FetchError';
+            // No statusCode set — simulates a true network/transport failure
+            mockZohoApi.enableNotification
+                .mockRejectedValueOnce(buildFetchError(400, 'Bad Request'))
+                .mockRejectedValueOnce(networkError);
+            mockZohoApi.getNotificationDetails.mockResolvedValueOnce({
+                watch: [],
+            });
+
+            let caught;
+            try {
+                await integration._reSubscribeNotification(watchConfig);
+            } catch (err) {
+                caught = err;
+            }
+
+            expect(caught).toBe(networkError);
+            expect(caught.isHaltError).toBeUndefined();
         });
 
         it('throws HaltError when initial POST returns 200 with non-success watch and recovery also fails', async () => {
