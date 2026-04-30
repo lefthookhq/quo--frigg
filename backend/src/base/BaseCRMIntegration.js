@@ -1127,6 +1127,7 @@ class BaseCRMIntegration extends IntegrationBase {
      * This method implements the lookup-then-create/update pattern:
      * 1. Look up contact by externalId using listContacts
      * 2. If found, update using updateFriggContact
+     *    2a. On 404 (stale/deleted contact), fall back to create
      * 3. If not found, create using createFriggContact
      * 4. On 409 Conflict, attempt recovery via _recoverFrom409Conflict
      * 5. Store mapping by phone number
@@ -1152,7 +1153,7 @@ class BaseCRMIntegration extends IntegrationBase {
             maxResults: 1,
         });
 
-        const existingContact =
+        let existingContact =
             existingContacts?.data?.length > 0
                 ? existingContacts.data[0]
                 : null;
@@ -1161,13 +1162,27 @@ class BaseCRMIntegration extends IntegrationBase {
         let action;
 
         if (existingContact) {
-            const response = await this.quo.api.updateFriggContact(
-                existingContact.id,
-                quoContact,
-            );
-            result = response.data;
-            action = 'updated';
-        } else {
+            try {
+                const response = await this.quo.api.updateFriggContact(
+                    existingContact.id,
+                    quoContact,
+                );
+                result = response.data;
+                action = 'updated';
+            } catch (error) {
+                if (error.statusCode === 404) {
+                    console.warn(
+                        `[upsertContactToQuo] 404 on update for externalId=${quoContact.externalId}`,
+                        `(quoContactId=${existingContact.id}), falling back to create`,
+                    );
+                    existingContact = null;
+                } else {
+                    throw error;
+                }
+            }
+        }
+
+        if (!existingContact && !result) {
             try {
                 const response =
                     await this.quo.api.createFriggContact(quoContact);
